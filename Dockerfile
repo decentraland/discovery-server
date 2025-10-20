@@ -1,44 +1,63 @@
-ARG RUN
+FROM node:lts-alpine as builder
 
-FROM node:lts as builderenv
+# Install build dependencies for native modules and yarn
+RUN apk add --no-cache build-base python3 yarn
 
 WORKDIR /app
 
-# some packages require a build step
-RUN apt-get update && apt-get -y -qq install build-essential
+# Copy dependency definitions first for better layer caching
+COPY package.json yarn.lock ./
 
-# We use Tini to handle signals and PID1 (https://github.com/krallin/tini, read why here https://github.com/krallin/tini/issues/8)
+# Install all dependencies (including devDependencies for build and test)
+RUN yarn install --frozen-lockfile
+
+# Copy source code and configuration
+COPY tsconfig.json jest.config.js ./
+COPY src ./src
+COPY test ./test
+
+# Build TypeScript to JavaScript
+RUN yarn build
+
+# Set minimal environment variables required for tests
+ENV HTTP_SERVER_PORT=3000 \
+    HTTP_SERVER_HOST=0.0.0.0 \
+    WKC_METRICS_RESET_AT_NIGHT=false
+
+# Run tests to validate build (fails fast if tests don't pass)
+RUN yarn test
+
+# Remove devDependencies to reduce final image size
+RUN yarn install --frozen-lockfile --production && \
+    yarn cache clean
+
+# ============================================
+# Production Stage
+# ============================================
+FROM node:lts-alpine
+
+# We use Tini to handle signals and PID1 in ECS
+# https://github.com/krallin/tini - read why here: https://github.com/krallin/tini/issues/8
+# Tini ensures graceful shutdowns when ECS sends SIGTERM
 ENV TINI_VERSION v0.19.0
 ADD https://github.com/krallin/tini/releases/download/${TINI_VERSION}/tini /tini
 RUN chmod +x /tini
 
-# install dependencies
-COPY package.json /app/package.json
-COPY yarn.lock /app/yarn.lock
-RUN yarn
 
-# build the app
-COPY . /app
-RUN yarn build
-RUN yarn test
-
-# remove devDependencies, keep only used dependencies
-RUN yarn install --frozen-lockfile --production
-
-########################## END OF BUILD STAGE ##########################
-
-FROM node:lts
-
-# NODE_ENV is used to configure some runtime options, like JSON logger
-ENV NODE_ENV production
+ENV NODE_ENV=production
 
 WORKDIR /app
-COPY --from=builderenv /app /app
-COPY --from=builderenv /tini /tini
-# Please _DO NOT_ use a custom ENTRYPOINT because it may prevent signals
-# (i.e. SIGTERM) to reach the service
-# Read more here: https://aws.amazon.com/blogs/containers/graceful-shutdowns-with-ecs/
-#            and: https://www.ctl.io/developers/blog/post/gracefully-stopping-docker-containers/
+
+# Copy only production artifacts from builder stage
+COPY --from=builder --chown=node:node /app/dist ./dist
+COPY --from=builder --chown=node:node /app/node_modules ./node_modules
+COPY --from=builder --chown=node:node /app/package.json ./package.json
+
+USER node
+
+# Use Tini as entrypoint for proper signal handling (SIGTERM from ECS)
+# This ensures graceful shutdowns when ECS stops the container
 ENTRYPOINT ["/tini", "--"]
-# Run the program under Tini
-CMD [ "/usr/local/bin/node", "--trace-warnings", "--abort-on-uncaught-exception", "--unhandled-rejections=strict", "dist/index.js" ]
+
+# Start the application with Node.js flags for production
+CMD ["node", "--trace-warnings", "--abort-on-uncaught-exception", "--unhandled-rejections=strict", "dist/index.js"]
