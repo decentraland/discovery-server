@@ -6,8 +6,8 @@ import {
 } from '@well-known-components/http-server'
 import { createLogComponent } from '@well-known-components/logger'
 import { createMetricsComponent } from '@well-known-components/metrics'
-import { AppComponents, GlobalContext } from './types'
 import { metricDeclarations } from './metrics'
+import type { AppComponents, GlobalContext } from './types'
 
 // Initialize all the components of the app
 export async function initComponents(): Promise<AppComponents> {
@@ -17,7 +17,14 @@ export async function initComponents(): Promise<AppComponents> {
   const server = await createServerComponent<GlobalContext>({ config, logs }, {})
   const statusChecks = await createStatusCheckComponent({ server, config })
 
-  await instrumentHttpServerWithPromClientRegistry({ metrics, server, config, registry: metrics.registry! })
+  if (metrics.registry) {
+    await instrumentHttpServerWithPromClientRegistry({
+      metrics,
+      server,
+      config,
+      registry: metrics.registry
+    })
+  }
 
   return {
     config,

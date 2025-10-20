@@ -16,20 +16,20 @@
     "start": "node --trace-warnings --abort-on-uncaught-exception --unhandled-rejections=strict dist/index.js",
     "dev": "nodemon --watch src --ext ts --exec 'ts-node src/index.ts'",
     "test": "jest --forceExit --detectOpenHandles --coverage --verbose",
-    "migrate": "./node_modules/.bin/node-pg-migrate --envPath ./.env.default --tsconfig ./tsconfig.json -j ts -m ./src/migrations -d CONNECTION_STRING"
+    "migrate": "./node_modules/.bin/node-pg-migrate --envPath ./.env.default --tsconfig ./tsconfig.json -j ts -m ./src/migrations -d CONNECTION_STRING",
+    "lint": "eslint . --ext .ts",
+    "lint:fix": "eslint . --ext .ts --fix",
+    "format": "prettier --write 'src/**/*.ts' 'test/**/*.ts'",
+    "format:check": "prettier --check 'src/**/*.ts' 'test/**/*.ts'"
   },
   "devDependencies": {
+    "@dcl/eslint-config": "^2.3.1",
     "@types/node": "^20.14.2",
     "@well-known-components/test-helpers": "^1.5.8",
+    "eslint": "^8.57.0",
     "nodemon": "^3.1.10",
+    "prettier": "^3.6.2",
     "typescript": "^5.7.3"
-  },
-  "prettier": {
-    "printWidth": 120,
-    "semi": false,
-    "singleQuote": true,
-    "trailingComma": "none",
-    "tabWidth": 2
   },
   "dependencies": {
     "@dcl/sqs-component": "^2.0.3",
