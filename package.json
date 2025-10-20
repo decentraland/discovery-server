@@ -1,5 +1,16 @@
 {
   "name": "discovery-server",
+  "version": "1.0.0",
+  "description": "Discovery Server - Processes Catalysts' scenes and Worlds deployments",
+  "author": "Decentraland",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/decentraland/discovery-server"
+  },
+  "bugs": {
+    "url": "https://github.com/decentraland/discovery-server/issues"
+  },
+  "homepage": "https://github.com/decentraland/discovery-server#readme",
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "start": "node --trace-warnings --abort-on-uncaught-exception --unhandled-rejections=strict dist/index.js",
