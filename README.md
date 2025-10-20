@@ -17,13 +17,17 @@ The service receives SQS messages containing entity IDs and content server URLs,
 
 ### Quick Start
 
-1. **Environment**
+#### Option 1: Docker Compose (Recommended for Local Development)
+
+The easiest way to run the entire stack locally:
+
+1. **Setup Environment**
 
    ```bash
    cp .env.default .env
    ```
 
-   Update `.env` with your configuration:
+   Update `.env` with your configuration (or use defaults):
 
    ```bash
    # HTTP Server
@@ -33,10 +37,10 @@ The service receives SQS messages containing entity IDs and content server URLs,
    # Metrics
    WKC_METRICS_RESET_AT_NIGHT=false
 
-   # Database
+   # Database (overridden in docker-compose for container networking)
    CONNECTION_STRING=postgres://postgres:postgres@localhost:5432/postgres
 
-   # SQS
+   # SQS (overridden in docker-compose for container networking)
    AWS_SQS_QUEUE_URL=http://localhost:4566/000000000000/places_test
    AWS_SQS_ENDPOINT=http://localhost:4566
 
@@ -46,22 +50,68 @@ The service receives SQS messages containing entity IDs and content server URLs,
    AWS_SECRET_ACCESS_KEY=test
    ```
 
-2. **Services**
+2. **Start Everything**
 
    ```bash
-   docker-compose up -d  # Starts PostgreSQL + LocalStack (SQS)
+   docker-compose up
+   ```
+
+   This starts:
+   - **PostgreSQL** (port 5432) - Database
+   - **LocalStack** (port 4566) - SQS emulator
+   - **Discovery Server** (port 3000) - The application
+
+   All services include health checks and will wait for dependencies to be ready.
+
+3. **Run Migrations**
+
+   In a new terminal:
+   ```bash
+   docker-compose exec discovery-server yarn migrate up
+   ```
+
+4. **View Logs**
+
+   ```bash
+   # All services
+   docker-compose logs -f
+
+   # Specific service
+   docker-compose logs -f discovery-server
+   ```
+
+5. **Stop Everything**
+
+   ```bash
+   docker-compose down
+   ```
+
+#### Option 2: Local Development (Node.js)
+
+For faster iteration during development:
+
+1. **Setup Environment**
+
+   ```bash
+   cp .env.default .env
+   # Edit .env with your configuration
+   ```
+
+2. **Start Infrastructure Only**
+
+   ```bash
+   docker-compose up db localstack -d
+   ```
+
+3. **Install & Run Locally**
+
+   ```bash
    yarn install
    yarn migrate up       # Run database migrations
+   yarn dev             # Start with auto-reload
    ```
 
-3. **Run**
-
-   Development mode (with auto-reload):
-   ```bash
-   yarn dev
-   ```
-
-   Production mode:
+   Or for production mode:
    ```bash
    yarn build
    yarn start
@@ -162,13 +212,31 @@ We make components available to incoming HTTP and SQS handlers. For instance, th
 
 ## Quick Commands
 
+### Local Development (Node.js)
 ```bash
-yarn install           # Install dependencies
-yarn dev              # Development server with auto-reload
-yarn build            # Build TypeScript to dist/
-yarn start            # Start production server
-yarn test             # Run tests
-yarn migrate up       # Run database migrations
-docker-compose up -d  # Start PostgreSQL + LocalStack
+yarn install                         # Install dependencies
+yarn dev                            # Development server with auto-reload
+yarn build                          # Build TypeScript to dist/
+yarn start                          # Start production server
+yarn test                           # Run tests
+yarn migrate up                     # Run database migrations
+```
+
+### Docker Compose
+```bash
+docker-compose up                   # Start all services (app + infrastructure)
+docker-compose up -d                # Start all services in background
+docker-compose up db localstack -d  # Start only infrastructure (for local dev)
+docker-compose down                 # Stop and remove containers
+docker-compose logs -f              # View logs (all services)
+docker-compose logs -f discovery-server  # View logs (specific service)
+docker-compose ps                   # Show running services
+docker-compose exec discovery-server sh  # Shell into container
+```
+
+### Docker Build & Run
+```bash
+docker build -t discovery-server:latest .  # Build production image
+docker run -p 3000:3000 --env-file .env discovery-server:latest  # Run container
 ```
 

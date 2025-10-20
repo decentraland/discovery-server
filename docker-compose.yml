@@ -1,9 +1,7 @@
-version: '3.8'
-
 services:
   db:
     image: postgres:15
-    container_name: postgres
+    container_name: discovery-postgres
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
@@ -12,10 +10,15 @@ services:
       - "5432:5432"
     volumes:
       - db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   localstack:
     image: localstack/localstack:latest
-    container_name: localstack
+    container_name: discovery-localstack
     environment:
       - SERVICES=sqs
       - DEFAULT_REGION=us-east-1
@@ -25,7 +28,39 @@ services:
     volumes:
       - localstack_data:/var/lib/localstack
       - ./localstack-init:/etc/localstack/init/ready.d
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4566/_localstack/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
+  discovery-server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: discovery-server
+    env_file:
+      - .env
+    environment:
+      # Override specific vars for docker-compose environment
+      HTTP_SERVER_HOST: 0.0.0.0
+      CONNECTION_STRING: postgres://postgres:postgres@db:5432/postgres
+      AWS_SQS_ENDPOINT: http://localstack:4566
+      AWS_SQS_QUEUE_URL: http://localstack:4566/000000000000/places_test
+    ports:
+      - "${HTTP_SERVER_PORT:-3000}:${HTTP_SERVER_PORT:-3000}"
+    depends_on:
+      db:
+        condition: service_healthy
+      localstack:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"require('http').get('http://localhost:${HTTP_SERVER_PORT:-3000}/ping', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)})\""]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
 
 volumes:
   db_data:

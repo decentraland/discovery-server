@@ -39,10 +39,10 @@ FROM node:lts-alpine
 # We use Tini to handle signals and PID1 in ECS
 # https://github.com/krallin/tini - read why here: https://github.com/krallin/tini/issues/8
 # Tini ensures graceful shutdowns when ECS sends SIGTERM
-ENV TINI_VERSION v0.19.0
-ADD https://github.com/krallin/tini/releases/download/${TINI_VERSION}/tini /tini
+# Using tini-static for Alpine compatibility (musl libc)
+ENV TINI_VERSION=v0.19.0
+ADD https://github.com/krallin/tini/releases/download/${TINI_VERSION}/tini-static /tini
 RUN chmod +x /tini
-
 
 ENV NODE_ENV=production
 
