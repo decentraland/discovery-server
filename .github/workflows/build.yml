@@ -1,0 +1,11 @@
+name: build
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build:
+    uses: decentraland/platform-actions/.github/workflows/apps-build.yml@feat/support-node-version-file
+    with:
+      node-version-file: '.nvmrc'
