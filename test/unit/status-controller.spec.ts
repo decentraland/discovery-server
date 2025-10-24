@@ -3,14 +3,14 @@ import { statusHandler } from '../../src/controllers/handlers/status-handler'
 
 describe('status-controller-unit', () => {
   describe('when the status handler is called', () => {
-    describe('and both VERSION and IMAGE are configured', () => {
+    describe('and both CURRENT_VERSION and COMMIT_HASH are configured', () => {
       let result: { status: number; body: string }
-      let parsedBody: { status: string; timestamp: string; version: string; image: string }
+      let parsedBody: { status: string; timestamp: string; version: string; commitHash: string }
 
       beforeEach(async () => {
         const config = createConfigComponent({
-          VERSION: '1.0.0',
-          IMAGE: 'decentraland/discovery-server:latest'
+          CURRENT_VERSION: '1.0.0',
+          COMMIT_HASH: 'abc123'
         })
         result = await statusHandler({ components: { config } })
         parsedBody = JSON.parse(result.body)
@@ -28,8 +28,8 @@ describe('status-controller-unit', () => {
         expect(parsedBody.version).toBe('1.0.0')
       })
 
-      it('should return the configured image', () => {
-        expect(parsedBody.image).toBe('decentraland/discovery-server:latest')
+      it('should return the configured commit hash', () => {
+        expect(parsedBody.commitHash).toBe('abc123')
       })
 
       it('should include a timestamp', () => {
@@ -38,9 +38,9 @@ describe('status-controller-unit', () => {
       })
     })
 
-    describe('and VERSION and IMAGE are not configured', () => {
+    describe('and CURRENT_VERSION and COMMIT_HASH are not configured', () => {
       let result: { status: number; body: string }
-      let parsedBody: { status: string; timestamp: string; version: string; image: string }
+      let parsedBody: { status: string; timestamp: string; version: string; commitHash: string }
 
       beforeEach(async () => {
         const config = createConfigComponent({})
@@ -60,17 +60,17 @@ describe('status-controller-unit', () => {
         expect(parsedBody.version).toBeUndefined()
       })
 
-      it('should return undefined for image', () => {
-        expect(parsedBody.image).toBeUndefined()
+      it('should return undefined for commitHash', () => {
+        expect(parsedBody.commitHash).toBeUndefined()
       })
     })
 
-    describe('and only VERSION is configured', () => {
-      let parsedBody: { status: string; timestamp: string; version: string; image: string }
+    describe('and only CURRENT_VERSION is configured', () => {
+      let parsedBody: { status: string; timestamp: string; version: string; commitHash: string }
 
       beforeEach(async () => {
         const config = createConfigComponent({
-          VERSION: '2.5.3'
+          CURRENT_VERSION: '2.5.3'
         })
         const result = await statusHandler({ components: { config } })
         parsedBody = JSON.parse(result.body)
@@ -80,17 +80,17 @@ describe('status-controller-unit', () => {
         expect(parsedBody.version).toBe('2.5.3')
       })
 
-      it('should return undefined for image', () => {
-        expect(parsedBody.image).toBeUndefined()
+      it('should return undefined for commitHash', () => {
+        expect(parsedBody.commitHash).toBeUndefined()
       })
     })
 
-    describe('and only IMAGE is configured', () => {
-      let parsedBody: { status: string; timestamp: string; version: string; image: string }
+    describe('and only COMMIT_HASH is configured', () => {
+      let parsedBody: { status: string; timestamp: string; version: string; commitHash: string }
 
       beforeEach(async () => {
         const config = createConfigComponent({
-          IMAGE: 'myregistry/discovery:v1'
+          COMMIT_HASH: 'def456'
         })
         const result = await statusHandler({ components: { config } })
         parsedBody = JSON.parse(result.body)
@@ -100,8 +100,8 @@ describe('status-controller-unit', () => {
         expect(parsedBody.version).toBeUndefined()
       })
 
-      it('should return the configured image', () => {
-        expect(parsedBody.image).toBe('myregistry/discovery:v1')
+      it('should return the configured commitHash', () => {
+        expect(parsedBody.commitHash).toBe('def456')
       })
     })
   })
