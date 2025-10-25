@@ -23,11 +23,13 @@ services:
       - SERVICES=sqs
       - DEFAULT_REGION=us-east-1
       - DATA_DIR=/tmp/localstack/data
+      - DEBUG=1  # Enable debug logs to see init scripts execution
     ports:
       - "4566:4566"  # Edge port for all services
     volumes:
       - localstack_data:/var/lib/localstack
-      - ./localstack-init:/etc/localstack/init/ready.d
+      - ./localstack-init:/etc/localstack/init/ready.d  # Init hooks
+      - /var/run/docker.sock:/var/run/docker.sock  # Required for some services
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:4566/_localstack/health"]
       interval: 10s
@@ -55,7 +57,7 @@ services:
       localstack:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "node -e \"require('http').get('http://localhost:${HTTP_SERVER_PORT:-3000}/ping', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)})\""]
+      test: ["CMD-SHELL", "node -e \"require('http').get('http://localhost:${HTTP_SERVER_PORT:-3000}/status', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)})\""]
       interval: 10s
       timeout: 5s
       retries: 3

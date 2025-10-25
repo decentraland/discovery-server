@@ -37,10 +37,10 @@ The easiest way to run the entire stack locally:
    # Metrics
    WKC_METRICS_RESET_AT_NIGHT=false
 
-   # Database (overridden in docker-compose for container networking)
+   # Database (overridden in docker compose for container networking)
    CONNECTION_STRING=postgres://postgres:postgres@localhost:5432/postgres
 
-   # SQS (overridden in docker-compose for container networking)
+   # SQS (overridden in docker compose for container networking)
    AWS_SQS_QUEUE_URL=http://localhost:4566/000000000000/places_test
    AWS_SQS_ENDPOINT=http://localhost:4566
 
@@ -53,7 +53,7 @@ The easiest way to run the entire stack locally:
 2. **Start Everything**
 
    ```bash
-   docker-compose up
+   docker compose up
    ```
 
    This starts:
@@ -67,23 +67,23 @@ The easiest way to run the entire stack locally:
 
    In a new terminal:
    ```bash
-   docker-compose exec discovery-server yarn migrate up
+   docker compose exec discovery-server yarn migrate up
    ```
 
 4. **View Logs**
 
    ```bash
    # All services
-   docker-compose logs -f
+   docker compose logs -f
 
    # Specific service
-   docker-compose logs -f discovery-server
+   docker compose logs -f discovery-server
    ```
 
 5. **Stop Everything**
 
    ```bash
-   docker-compose down
+   docker compose down
    ```
 
 #### Option 2: Local Development (Node.js)
@@ -100,8 +100,10 @@ For faster iteration during development:
 2. **Start Infrastructure Only**
 
    ```bash
-   docker-compose up db localstack -d
+   docker compose up db localstack -d
    ```
+
+   LocalStack will automatically create the SQS queue via the initialization hook.
 
 3. **Install & Run Locally**
 
@@ -119,33 +121,27 @@ For faster iteration during development:
 
 ### Test SQS Integration
 
+Use the provided script to send a test message to the SQS queue:
+
 ```bash
-# Send a test message to the SQS queue
-aws --endpoint-url=http://localhost:4566 sqs send-message \
-  --queue-url http://localhost:4566/000000000000/places_test \
-  --message-body '{"entityId":"bafkreiabc123","contentServerUrl":"https://peer.decentraland.org"}'
+# Using default test data
+./bin/test-sqs.sh
+
+# Or provide custom entity ID and content server URL
+./bin/test-sqs.sh "bafkreixyz789" "https://custom-peer.decentraland.org"
 ```
+
+The script reads configuration from environment variables (`AWS_SQS_ENDPOINT` and `AWS_SQS_QUEUE_URL`) or uses defaults for LocalStack.
+
+> **Note:** LocalStack resources (SQS queues) are initialized **automatically** when using docker compose via the initialization hook in `localstack-init/init-resources.sh`.
 
 ## Healthcheck
 
-The service exposes two endpoints for health checking:
-
-### `/ping` endpoint
-
-Simple ping endpoint that returns the pathname:
-
-```bash
-curl http://localhost:3000/ping
-```
-
-**Response:**
-```
-/ping
-```
+The service exposes a status endpoint for health checking:
 
 ### `/status` endpoint
 
-Full status endpoint with version information:
+Status endpoint with version and deployment information:
 
 ```bash
 curl http://localhost:3000/status
@@ -157,7 +153,7 @@ curl http://localhost:3000/status
   "status": "ok",
   "timestamp": "2025-10-16T12:34:56.789Z",
   "version": "1.0.0",
-  "image": "discovery-server:latest"
+  "commitHash": "abc123def456"
 }
 ```
 
@@ -190,13 +186,15 @@ The "glue" between all the other layers, orchestrating calls between pure busine
 Controllers always receive a hydrated context containing components and parameters to call the business logic e.g:
 
 ```ts
-// handler for /ping
-export async function pingHandler(context: {
-  url: URL // parameter added by http-server
-  components: AppComponents // components of the app, part of the global context
+// handler for /status
+export async function statusHandler(context: {
+  components: Pick<AppComponents, 'config'> // only the components needed
 }) {
-  components.metrics.increment("test_ping_counter")
-  return { status: 200 }
+  const version = await context.components.config.getString('CURRENT_VERSION')
+  return { 
+    status: 200,
+    body: JSON.stringify({ status: 'ok', version, timestamp: new Date() })
+  }
 }
 ```
 
@@ -220,18 +218,19 @@ yarn build                          # Build TypeScript to dist/
 yarn start                          # Start production server
 yarn test                           # Run tests
 yarn migrate up                     # Run database migrations
+./bin/test-sqs.sh                   # Send test message to SQS queue
 ```
 
 ### Docker Compose
 ```bash
-docker-compose up                   # Start all services (app + infrastructure)
-docker-compose up -d                # Start all services in background
-docker-compose up db localstack -d  # Start only infrastructure (for local dev)
-docker-compose down                 # Stop and remove containers
-docker-compose logs -f              # View logs (all services)
-docker-compose logs -f discovery-server  # View logs (specific service)
-docker-compose ps                   # Show running services
-docker-compose exec discovery-server sh  # Shell into container
+docker compose up                   # Start all services (app + infrastructure)
+docker compose up -d                # Start all services in background
+docker compose up db localstack -d  # Start only infrastructure (for local dev)
+docker compose down                 # Stop and remove containers
+docker compose logs -f              # View logs (all services)
+docker compose logs -f discovery-server  # View logs (specific service)
+docker compose ps                   # Show running services
+docker compose exec discovery-server sh  # Shell into container
 ```
 
 ### Docker Build & Run
