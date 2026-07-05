@@ -17,6 +17,7 @@ import { createInteractionsRepository } from './adapters/interactions-repository
 import { createProfileSettingsRepository } from './adapters/profile-settings-repository'
 import { createEventsRepository } from './adapters/events-repository'
 import { createAttendeesRepository } from './adapters/attendees-repository'
+import { createDestinationsRepository } from './adapters/destinations-repository'
 import { createCategoriesComponent } from './logic/categories'
 import { createSchedulesComponent } from './logic/schedules'
 import { createPlacesComponent } from './logic/places'
@@ -26,6 +27,7 @@ import { createProfilesComponent } from './logic/profiles'
 import { createRecurrenceComponent } from './logic/recurrence'
 import { createEventsComponent } from './logic/events'
 import { createAttendeesComponent } from './logic/attendees'
+import { createDestinationsComponent } from './logic/destinations'
 import { metricDeclarations } from './metrics'
 import type { AppComponents, GlobalContext } from './types'
 
@@ -71,6 +73,7 @@ export async function initComponents(): Promise<AppComponents> {
   const profileSettingsRepository = createProfileSettingsRepository()
   const eventsRepository = createEventsRepository()
   const attendeesRepository = createAttendeesRepository()
+  const destinationsRepository = createDestinationsRepository()
 
   // logic
   const categories = await createCategoriesComponent({ pg, categoriesRepository, logs })
@@ -91,6 +94,7 @@ export async function initComponents(): Promise<AppComponents> {
     logs
   })
   const attendees = await createAttendeesComponent({ pg, attendeesRepository, logs })
+  const destinations = await createDestinationsComponent({ pg, destinationsRepository, eventsRepository, logs })
 
   return {
     config,
@@ -109,6 +113,7 @@ export async function initComponents(): Promise<AppComponents> {
     profileSettingsRepository,
     eventsRepository,
     attendeesRepository,
+    destinationsRepository,
     categories,
     schedules,
     places,
@@ -117,6 +122,7 @@ export async function initComponents(): Promise<AppComponents> {
     profiles,
     recurrence,
     events,
-    attendees
+    attendees,
+    destinations
   }
 }

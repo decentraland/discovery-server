@@ -32,6 +32,7 @@ import {
   updateEventHandler
 } from './handlers/events-handler'
 import { createAttendeeHandler, deleteAttendeeHandler, getAttendeesHandler } from './handlers/attendees-handler'
+import { getDestinationsByIdHandler, getDestinationsListHandler } from './handlers/destinations-handler'
 
 /**
  * Assembles the HTTP router. The central error handler is registered first so it
@@ -74,6 +75,12 @@ export async function setupRouter(globalContext: GlobalContext): Promise<Router<
   router.get('/api/places/:place_id', signedFetch({ optional: true }), getPlaceHandler)
   router.patch('/api/places/:entity_id/likes', signedFetch(), updateLikesHandler)
   router.patch('/api/places/:entity_id/favorites', signedFetch(), updateFavoritesHandler)
+
+  // destinations — unified places+worlds discovery (legacy + new /v1 surface)
+  router.get('/api/destinations', signedFetch({ optional: true }), getDestinationsListHandler)
+  router.post('/api/destinations', signedFetch({ optional: true }), getDestinationsByIdHandler)
+  router.get('/v1/destinations', signedFetch({ optional: true }), getDestinationsListHandler)
+  router.post('/v1/destinations/batch', signedFetch({ optional: true }), getDestinationsByIdHandler)
 
   // worlds (optional-signed reads, signed writes)
   router.get('/api/worlds', signedFetch({ optional: true }), getWorldListHandler)

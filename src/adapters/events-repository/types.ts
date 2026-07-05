@@ -46,4 +46,6 @@ export interface IEventsRepository {
   count(client: Queryable, filters: EventListFilters): Promise<number>
   /** Events the user is attending (approved, non-deleted). */
   listAttending(client: Queryable, user: string): Promise<Event[]>
+  /** Distinct place/world ids that currently have a live (approved, ongoing) event. */
+  getLiveEntityIds(client: Queryable): Promise<{ placeIds: string[]; worldIds: string[] }>
 }

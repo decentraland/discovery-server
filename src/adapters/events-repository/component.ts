@@ -162,5 +162,15 @@ export function createEventsRepository(): IEventsRepository {
     return list(client, { attendee: user, list: 'all' })
   }
 
-  return { create, findById, update, list, count, listAttending }
+  async function getLiveEntityIds(client: Queryable): Promise<{ placeIds: string[]; worldIds: string[] }> {
+    const result = await client.query<{ place_id: string | null; world_id: string | null }>(SQL`
+      SELECT DISTINCT place_id, world_id FROM events
+      WHERE approved IS true AND deleted_at IS NULL
+        AND next_start_at <= now() AND next_finish_at >= now()`)
+    const placeIds = result.rows.map((r) => r.place_id).filter((id): id is string => !!id)
+    const worldIds = result.rows.map((r) => r.world_id).filter((id): id is string => !!id)
+    return { placeIds, worldIds }
+  }
+
+  return { create, findById, update, list, count, listAttending, getLiveEntityIds }
 }

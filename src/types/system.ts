@@ -15,6 +15,7 @@ import type { IInteractionsRepository } from '../adapters/interactions-repositor
 import type { IProfileSettingsRepository } from '../adapters/profile-settings-repository'
 import type { IEventsRepository } from '../adapters/events-repository'
 import type { IAttendeesRepository } from '../adapters/attendees-repository'
+import type { IDestinationsRepository } from '../adapters/destinations-repository'
 import type { ICategoriesComponent } from '../logic/categories'
 import type { ISchedulesComponent } from '../logic/schedules'
 import type { IPlacesComponent } from '../logic/places'
@@ -24,6 +25,7 @@ import type { IProfilesComponent } from '../logic/profiles'
 import type { IRecurrenceComponent } from '../logic/recurrence'
 import type { IEventsComponent } from '../logic/events'
 import type { IAttendeesComponent } from '../logic/attendees'
+import type { IDestinationsComponent } from '../logic/destinations'
 import { metricDeclarations } from '../metrics'
 
 export type GlobalContext = {
@@ -57,6 +59,7 @@ export type BaseComponents = {
   profileSettingsRepository: IProfileSettingsRepository
   eventsRepository: IEventsRepository
   attendeesRepository: IAttendeesRepository
+  destinationsRepository: IDestinationsRepository
 
   // logic
   categories: ICategoriesComponent
@@ -68,6 +71,7 @@ export type BaseComponents = {
   recurrence: IRecurrenceComponent
   events: IEventsComponent
   attendees: IAttendeesComponent
+  destinations: IDestinationsComponent
 }
 
 export type AppComponents = BaseComponents

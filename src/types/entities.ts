@@ -82,6 +82,29 @@ export type AggregateWorld = World & {
   user_favorite: boolean
 }
 
+/** A unified discovery entity: a place or a world, in one shape. */
+export type Destination = {
+  id: string
+  kind: 'place' | 'world'
+  title: string | null
+  description: string | null
+  image: string | null
+  base_position: string | null
+  world_name: string | null
+  categories: string[]
+  likes: number
+  dislikes: number
+  favorites: number
+  like_rate: number | null
+  like_score: number | null
+  highlighted: boolean
+  user_like: boolean
+  user_dislike: boolean
+  user_favorite: boolean
+  /** Decorated by the destinations logic from the events domain (in-process). */
+  live_event?: boolean
+}
+
 export type Event = {
   id: string
   name: string
