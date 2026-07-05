@@ -8,7 +8,9 @@ import type { IHttpServerComponent, IFetchComponent } from '@dcl/core-commons'
 import type { ISchemaValidatorComponent } from '@dcl/schema-validator-component'
 import type { IPgComponent } from '../adapters/pg'
 import type { ICategoriesRepository } from '../adapters/categories-repository'
+import type { ISchedulesRepository } from '../adapters/schedules-repository'
 import type { ICategoriesComponent } from '../logic/categories'
+import type { ISchedulesComponent } from '../logic/schedules'
 import { metricDeclarations } from '../metrics'
 
 export type GlobalContext = {
@@ -35,9 +37,11 @@ export type BaseComponents = {
 
   // repositories
   categoriesRepository: ICategoriesRepository
+  schedulesRepository: ISchedulesRepository
 
   // logic
   categories: ICategoriesComponent
+  schedules: ISchedulesComponent
 }
 
 export type AppComponents = BaseComponents
