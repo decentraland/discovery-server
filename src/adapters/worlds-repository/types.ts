@@ -23,10 +23,16 @@ export type UpsertWorldInput = Partial<Omit<World, 'created_at' | 'updated_at'>>
   world_name: string
 }
 
+/** Moderation/admin-updatable fields (worlds have no disabled state). */
+export type WorldModerationFields = Partial<
+  Pick<World, 'content_rating' | 'highlighted' | 'highlighted_image' | 'ranking'>
+>
+
 export interface IWorldsRepository {
   findByIdWithAggregates(client: Queryable, id: string, user?: string): Promise<AggregateWorld | null>
   findWithAggregates(client: Queryable, filters: WorldListFilters): Promise<AggregateWorld[]>
   count(client: Queryable, filters: WorldListFilters): Promise<number>
   findNames(client: Queryable): Promise<string[]>
   upsert(client: Queryable, input: UpsertWorldInput): Promise<World>
+  updateModeration(client: Queryable, id: string, fields: WorldModerationFields): Promise<World | null>
 }

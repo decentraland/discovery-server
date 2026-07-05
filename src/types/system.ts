@@ -16,6 +16,7 @@ import type { IProfileSettingsRepository } from '../adapters/profile-settings-re
 import type { IEventsRepository } from '../adapters/events-repository'
 import type { IAttendeesRepository } from '../adapters/attendees-repository'
 import type { IDestinationsRepository } from '../adapters/destinations-repository'
+import type { IContentRatingsRepository } from '../adapters/content-ratings-repository'
 import type { ICategoriesComponent } from '../logic/categories'
 import type { ISchedulesComponent } from '../logic/schedules'
 import type { IPlacesComponent } from '../logic/places'
@@ -26,6 +27,7 @@ import type { IRecurrenceComponent } from '../logic/recurrence'
 import type { IEventsComponent } from '../logic/events'
 import type { IAttendeesComponent } from '../logic/attendees'
 import type { IDestinationsComponent } from '../logic/destinations'
+import type { IModerationComponent } from '../logic/moderation'
 import { metricDeclarations } from '../metrics'
 
 export type GlobalContext = {
@@ -60,6 +62,7 @@ export type BaseComponents = {
   eventsRepository: IEventsRepository
   attendeesRepository: IAttendeesRepository
   destinationsRepository: IDestinationsRepository
+  contentRatingsRepository: IContentRatingsRepository
 
   // logic
   categories: ICategoriesComponent
@@ -72,6 +75,7 @@ export type BaseComponents = {
   events: IEventsComponent
   attendees: IAttendeesComponent
   destinations: IDestinationsComponent
+  moderation: IModerationComponent
 }
 
 export type AppComponents = BaseComponents

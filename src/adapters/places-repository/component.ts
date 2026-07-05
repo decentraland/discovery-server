@@ -151,5 +151,26 @@ export function createPlacesRepository(): IPlacesRepository {
     return result.rows[0]
   }
 
-  return { findByIdWithAggregates, findByIds, findWithAggregates, count, insert }
+  async function updateModeration(
+    client: Queryable,
+    id: string,
+    fields: import('./types').PlaceModerationFields
+  ): Promise<Place | null> {
+    const query = SQL`UPDATE places SET updated_at = now()`
+    if (fields.content_rating !== undefined) query.append(SQL`, content_rating = ${fields.content_rating}`)
+    if (fields.highlighted !== undefined) query.append(SQL`, highlighted = ${fields.highlighted}`)
+    if (fields.highlighted_image !== undefined) query.append(SQL`, highlighted_image = ${fields.highlighted_image}`)
+    if (fields.ranking !== undefined) query.append(SQL`, ranking = ${fields.ranking}`)
+    if (fields.disabled !== undefined) {
+      query.append(SQL`, disabled = ${fields.disabled}`)
+      query.append(fields.disabled ? SQL`, disabled_at = now()` : SQL`, disabled_at = NULL`)
+    }
+    if (fields.disabled_reason !== undefined) query.append(SQL`, disabled_reason = ${fields.disabled_reason}`)
+    query.append(SQL` WHERE id = ${id} RETURNING *`)
+
+    const result = await client.query<Place>(query)
+    return result.rows[0] ?? null
+  }
+
+  return { findByIdWithAggregates, findByIds, findWithAggregates, count, insert, updateModeration }
 }

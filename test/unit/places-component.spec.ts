@@ -13,7 +13,8 @@ describe('when reading places', () => {
       findByIds: jest.fn(),
       findWithAggregates: jest.fn(),
       count: jest.fn(),
-      insert: jest.fn()
+      insert: jest.fn(),
+      updateModeration: jest.fn()
     }
     pg = {}
     logs = { getLogger: () => ({ info: jest.fn(), error: jest.fn(), warn: jest.fn(), debug: jest.fn() }) }

@@ -134,5 +134,21 @@ export function createWorldsRepository(): IWorldsRepository {
     return result.rows[0]
   }
 
-  return { findByIdWithAggregates, findWithAggregates, count, findNames, upsert }
+  async function updateModeration(
+    client: Queryable,
+    id: string,
+    fields: import('./types').WorldModerationFields
+  ): Promise<World | null> {
+    const query = SQL`UPDATE worlds SET updated_at = now()`
+    if (fields.content_rating !== undefined) query.append(SQL`, content_rating = ${fields.content_rating}`)
+    if (fields.highlighted !== undefined) query.append(SQL`, highlighted = ${fields.highlighted}`)
+    if (fields.highlighted_image !== undefined) query.append(SQL`, highlighted_image = ${fields.highlighted_image}`)
+    if (fields.ranking !== undefined) query.append(SQL`, ranking = ${fields.ranking}`)
+    query.append(SQL` WHERE id = ${id.toLowerCase()} RETURNING *`)
+
+    const result = await client.query<World>(query)
+    return result.rows[0] ?? null
+  }
+
+  return { findByIdWithAggregates, findWithAggregates, count, findNames, upsert, updateModeration }
 }

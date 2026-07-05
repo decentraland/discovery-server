@@ -18,6 +18,7 @@ import { createProfileSettingsRepository } from './adapters/profile-settings-rep
 import { createEventsRepository } from './adapters/events-repository'
 import { createAttendeesRepository } from './adapters/attendees-repository'
 import { createDestinationsRepository } from './adapters/destinations-repository'
+import { createContentRatingsRepository } from './adapters/content-ratings-repository'
 import { createCategoriesComponent } from './logic/categories'
 import { createSchedulesComponent } from './logic/schedules'
 import { createPlacesComponent } from './logic/places'
@@ -28,6 +29,7 @@ import { createRecurrenceComponent } from './logic/recurrence'
 import { createEventsComponent } from './logic/events'
 import { createAttendeesComponent } from './logic/attendees'
 import { createDestinationsComponent } from './logic/destinations'
+import { createModerationComponent } from './logic/moderation'
 import { metricDeclarations } from './metrics'
 import type { AppComponents, GlobalContext } from './types'
 
@@ -74,6 +76,7 @@ export async function initComponents(): Promise<AppComponents> {
   const eventsRepository = createEventsRepository()
   const attendeesRepository = createAttendeesRepository()
   const destinationsRepository = createDestinationsRepository()
+  const contentRatingsRepository = createContentRatingsRepository()
 
   // logic
   const categories = await createCategoriesComponent({ pg, categoriesRepository, logs })
@@ -95,6 +98,13 @@ export async function initComponents(): Promise<AppComponents> {
   })
   const attendees = await createAttendeesComponent({ pg, attendeesRepository, logs })
   const destinations = await createDestinationsComponent({ pg, destinationsRepository, eventsRepository, logs })
+  const moderation = await createModerationComponent({
+    pg,
+    placesRepository,
+    worldsRepository,
+    contentRatingsRepository,
+    logs
+  })
 
   return {
     config,
@@ -114,6 +124,7 @@ export async function initComponents(): Promise<AppComponents> {
     eventsRepository,
     attendeesRepository,
     destinationsRepository,
+    contentRatingsRepository,
     categories,
     schedules,
     places,
@@ -123,6 +134,7 @@ export async function initComponents(): Promise<AppComponents> {
     recurrence,
     events,
     attendees,
-    destinations
+    destinations,
+    moderation
   }
 }

@@ -29,10 +29,17 @@ export type UpsertPlaceInput = Partial<Omit<Place, 'created_at' | 'updated_at'>>
   base_position: string
 }
 
+/** Moderation/admin-updatable fields. */
+export type PlaceModerationFields = Partial<
+  Pick<Place, 'content_rating' | 'highlighted' | 'highlighted_image' | 'disabled' | 'disabled_reason' | 'ranking'>
+>
+
 export interface IPlacesRepository {
   findByIdWithAggregates(client: Queryable, id: string, user?: string): Promise<AggregatePlace | null>
   findByIds(client: Queryable, ids: string[]): Promise<PlaceStatus[]>
   findWithAggregates(client: Queryable, filters: PlaceListFilters): Promise<AggregatePlace[]>
   count(client: Queryable, filters: PlaceListFilters): Promise<number>
   insert(client: Queryable, input: UpsertPlaceInput): Promise<Place>
+  /** Apply moderation/admin field updates; sets disabled_at when disabling. */
+  updateModeration(client: Queryable, id: string, fields: PlaceModerationFields): Promise<Place | null>
 }

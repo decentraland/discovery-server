@@ -12,7 +12,8 @@ describe('when reading worlds', () => {
       findWithAggregates: jest.fn(),
       count: jest.fn(),
       findNames: jest.fn(),
-      upsert: jest.fn()
+      upsert: jest.fn(),
+      updateModeration: jest.fn()
     }
     pg = {}
     logs = { getLogger: () => ({ info: jest.fn(), error: jest.fn(), warn: jest.fn(), debug: jest.fn() }) }

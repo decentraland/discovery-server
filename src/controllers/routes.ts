@@ -33,6 +33,16 @@ import {
 } from './handlers/events-handler'
 import { createAttendeeHandler, deleteAttendeeHandler, getAttendeesHandler } from './handlers/attendees-handler'
 import { getDestinationsByIdHandler, getDestinationsListHandler } from './handlers/destinations-handler'
+import { createAnyBearerMiddleware } from './middlewares/bearer-token'
+import {
+  updatePlaceDisabledHandler,
+  updatePlaceHighlightHandler,
+  updatePlaceRankingHandler,
+  updatePlaceRatingHandler,
+  updateWorldHighlightHandler,
+  updateWorldRankingHandler,
+  updateWorldRatingHandler
+} from './handlers/moderation-handler'
 
 /**
  * Assembles the HTTP router. The central error handler is registered first so it
@@ -41,8 +51,12 @@ import { getDestinationsByIdHandler, getDestinationsListHandler } from './handle
  */
 export async function setupRouter(globalContext: GlobalContext): Promise<Router<GlobalContext>> {
   const router = new Router<GlobalContext>()
-  const signedFetch = createSignedFetchMiddleware(globalContext.components.fetcher)
-  const requirePermission = createRequirePermission(globalContext.components.profiles)
+  const { components } = globalContext
+  const signedFetch = createSignedFetchMiddleware(components.fetcher)
+  const requirePermission = createRequirePermission(components.profiles)
+  const dataTeamToken = await components.config.getString('DATA_TEAM_AUTH_TOKEN')
+  // Data-team ranking routes are only mounted when their bearer token is configured.
+  const withDataTeamBearer = dataTeamToken ? createAnyBearerMiddleware([dataTeamToken]) : undefined
 
   router.use(errorHandler)
 
@@ -75,6 +89,13 @@ export async function setupRouter(globalContext: GlobalContext): Promise<Router<
   router.get('/api/places/:place_id', signedFetch({ optional: true }), getPlaceHandler)
   router.patch('/api/places/:entity_id/likes', signedFetch(), updateLikesHandler)
   router.patch('/api/places/:entity_id/favorites', signedFetch(), updateFavoritesHandler)
+  // places moderation (signed admin); ranking is data-team bearer
+  router.put('/api/places/:place_id/rating', signedFetch(), requirePermission(), updatePlaceRatingHandler)
+  router.put('/api/places/:place_id/highlight', signedFetch(), requirePermission(), updatePlaceHighlightHandler)
+  router.put('/api/places/:place_id/disable', signedFetch(), requirePermission(), updatePlaceDisabledHandler)
+  if (withDataTeamBearer) {
+    router.put('/api/places/:place_id/ranking', withDataTeamBearer, updatePlaceRankingHandler)
+  }
 
   // destinations — unified places+worlds discovery (legacy + new /v1 surface)
   router.get('/api/destinations', signedFetch({ optional: true }), getDestinationsListHandler)
@@ -88,6 +109,12 @@ export async function setupRouter(globalContext: GlobalContext): Promise<Router<
   router.get('/api/worlds/:world_id', signedFetch({ optional: true }), getWorldHandler)
   router.patch('/api/worlds/:world_id/likes', signedFetch(), updateLikesHandler)
   router.patch('/api/worlds/:world_id/favorites', signedFetch(), updateFavoritesHandler)
+  // worlds moderation (signed admin); ranking is data-team bearer
+  router.put('/api/worlds/:world_id/rating', signedFetch(), requirePermission(), updateWorldRatingHandler)
+  router.put('/api/worlds/:world_id/highlight', signedFetch(), requirePermission(), updateWorldHighlightHandler)
+  if (withDataTeamBearer) {
+    router.put('/api/worlds/:world_id/ranking', withDataTeamBearer, updateWorldRankingHandler)
+  }
 
   // profile settings (permissions/authorization)
   router.get(
