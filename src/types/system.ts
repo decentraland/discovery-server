@@ -11,10 +11,12 @@ import type { ICategoriesRepository } from '../adapters/categories-repository'
 import type { ISchedulesRepository } from '../adapters/schedules-repository'
 import type { IPlacesRepository } from '../adapters/places-repository'
 import type { IWorldsRepository } from '../adapters/worlds-repository'
+import type { IInteractionsRepository } from '../adapters/interactions-repository'
 import type { ICategoriesComponent } from '../logic/categories'
 import type { ISchedulesComponent } from '../logic/schedules'
 import type { IPlacesComponent } from '../logic/places'
 import type { IWorldsComponent } from '../logic/worlds'
+import type { IInteractionsComponent } from '../logic/interactions'
 import { metricDeclarations } from '../metrics'
 
 export type GlobalContext = {
@@ -44,12 +46,14 @@ export type BaseComponents = {
   schedulesRepository: ISchedulesRepository
   placesRepository: IPlacesRepository
   worldsRepository: IWorldsRepository
+  interactionsRepository: IInteractionsRepository
 
   // logic
   categories: ICategoriesComponent
   schedules: ISchedulesComponent
   places: IPlacesComponent
   worlds: IWorldsComponent
+  interactions: IInteractionsComponent
 }
 
 export type AppComponents = BaseComponents
