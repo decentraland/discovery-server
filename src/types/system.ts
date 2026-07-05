@@ -19,6 +19,7 @@ import type { IPlacesComponent } from '../logic/places'
 import type { IWorldsComponent } from '../logic/worlds'
 import type { IInteractionsComponent } from '../logic/interactions'
 import type { IProfilesComponent } from '../logic/profiles'
+import type { IRecurrenceComponent } from '../logic/recurrence'
 import { metricDeclarations } from '../metrics'
 
 export type GlobalContext = {
@@ -58,6 +59,7 @@ export type BaseComponents = {
   worlds: IWorldsComponent
   interactions: IInteractionsComponent
   profiles: IProfilesComponent
+  recurrence: IRecurrenceComponent
 }
 
 export type AppComponents = BaseComponents

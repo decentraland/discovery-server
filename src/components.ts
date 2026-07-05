@@ -21,6 +21,7 @@ import { createPlacesComponent } from './logic/places'
 import { createWorldsComponent } from './logic/worlds'
 import { createInteractionsComponent } from './logic/interactions'
 import { createProfilesComponent } from './logic/profiles'
+import { createRecurrenceComponent } from './logic/recurrence'
 import { metricDeclarations } from './metrics'
 import type { AppComponents, GlobalContext } from './types'
 
@@ -72,6 +73,7 @@ export async function initComponents(): Promise<AppComponents> {
   const worlds = await createWorldsComponent({ pg, worldsRepository, logs })
   const interactions = await createInteractionsComponent({ pg, interactionsRepository, logs })
   const profiles = await createProfilesComponent({ pg, profileSettingsRepository, config, logs })
+  const recurrence = createRecurrenceComponent()
 
   return {
     config,
@@ -93,6 +95,7 @@ export async function initComponents(): Promise<AppComponents> {
     places,
     worlds,
     interactions,
-    profiles
+    profiles,
+    recurrence
   }
 }
