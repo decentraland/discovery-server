@@ -15,6 +15,8 @@ import { createPlacesRepository } from './adapters/places-repository'
 import { createWorldsRepository } from './adapters/worlds-repository'
 import { createInteractionsRepository } from './adapters/interactions-repository'
 import { createProfileSettingsRepository } from './adapters/profile-settings-repository'
+import { createEventsRepository } from './adapters/events-repository'
+import { createAttendeesRepository } from './adapters/attendees-repository'
 import { createCategoriesComponent } from './logic/categories'
 import { createSchedulesComponent } from './logic/schedules'
 import { createPlacesComponent } from './logic/places'
@@ -22,6 +24,8 @@ import { createWorldsComponent } from './logic/worlds'
 import { createInteractionsComponent } from './logic/interactions'
 import { createProfilesComponent } from './logic/profiles'
 import { createRecurrenceComponent } from './logic/recurrence'
+import { createEventsComponent } from './logic/events'
+import { createAttendeesComponent } from './logic/attendees'
 import { metricDeclarations } from './metrics'
 import type { AppComponents, GlobalContext } from './types'
 
@@ -65,6 +69,8 @@ export async function initComponents(): Promise<AppComponents> {
   const worldsRepository = createWorldsRepository()
   const interactionsRepository = createInteractionsRepository()
   const profileSettingsRepository = createProfileSettingsRepository()
+  const eventsRepository = createEventsRepository()
+  const attendeesRepository = createAttendeesRepository()
 
   // logic
   const categories = await createCategoriesComponent({ pg, categoriesRepository, logs })
@@ -74,6 +80,17 @@ export async function initComponents(): Promise<AppComponents> {
   const interactions = await createInteractionsComponent({ pg, interactionsRepository, logs })
   const profiles = await createProfilesComponent({ pg, profileSettingsRepository, config, logs })
   const recurrence = createRecurrenceComponent()
+  const events = await createEventsComponent({
+    pg,
+    eventsRepository,
+    attendeesRepository,
+    places,
+    worlds,
+    profiles,
+    recurrence,
+    logs
+  })
+  const attendees = await createAttendeesComponent({ pg, attendeesRepository, logs })
 
   return {
     config,
@@ -90,12 +107,16 @@ export async function initComponents(): Promise<AppComponents> {
     worldsRepository,
     interactionsRepository,
     profileSettingsRepository,
+    eventsRepository,
+    attendeesRepository,
     categories,
     schedules,
     places,
     worlds,
     interactions,
     profiles,
-    recurrence
+    recurrence,
+    events,
+    attendees
   }
 }

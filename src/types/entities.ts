@@ -82,6 +82,69 @@ export type AggregateWorld = World & {
   user_favorite: boolean
 }
 
+export type Event = {
+  id: string
+  name: string
+  image: string | null
+  image_vertical: string | null
+  description: string | null
+  start_at: Date
+  finish_at: Date
+  duration: number
+  all_day: boolean
+  next_start_at: Date | null
+  next_finish_at: Date | null
+  recurrent: boolean
+  recurrent_frequency: string | null
+  recurrent_setpos: number | null
+  recurrent_monthday: number | null
+  recurrent_weekday_mask: number
+  recurrent_month_mask: number
+  recurrent_interval: number
+  recurrent_count: number | null
+  recurrent_until: Date | null
+  recurrent_dates: Date[]
+  x: number
+  y: number
+  server: string | null
+  world: boolean
+  estate_id: string | null
+  estate_name: string | null
+  scene_name: string | null
+  place_id: string | null
+  world_id: string | null
+  community_id: string | null
+  url: string | null
+  user: string
+  user_name: string | null
+  contact: string | null
+  details: string | null
+  approved: boolean
+  rejected: boolean
+  approved_by: string | null
+  rejected_by: string | null
+  rejection_reason: string | null
+  highlighted: boolean
+  total_attendees: number
+  latest_attendees: string[]
+  categories: string[]
+  schedules: string[]
+  deleted_by_user: boolean
+  deleted_by_admin: boolean
+  deleted_by: string | null
+  deleted_at: Date | null
+  deleted_reason: string | null
+  created_at: Date
+  updated_at: Date
+}
+
+export type EventAttendee = {
+  event_id: string
+  user: string
+  user_name: string | null
+  created_at: Date
+}
+
 /** Authorization grants stored per wallet in profile_settings.permissions. */
 export enum ProfilePermission {
   ApproveOwnEvent = 'approve_own_event',

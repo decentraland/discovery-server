@@ -23,6 +23,15 @@ import {
   getProfileSettingsListHandler,
   updateProfileSettingsHandler
 } from './handlers/profile-settings-handler'
+import {
+  createEventHandler,
+  deleteEventHandler,
+  getAttendingEventsHandler,
+  getEventHandler,
+  getEventListHandler,
+  updateEventHandler
+} from './handlers/events-handler'
+import { createAttendeeHandler, deleteAttendeeHandler, getAttendeesHandler } from './handlers/attendees-handler'
 
 /**
  * Assembles the HTTP router. The central error handler is registered first so it
@@ -46,6 +55,17 @@ export async function setupRouter(globalContext: GlobalContext): Promise<Router<
   // schedules (public reads)
   router.get('/api/schedules', getSchedulesHandler)
   router.get('/api/schedules/:schedule_id', getScheduleByIdHandler)
+
+  // events — static/collection routes registered before the :event_id matcher
+  router.get('/api/events', signedFetch({ optional: true }), getEventListHandler)
+  router.post('/api/events', signedFetch(), createEventHandler)
+  router.get('/api/events/attending', signedFetch(), getAttendingEventsHandler)
+  router.get('/api/events/:event_id', signedFetch({ optional: true }), getEventHandler)
+  router.patch('/api/events/:event_id', signedFetch(), updateEventHandler)
+  router.delete('/api/events/:event_id', signedFetch(), deleteEventHandler)
+  router.get('/api/events/:event_id/attendees', getAttendeesHandler)
+  router.post('/api/events/:event_id/attendees', signedFetch(), createAttendeeHandler)
+  router.delete('/api/events/:event_id/attendees', signedFetch(), deleteAttendeeHandler)
 
   // places (optional-signed reads, signed writes)
   router.get('/api/places', signedFetch({ optional: true }), getPlaceListHandler)
