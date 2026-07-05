@@ -19,6 +19,7 @@ import { createEventsRepository } from './adapters/events-repository'
 import { createAttendeesRepository } from './adapters/attendees-repository'
 import { createDestinationsRepository } from './adapters/destinations-repository'
 import { createContentRatingsRepository } from './adapters/content-ratings-repository'
+import { createStorageComponent } from './adapters/storage'
 import { createCategoriesComponent } from './logic/categories'
 import { createSchedulesComponent } from './logic/schedules'
 import { createPlacesComponent } from './logic/places'
@@ -30,6 +31,7 @@ import { createEventsComponent } from './logic/events'
 import { createAttendeesComponent } from './logic/attendees'
 import { createDestinationsComponent } from './logic/destinations'
 import { createModerationComponent } from './logic/moderation'
+import { createReportsComponent } from './logic/reports'
 import { metricDeclarations } from './metrics'
 import type { AppComponents, GlobalContext } from './types'
 
@@ -78,6 +80,16 @@ export async function initComponents(): Promise<AppComponents> {
   const destinationsRepository = createDestinationsRepository()
   const contentRatingsRepository = createContentRatingsRepository()
 
+  // storage (one adapter per bucket)
+  const reportsStorage = await createStorageComponent(
+    { config, logs },
+    { bucketConfigKey: 'CONTENT_MODERATION_BUCKET_NAME', hostnameConfigKey: 'CONTENT_MODERATION_BUCKET_HOSTNAME' }
+  )
+  const postersStorage = await createStorageComponent(
+    { config, logs },
+    { bucketConfigKey: 'POSTER_BUCKET_NAME', hostnameConfigKey: 'POSTER_BUCKET_URL' }
+  )
+
   // logic
   const categories = await createCategoriesComponent({ pg, categoriesRepository, logs })
   const schedules = await createSchedulesComponent({ pg, schedulesRepository, logs })
@@ -105,6 +117,7 @@ export async function initComponents(): Promise<AppComponents> {
     contentRatingsRepository,
     logs
   })
+  const reports = await createReportsComponent({ reportsStorage, logs })
 
   return {
     config,
@@ -125,6 +138,8 @@ export async function initComponents(): Promise<AppComponents> {
     attendeesRepository,
     destinationsRepository,
     contentRatingsRepository,
+    reportsStorage,
+    postersStorage,
     categories,
     schedules,
     places,
@@ -135,6 +150,7 @@ export async function initComponents(): Promise<AppComponents> {
     events,
     attendees,
     destinations,
-    moderation
+    moderation,
+    reports
   }
 }

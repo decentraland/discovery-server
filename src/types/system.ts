@@ -17,6 +17,7 @@ import type { IEventsRepository } from '../adapters/events-repository'
 import type { IAttendeesRepository } from '../adapters/attendees-repository'
 import type { IDestinationsRepository } from '../adapters/destinations-repository'
 import type { IContentRatingsRepository } from '../adapters/content-ratings-repository'
+import type { IStorageComponent } from '../adapters/storage'
 import type { ICategoriesComponent } from '../logic/categories'
 import type { ISchedulesComponent } from '../logic/schedules'
 import type { IPlacesComponent } from '../logic/places'
@@ -28,6 +29,7 @@ import type { IEventsComponent } from '../logic/events'
 import type { IAttendeesComponent } from '../logic/attendees'
 import type { IDestinationsComponent } from '../logic/destinations'
 import type { IModerationComponent } from '../logic/moderation'
+import type { IReportsComponent } from '../logic/reports'
 import { metricDeclarations } from '../metrics'
 
 export type GlobalContext = {
@@ -64,6 +66,10 @@ export type BaseComponents = {
   destinationsRepository: IDestinationsRepository
   contentRatingsRepository: IContentRatingsRepository
 
+  // storage (one per bucket)
+  reportsStorage: IStorageComponent
+  postersStorage: IStorageComponent
+
   // logic
   categories: ICategoriesComponent
   schedules: ISchedulesComponent
@@ -76,6 +82,7 @@ export type BaseComponents = {
   attendees: IAttendeesComponent
   destinations: IDestinationsComponent
   moderation: IModerationComponent
+  reports: IReportsComponent
 }
 
 export type AppComponents = BaseComponents

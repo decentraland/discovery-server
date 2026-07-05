@@ -33,6 +33,7 @@ import {
 } from './handlers/events-handler'
 import { createAttendeeHandler, deleteAttendeeHandler, getAttendeesHandler } from './handlers/attendees-handler'
 import { getDestinationsByIdHandler, getDestinationsListHandler } from './handlers/destinations-handler'
+import { createReportHandler } from './handlers/report-handler'
 import { createAnyBearerMiddleware } from './middlewares/bearer-token'
 import {
   updatePlaceDisabledHandler,
@@ -96,6 +97,9 @@ export async function setupRouter(globalContext: GlobalContext): Promise<Router<
   if (withDataTeamBearer) {
     router.put('/api/places/:place_id/ranking', withDataTeamBearer, updatePlaceRankingHandler)
   }
+
+  // content-moderation report (signed → presigned S3 upload URL)
+  router.post('/api/report', signedFetch(), createReportHandler)
 
   // destinations — unified places+worlds discovery (legacy + new /v1 surface)
   router.get('/api/destinations', signedFetch({ optional: true }), getDestinationsListHandler)
