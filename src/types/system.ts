@@ -9,8 +9,10 @@ import type { ISchemaValidatorComponent } from '@dcl/schema-validator-component'
 import type { IPgComponent } from '../adapters/pg'
 import type { ICategoriesRepository } from '../adapters/categories-repository'
 import type { ISchedulesRepository } from '../adapters/schedules-repository'
+import type { IPlacesRepository } from '../adapters/places-repository'
 import type { ICategoriesComponent } from '../logic/categories'
 import type { ISchedulesComponent } from '../logic/schedules'
+import type { IPlacesComponent } from '../logic/places'
 import { metricDeclarations } from '../metrics'
 
 export type GlobalContext = {
@@ -38,10 +40,12 @@ export type BaseComponents = {
   // repositories
   categoriesRepository: ICategoriesRepository
   schedulesRepository: ISchedulesRepository
+  placesRepository: IPlacesRepository
 
   // logic
   categories: ICategoriesComponent
   schedules: ISchedulesComponent
+  places: IPlacesComponent
 }
 
 export type AppComponents = BaseComponents

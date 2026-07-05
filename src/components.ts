@@ -11,8 +11,10 @@ import { createSchemaValidatorComponent } from '@dcl/schema-validator-component'
 import { createPgAdapter } from './adapters/pg'
 import { createCategoriesRepository } from './adapters/categories-repository'
 import { createSchedulesRepository } from './adapters/schedules-repository'
+import { createPlacesRepository } from './adapters/places-repository'
 import { createCategoriesComponent } from './logic/categories'
 import { createSchedulesComponent } from './logic/schedules'
+import { createPlacesComponent } from './logic/places'
 import { metricDeclarations } from './metrics'
 import type { AppComponents, GlobalContext } from './types'
 
@@ -52,10 +54,12 @@ export async function initComponents(): Promise<AppComponents> {
   // repositories (stateless SQL owners)
   const categoriesRepository = createCategoriesRepository()
   const schedulesRepository = createSchedulesRepository()
+  const placesRepository = createPlacesRepository()
 
   // logic
   const categories = await createCategoriesComponent({ pg, categoriesRepository, logs })
   const schedules = await createSchedulesComponent({ pg, schedulesRepository, logs })
+  const places = await createPlacesComponent({ pg, placesRepository, logs })
 
   return {
     config,
@@ -68,7 +72,9 @@ export async function initComponents(): Promise<AppComponents> {
     pg,
     categoriesRepository,
     schedulesRepository,
+    placesRepository,
     categories,
-    schedules
+    schedules,
+    places
   }
 }

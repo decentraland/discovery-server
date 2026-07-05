@@ -6,6 +6,12 @@ import { statusHandler } from './handlers/status-handler'
 import { getCategoriesHandler } from './handlers/get-categories-handler'
 import { getEventCategoriesHandler } from './handlers/get-event-categories-handler'
 import { getScheduleByIdHandler, getSchedulesHandler } from './handlers/get-schedules-handler'
+import {
+  getPlaceHandler,
+  getPlaceListByIdHandler,
+  getPlaceListHandler,
+  getPlaceStatusListHandler
+} from './handlers/get-places-handler'
 
 /**
  * Assembles the HTTP router. The central error handler is registered first so
@@ -27,6 +33,12 @@ export async function setupRouter(_globalContext: GlobalContext): Promise<Router
   // schedules (public reads)
   router.get('/api/schedules', getSchedulesHandler)
   router.get('/api/schedules/:schedule_id', getScheduleByIdHandler)
+
+  // places (optional-signed reads; auth wiring lands with the signed-fetch middleware)
+  router.get('/api/places', getPlaceListHandler)
+  router.post('/api/places', getPlaceListByIdHandler)
+  router.post('/api/places/status', getPlaceStatusListHandler)
+  router.get('/api/places/:place_id', getPlaceHandler)
 
   return router
 }

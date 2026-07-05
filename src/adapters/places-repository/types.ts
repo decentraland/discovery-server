@@ -1,0 +1,38 @@
+import type { Queryable } from '../pg'
+import type { AggregatePlace, Place, PlaceStatus } from '../../types/entities'
+
+export type PlaceListOrderBy = 'like_score' | 'updated_at' | 'created_at'
+export type OrderDirection = 'asc' | 'desc'
+
+export type PlaceListFilters = {
+  search?: string
+  positions?: string[]
+  categories?: string[]
+  only_highlighted?: boolean
+  only_favorites?: boolean
+  owner?: string
+  creator_address?: string
+  sdk?: string
+  ids?: string[]
+  names?: string[]
+  /** Requesting wallet, for per-user like/favorite state and only_favorites. */
+  user?: string
+  order_by?: PlaceListOrderBy
+  order?: OrderDirection
+  limit?: number
+  offset?: number
+}
+
+/** Fields required to insert/upsert a place (used by tests and the ingestion consumer). */
+export type UpsertPlaceInput = Partial<Omit<Place, 'created_at' | 'updated_at'>> & {
+  id?: string
+  base_position: string
+}
+
+export interface IPlacesRepository {
+  findByIdWithAggregates(client: Queryable, id: string, user?: string): Promise<AggregatePlace | null>
+  findByIds(client: Queryable, ids: string[]): Promise<PlaceStatus[]>
+  findWithAggregates(client: Queryable, filters: PlaceListFilters): Promise<AggregatePlace[]>
+  count(client: Queryable, filters: PlaceListFilters): Promise<number>
+  insert(client: Queryable, input: UpsertPlaceInput): Promise<Place>
+}
