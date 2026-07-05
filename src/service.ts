@@ -1,22 +1,17 @@
-import { Lifecycle } from "@well-known-components/interfaces"
-import { setupRouter } from "./controllers/routes"
-import { AppComponents, GlobalContext, TestComponents } from "./types"
+import { Lifecycle } from '@well-known-components/interfaces'
+import type { AppComponents, GlobalContext, TestComponents } from './types'
+import { setupRouter } from './controllers/routes'
 
 // this function wires the business logic (adapters & controllers) with the components (ports)
 export async function main(program: Lifecycle.EntryPointParameters<AppComponents | TestComponents>) {
   const { components, startComponents } = program
-  const globalContext: GlobalContext = {
-    components,
-  }
 
-  // wire the HTTP router (make it automatic? TBD)
+  const globalContext: GlobalContext = { components }
+
   const router = await setupRouter(globalContext)
-  // register routes middleware
-  components.server.use(router.middleware())
-  // register not implemented/method not allowed/cors responses middleware
-  components.server.use(router.allowedMethods())
-  // set the context to be passed to the handlers
-  components.server.setContext(globalContext)
+  components.httpServer.use(router.middleware())
+  components.httpServer.use(router.allowedMethods())
+  components.httpServer.setContext(globalContext)
 
   // start ports: db, listeners, synchronizations, etc
   await startComponents()

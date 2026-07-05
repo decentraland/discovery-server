@@ -1,0 +1,34 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Use Node.js 24.x
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: yarn
+      - name: install
+        run: yarn install --frozen-lockfile
+      - name: lint
+        run: yarn lint:check
+      - name: build
+        run: yarn build
+      - name: unit tests
+        run: yarn test:unit
+      - name: start integration dependencies
+        run: docker compose -f docker-compose.test.yml up -d --wait
+      - name: integration tests
+        run: yarn test:integration
+        env:
+          PG_COMPONENT_PSQL_CONNECTION_STRING: postgres://postgres:postgres@localhost:5432/discovery
+          AWS_ENDPOINT: http://localhost:4566
+          AWS_REGION: us-east-1
