@@ -45,6 +45,43 @@ export type AggregatePlace = Place & {
 /** Minimal status row returned by the by-ids status endpoint. */
 export type PlaceStatus = Pick<Place, 'id' | 'disabled' | 'world' | 'world_name' | 'base_position'>
 
+export type World = {
+  id: string
+  world_name: string
+  title: string | null
+  description: string | null
+  image: string | null
+  content_rating: string
+  categories: string[]
+  owner: string | null
+  show_in_places: boolean
+  single_player: boolean
+  skybox_time: number | null
+  is_private: boolean
+  likes: number
+  dislikes: number
+  favorites: number
+  like_rate: number | null
+  like_score: number | null
+  highlighted: boolean
+  highlighted_image: string | null
+  ranking: number | null
+  created_at: string
+  updated_at: string
+  // Supplemented from the latest enabled place with this world_id (lateral join):
+  contact_name: string | null
+  contact_email: string | null
+  creator_address: string | null
+  sdk: string | null
+  deployed_at: string | null
+}
+
+export type AggregateWorld = World & {
+  user_like: boolean
+  user_dislike: boolean
+  user_favorite: boolean
+}
+
 export type Schedule = {
   id: string
   name: string

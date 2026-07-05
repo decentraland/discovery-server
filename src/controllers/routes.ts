@@ -12,6 +12,7 @@ import {
   getPlaceListHandler,
   getPlaceStatusListHandler
 } from './handlers/get-places-handler'
+import { getWorldHandler, getWorldListHandler, getWorldNamesHandler } from './handlers/get-worlds-handler'
 
 /**
  * Assembles the HTTP router. The central error handler is registered first so
@@ -39,6 +40,11 @@ export async function setupRouter(_globalContext: GlobalContext): Promise<Router
   router.post('/api/places', getPlaceListByIdHandler)
   router.post('/api/places/status', getPlaceStatusListHandler)
   router.get('/api/places/:place_id', getPlaceHandler)
+
+  // worlds (optional-signed reads)
+  router.get('/api/worlds', getWorldListHandler)
+  router.get('/api/world_names', getWorldNamesHandler)
+  router.get('/api/worlds/:world_id', getWorldHandler)
 
   return router
 }

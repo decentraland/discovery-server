@@ -12,9 +12,11 @@ import { createPgAdapter } from './adapters/pg'
 import { createCategoriesRepository } from './adapters/categories-repository'
 import { createSchedulesRepository } from './adapters/schedules-repository'
 import { createPlacesRepository } from './adapters/places-repository'
+import { createWorldsRepository } from './adapters/worlds-repository'
 import { createCategoriesComponent } from './logic/categories'
 import { createSchedulesComponent } from './logic/schedules'
 import { createPlacesComponent } from './logic/places'
+import { createWorldsComponent } from './logic/worlds'
 import { metricDeclarations } from './metrics'
 import type { AppComponents, GlobalContext } from './types'
 
@@ -55,11 +57,13 @@ export async function initComponents(): Promise<AppComponents> {
   const categoriesRepository = createCategoriesRepository()
   const schedulesRepository = createSchedulesRepository()
   const placesRepository = createPlacesRepository()
+  const worldsRepository = createWorldsRepository()
 
   // logic
   const categories = await createCategoriesComponent({ pg, categoriesRepository, logs })
   const schedules = await createSchedulesComponent({ pg, schedulesRepository, logs })
   const places = await createPlacesComponent({ pg, placesRepository, logs })
+  const worlds = await createWorldsComponent({ pg, worldsRepository, logs })
 
   return {
     config,
@@ -73,8 +77,10 @@ export async function initComponents(): Promise<AppComponents> {
     categoriesRepository,
     schedulesRepository,
     placesRepository,
+    worldsRepository,
     categories,
     schedules,
-    places
+    places,
+    worlds
   }
 }
