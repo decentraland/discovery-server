@@ -82,6 +82,21 @@ export type AggregateWorld = World & {
   user_favorite: boolean
 }
 
+/** Authorization grants stored per wallet in profile_settings.permissions. */
+export enum ProfilePermission {
+  ApproveOwnEvent = 'approve_own_event',
+  ApproveAnyEvent = 'approve_any_event',
+  EditAnyEvent = 'edit_any_event',
+  EditAnySchedule = 'edit_any_schedule',
+  EditAnyProfile = 'edit_any_profile',
+  TestAnyNotification = 'test_any_notification'
+}
+
+export type ProfileSettings = {
+  user: string
+  permissions: ProfilePermission[]
+}
+
 export type Schedule = {
   id: string
   name: string

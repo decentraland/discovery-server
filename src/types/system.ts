@@ -12,11 +12,13 @@ import type { ISchedulesRepository } from '../adapters/schedules-repository'
 import type { IPlacesRepository } from '../adapters/places-repository'
 import type { IWorldsRepository } from '../adapters/worlds-repository'
 import type { IInteractionsRepository } from '../adapters/interactions-repository'
+import type { IProfileSettingsRepository } from '../adapters/profile-settings-repository'
 import type { ICategoriesComponent } from '../logic/categories'
 import type { ISchedulesComponent } from '../logic/schedules'
 import type { IPlacesComponent } from '../logic/places'
 import type { IWorldsComponent } from '../logic/worlds'
 import type { IInteractionsComponent } from '../logic/interactions'
+import type { IProfilesComponent } from '../logic/profiles'
 import { metricDeclarations } from '../metrics'
 
 export type GlobalContext = {
@@ -47,6 +49,7 @@ export type BaseComponents = {
   placesRepository: IPlacesRepository
   worldsRepository: IWorldsRepository
   interactionsRepository: IInteractionsRepository
+  profileSettingsRepository: IProfileSettingsRepository
 
   // logic
   categories: ICategoriesComponent
@@ -54,6 +57,7 @@ export type BaseComponents = {
   places: IPlacesComponent
   worlds: IWorldsComponent
   interactions: IInteractionsComponent
+  profiles: IProfilesComponent
 }
 
 export type AppComponents = BaseComponents

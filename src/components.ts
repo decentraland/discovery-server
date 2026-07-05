@@ -14,11 +14,13 @@ import { createSchedulesRepository } from './adapters/schedules-repository'
 import { createPlacesRepository } from './adapters/places-repository'
 import { createWorldsRepository } from './adapters/worlds-repository'
 import { createInteractionsRepository } from './adapters/interactions-repository'
+import { createProfileSettingsRepository } from './adapters/profile-settings-repository'
 import { createCategoriesComponent } from './logic/categories'
 import { createSchedulesComponent } from './logic/schedules'
 import { createPlacesComponent } from './logic/places'
 import { createWorldsComponent } from './logic/worlds'
 import { createInteractionsComponent } from './logic/interactions'
+import { createProfilesComponent } from './logic/profiles'
 import { metricDeclarations } from './metrics'
 import type { AppComponents, GlobalContext } from './types'
 
@@ -61,6 +63,7 @@ export async function initComponents(): Promise<AppComponents> {
   const placesRepository = createPlacesRepository()
   const worldsRepository = createWorldsRepository()
   const interactionsRepository = createInteractionsRepository()
+  const profileSettingsRepository = createProfileSettingsRepository()
 
   // logic
   const categories = await createCategoriesComponent({ pg, categoriesRepository, logs })
@@ -68,6 +71,7 @@ export async function initComponents(): Promise<AppComponents> {
   const places = await createPlacesComponent({ pg, placesRepository, logs })
   const worlds = await createWorldsComponent({ pg, worldsRepository, logs })
   const interactions = await createInteractionsComponent({ pg, interactionsRepository, logs })
+  const profiles = await createProfilesComponent({ pg, profileSettingsRepository, config, logs })
 
   return {
     config,
@@ -83,10 +87,12 @@ export async function initComponents(): Promise<AppComponents> {
     placesRepository,
     worldsRepository,
     interactionsRepository,
+    profileSettingsRepository,
     categories,
     schedules,
     places,
     worlds,
-    interactions
+    interactions,
+    profiles
   }
 }

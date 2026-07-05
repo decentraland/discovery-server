@@ -15,6 +15,14 @@ import {
 } from './handlers/get-places-handler'
 import { getWorldHandler, getWorldListHandler, getWorldNamesHandler } from './handlers/get-worlds-handler'
 import { updateFavoritesHandler, updateLikesHandler } from './handlers/update-interactions-handler'
+import { createRequirePermission } from './middlewares/authorization'
+import { ProfilePermission } from '../types/entities'
+import {
+  getMyProfileSettingsHandler,
+  getProfileSettingsHandler,
+  getProfileSettingsListHandler,
+  updateProfileSettingsHandler
+} from './handlers/profile-settings-handler'
 
 /**
  * Assembles the HTTP router. The central error handler is registered first so it
@@ -24,6 +32,7 @@ import { updateFavoritesHandler, updateLikesHandler } from './handlers/update-in
 export async function setupRouter(globalContext: GlobalContext): Promise<Router<GlobalContext>> {
   const router = new Router<GlobalContext>()
   const signedFetch = createSignedFetchMiddleware(globalContext.components.fetcher)
+  const requirePermission = createRequirePermission(globalContext.components.profiles)
 
   router.use(errorHandler)
 
@@ -52,6 +61,27 @@ export async function setupRouter(globalContext: GlobalContext): Promise<Router<
   router.get('/api/worlds/:world_id', signedFetch({ optional: true }), getWorldHandler)
   router.patch('/api/worlds/:world_id/likes', signedFetch(), updateLikesHandler)
   router.patch('/api/worlds/:world_id/favorites', signedFetch(), updateFavoritesHandler)
+
+  // profile settings (permissions/authorization)
+  router.get(
+    '/api/profiles/settings',
+    signedFetch(),
+    requirePermission(ProfilePermission.EditAnyProfile),
+    getProfileSettingsListHandler
+  )
+  router.get('/api/profiles/me/settings', signedFetch(), getMyProfileSettingsHandler)
+  router.get(
+    '/api/profiles/:profile_id/settings',
+    signedFetch(),
+    requirePermission(ProfilePermission.EditAnyProfile),
+    getProfileSettingsHandler
+  )
+  router.patch(
+    '/api/profiles/:profile_id/settings',
+    signedFetch(),
+    requirePermission(ProfilePermission.EditAnyProfile),
+    updateProfileSettingsHandler
+  )
 
   return router
 }
