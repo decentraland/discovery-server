@@ -18,31 +18,35 @@ export async function createInteractionsComponent(
     return command.userActivity ?? (await snapshotClient.getVotingPower(command.user))
   }
 
+  // Canonicalize the entity id: worlds.id is CHECK-lowercased and uuid::text is
+  // lowercase, so the write must use the same form the read/recompute paths do.
   async function setLike(command: LikeCommand): Promise<void> {
     const userActivity = await resolveActivity(command)
+    const entityId = command.entityId.toLowerCase()
     await pg.withTransaction(async (tx) => {
       await interactionsRepository.setLike(tx, {
-        entityId: command.entityId,
+        entityId,
         entityType: command.entityType,
         user: command.user,
         userActivity,
         like: command.like
       })
-      await interactionsRepository.recomputeLikes(tx, command.entityType, command.entityId)
+      await interactionsRepository.recomputeLikes(tx, command.entityType, entityId)
     })
   }
 
   async function setFavorite(command: FavoriteCommand): Promise<void> {
     const userActivity = await resolveActivity(command)
+    const entityId = command.entityId.toLowerCase()
     await pg.withTransaction(async (tx) => {
       await interactionsRepository.setFavorite(tx, {
-        entityId: command.entityId,
+        entityId,
         entityType: command.entityType,
         user: command.user,
         userActivity,
         favorite: command.favorite
       })
-      await interactionsRepository.recomputeFavorites(tx, command.entityType, command.entityId)
+      await interactionsRepository.recomputeFavorites(tx, command.entityType, entityId)
     })
   }
 

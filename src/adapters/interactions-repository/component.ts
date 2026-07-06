@@ -76,7 +76,7 @@ export function createInteractionsRepository(): IInteractionsRepository {
         like_score = (CASE WHEN (c.count_active_likes + c.count_active_dislikes > 0) THEN
           ((c.count_active_likes + 1.9208)
           / (c.count_active_likes + c.count_active_dislikes) - 1.96
-          * SQRT((c.count_active_likes * c.count_active_dislikes) / (c.count_active_likes + c.count_active_dislikes) + 0.9604)
+          * SQRT((c.count_active_likes * c.count_active_dislikes)::float / (c.count_active_likes + c.count_active_dislikes) + 0.9604)
           / (c.count_active_likes + c.count_active_dislikes))
           / (1 + 3.8416 / (c.count_active_likes + c.count_active_dislikes))
         ELSE NULL END)

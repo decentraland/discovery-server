@@ -2,6 +2,31 @@ import SQL from 'sql-template-strings'
 import { test } from '../components'
 
 test('when recording interactions against a real database', function ({ components }) {
+  describe('and a user likes a world using a mixed-case id', () => {
+    beforeEach(async () => {
+      await components.pg.query(SQL`DELETE FROM user_likes`)
+      await components.pg.query(SQL`DELETE FROM worlds`)
+      await components.worldsRepository.upsert(components.pg, {
+        id: 'my-world.dcl.eth',
+        world_name: 'my-world.dcl.eth',
+        show_in_places: true
+      })
+      await components.interactions.setLike({
+        entityId: 'My-World.dcl.eth',
+        entityType: 'world',
+        user: '0xAAA',
+        userActivity: 200,
+        like: true
+      })
+    })
+
+    it('should update the world like counters despite the id casing', async () => {
+      const world = await components.worldsRepository.findByIdWithAggregates(components.pg, 'my-world.dcl.eth', '0xaaa')
+
+      expect(world).toEqual(expect.objectContaining({ likes: 1, user_like: true }))
+    })
+  })
+
   describe('and multiple active users like and dislike a place', () => {
     let placeId: string
 
