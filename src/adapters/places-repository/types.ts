@@ -34,6 +34,21 @@ export type PlaceModerationFields = Partial<
   Pick<Place, 'content_rating' | 'highlighted' | 'highlighted_image' | 'disabled' | 'disabled_reason' | 'ranking'>
 >
 
+/** Scene data extracted from a Catalyst deployment, keyed on base_position. */
+export type ScenePlaceInput = {
+  base_position: string
+  positions: string[]
+  title: string | null
+  description: string | null
+  image: string | null
+  owner: string | null
+  contact_name: string | null
+  contact_email: string | null
+  categories: string[]
+  sdk: string | null
+  deployed_at: string
+}
+
 export interface IPlacesRepository {
   findByIdWithAggregates(client: Queryable, id: string, user?: string): Promise<AggregatePlace | null>
   findByIds(client: Queryable, ids: string[]): Promise<PlaceStatus[]>
@@ -42,4 +57,6 @@ export interface IPlacesRepository {
   insert(client: Queryable, input: UpsertPlaceInput): Promise<Place>
   /** Apply moderation/admin field updates; sets disabled_at when disabling. */
   updateModeration(client: Queryable, id: string, fields: PlaceModerationFields): Promise<Place | null>
+  /** Upsert a genesis place from a scene deployment (matched on base_position); re-enables it. */
+  upsertScene(client: Queryable, scene: ScenePlaceInput): Promise<Place>
 }

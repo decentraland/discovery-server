@@ -38,6 +38,8 @@ import type { ISitemapComponent } from '../logic/sitemap'
 import type { IPostersComponent } from '../logic/posters'
 import type { ISocialComponent } from '../logic/social'
 import type { INotificationsComponent } from '../logic/notifications'
+import type { IIngestionComponent } from '../logic/ingestion'
+import type { IQueueConsumerComponent } from '@dcl/queue-consumer-component'
 import { metricDeclarations } from '../metrics'
 
 export type GlobalContext = {
@@ -100,12 +102,15 @@ export type BaseComponents = {
   posters: IPostersComponent
   social: ISocialComponent
   notifications: INotificationsComponent
+  ingestion: IIngestionComponent
 
   // background jobs (present only when BACKGROUND_JOBS_ENABLED)
   updateNextStartAtJob?: IJobComponent
   notifyUpcomingJob?: IJobComponent
   notifyStartedJob?: IJobComponent
   notifyEndedJob?: IJobComponent
+  // SQS deployment consumer (present only when AWS_SQS_QUEUE_URL is configured)
+  queueProcessor?: IQueueConsumerComponent
 }
 
 export type AppComponents = BaseComponents

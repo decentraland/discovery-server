@@ -40,6 +40,10 @@ import { createSitemapComponent } from './logic/sitemap'
 import { createPostersComponent } from './logic/posters'
 import { createSocialComponent } from './logic/social'
 import { createNotificationsComponent } from './logic/notifications'
+import { createIngestionComponent } from './logic/ingestion'
+import { createSqsComponent } from '@dcl/sqs-component'
+import { createQueueConsumerComponent } from '@dcl/queue-consumer-component'
+import { Events } from '@dcl/schemas'
 import { metricDeclarations } from './metrics'
 import type { AppComponents, GlobalContext } from './types'
 
@@ -161,6 +165,21 @@ export async function initComponents(): Promise<AppComponents> {
     ? createJobComponent({ logs }, () => notifications.notifyEnded(), notificationsIntervalMs, { repeat: true })
     : undefined
 
+  const ingestion = await createIngestionComponent({ pg, placesRepository, logs })
+
+  // SQS deployment consumer: only when a queue is configured and jobs are enabled.
+  const sqsQueueUrl = await config.getString('AWS_SQS_QUEUE_URL')
+  let queueProcessor: Awaited<ReturnType<typeof createQueueConsumerComponent>> | undefined
+  if (backgroundJobsEnabled && sqsQueueUrl) {
+    const sqs = await createSqsComponent(config)
+    queueProcessor = createQueueConsumerComponent({ sqs, logs })
+    queueProcessor.addMessageHandler(
+      Events.Type.CATALYST_DEPLOYMENT,
+      Events.SubType.CatalystDeployment.SCENE,
+      (message) => ingestion.processCatalystDeployment(message as never).then(() => undefined)
+    )
+  }
+
   return {
     config,
     logs,
@@ -201,9 +220,11 @@ export async function initComponents(): Promise<AppComponents> {
     posters,
     social,
     notifications,
+    ingestion,
     ...(updateNextStartAtJob ? { updateNextStartAtJob } : {}),
     ...(notifyUpcomingJob ? { notifyUpcomingJob } : {}),
     ...(notifyStartedJob ? { notifyStartedJob } : {}),
-    ...(notifyEndedJob ? { notifyEndedJob } : {})
+    ...(notifyEndedJob ? { notifyEndedJob } : {}),
+    ...(queueProcessor ? { queueProcessor } : {})
   }
 }

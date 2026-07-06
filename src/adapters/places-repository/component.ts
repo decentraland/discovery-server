@@ -172,5 +172,35 @@ export function createPlacesRepository(): IPlacesRepository {
     return result.rows[0] ?? null
   }
 
-  return { findByIdWithAggregates, findByIds, findWithAggregates, count, insert, updateModeration }
+  async function upsertScene(client: Queryable, scene: import('./types').ScenePlaceInput): Promise<Place> {
+    const existing = await client.query<{ id: string }>(
+      SQL`SELECT id FROM places WHERE base_position = ${scene.base_position} AND world IS false LIMIT 1`
+    )
+    if (existing.rows[0]) {
+      const result = await client.query<Place>(SQL`
+        UPDATE places SET
+          positions = ${scene.positions}, title = ${scene.title}, description = ${scene.description},
+          image = ${scene.image}, owner = ${scene.owner}, creator_address = ${scene.owner},
+          contact_name = ${scene.contact_name}, contact_email = ${scene.contact_email},
+          categories = ${scene.categories}, sdk = ${scene.sdk}, deployed_at = ${scene.deployed_at},
+          disabled = false, disabled_at = NULL, updated_at = now()
+        WHERE id = ${existing.rows[0].id}
+        RETURNING *`)
+      return result.rows[0]
+    }
+
+    const result = await client.query<Place>(SQL`
+      INSERT INTO places (
+        base_position, positions, title, description, image, owner, creator_address,
+        contact_name, contact_email, categories, sdk, deployed_at, world
+      ) VALUES (
+        ${scene.base_position}, ${scene.positions}, ${scene.title}, ${scene.description}, ${scene.image},
+        ${scene.owner}, ${scene.owner}, ${scene.contact_name}, ${scene.contact_email}, ${scene.categories},
+        ${scene.sdk}, ${scene.deployed_at}, false
+      )
+      RETURNING *`)
+    return result.rows[0]
+  }
+
+  return { findByIdWithAggregates, findByIds, findWithAggregates, count, insert, updateModeration, upsertScene }
 }
