@@ -82,6 +82,8 @@ export type AggregateWorld = World & {
   user_like: boolean
   user_dislike: boolean
   user_favorite: boolean
+  /** Realtime connected users, decorated from worlds-live-data when available. */
+  user_count?: number
 }
 
 /** A unified discovery entity: a place or a world, in one shape. */

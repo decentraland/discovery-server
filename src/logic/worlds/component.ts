@@ -5,27 +5,33 @@ import type { IWorldsComponent, WorldListResult } from './types'
 import { WorldNotFoundError } from './errors'
 
 /**
- * World reads. Live user counts (worlds-content-server) are layered in once that
- * adapter lands — they decorate the result, they do not gate it.
+ * World reads. Stored aggregates and per-user state come from the repository;
+ * realtime connected-user counts are decorated from the worlds-live-data cache
+ * (best-effort, never gating).
  */
 export async function createWorldsComponent(
-  components: Pick<AppComponents, 'pg' | 'worldsRepository' | 'logs'>
+  components: Pick<AppComponents, 'pg' | 'worldsRepository' | 'worldsLiveData' | 'logs'>
 ): Promise<IWorldsComponent> {
-  const { pg, worldsRepository } = components
+  const { pg, worldsRepository, worldsLiveData } = components
+
+  async function decorate(world: AggregateWorld): Promise<AggregateWorld> {
+    return { ...world, user_count: await worldsLiveData.getUserCount(world.world_name) }
+  }
 
   async function getWorld(id: string, user?: string): Promise<AggregateWorld> {
     const world = await worldsRepository.findByIdWithAggregates(pg, id, user)
     if (!world) {
       throw new WorldNotFoundError(id)
     }
-    return world
+    return decorate(world)
   }
 
   async function getWorlds(filters: WorldListFilters): Promise<WorldListResult> {
-    const [data, total] = await Promise.all([
+    const [rows, total] = await Promise.all([
       worldsRepository.findWithAggregates(pg, filters),
       worldsRepository.count(pg, filters)
     ])
+    const data = await Promise.all(rows.map(decorate))
     return { data, total }
   }
 

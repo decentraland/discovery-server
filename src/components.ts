@@ -26,6 +26,7 @@ import { createSnsPublisher } from './adapters/sns-publisher'
 import { createSnapshotClient } from './adapters/snapshot-client'
 import { createCommsGatekeeperClient } from './adapters/comms-gatekeeper-client'
 import { createHotScenesComponent } from './adapters/hot-scenes'
+import { createWorldsLiveDataComponent } from './adapters/worlds-live-data'
 import { createJobComponent } from '@dcl/job-component'
 import { createCategoriesComponent } from './logic/categories'
 import { createSchedulesComponent } from './logic/schedules'
@@ -102,6 +103,7 @@ export async function initComponents(): Promise<AppComponents> {
   const snapshotClient = await createSnapshotClient({ config, logs, fetcher })
   const commsGatekeeperClient = await createCommsGatekeeperClient({ config, logs, fetcher })
   const hotScenes = await createHotScenesComponent({ config, logs, fetcher })
+  const worldsLiveData = await createWorldsLiveDataComponent({ config, logs, fetcher })
 
   // storage (one adapter per bucket)
   const reportsStorage = await createStorageComponent(
@@ -117,7 +119,7 @@ export async function initComponents(): Promise<AppComponents> {
   const categories = await createCategoriesComponent({ pg, categoriesRepository, logs })
   const schedules = await createSchedulesComponent({ pg, schedulesRepository, logs })
   const places = await createPlacesComponent({ pg, placesRepository, hotScenes, logs })
-  const worlds = await createWorldsComponent({ pg, worldsRepository, logs })
+  const worlds = await createWorldsComponent({ pg, worldsRepository, worldsLiveData, logs })
   const interactions = await createInteractionsComponent({ pg, interactionsRepository, snapshotClient, logs })
   const profiles = await createProfilesComponent({ pg, profileSettingsRepository, config, logs })
   const recurrence = createRecurrenceComponent()
@@ -181,6 +183,14 @@ export async function initComponents(): Promise<AppComponents> {
         repeat: true
       })
     : undefined
+  const worldsLiveDataRefreshJob = backgroundJobsEnabled
+    ? createJobComponent(
+        { logs },
+        () => worldsLiveData.refresh(),
+        (await config.getNumber('WORLDS_LIVE_DATA_TTL_MS')) ?? 60_000,
+        { repeat: true }
+      )
+    : undefined
 
   const ingestion = await createIngestionComponent({ pg, placesRepository, logs })
 
@@ -222,6 +232,7 @@ export async function initComponents(): Promise<AppComponents> {
     snapshotClient,
     commsGatekeeperClient,
     hotScenes,
+    worldsLiveData,
     reportsStorage,
     postersStorage,
     categories,
@@ -246,6 +257,7 @@ export async function initComponents(): Promise<AppComponents> {
     ...(notifyStartedJob ? { notifyStartedJob } : {}),
     ...(notifyEndedJob ? { notifyEndedJob } : {}),
     ...(hotScenesRefreshJob ? { hotScenesRefreshJob } : {}),
+    ...(worldsLiveDataRefreshJob ? { worldsLiveDataRefreshJob } : {}),
     ...(queueProcessor ? { queueProcessor } : {})
   }
 }

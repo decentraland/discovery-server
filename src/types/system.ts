@@ -24,6 +24,7 @@ import type { ISnsPublisher } from '../adapters/sns-publisher'
 import type { ISnapshotClient } from '../adapters/snapshot-client'
 import type { ICommsGatekeeperClient } from '../adapters/comms-gatekeeper-client'
 import type { IHotScenesComponent } from '../adapters/hot-scenes'
+import type { IWorldsLiveDataComponent } from '../adapters/worlds-live-data'
 import type { IJobComponent } from '@dcl/job-component'
 import type { ICategoriesComponent } from '../logic/categories'
 import type { ISchedulesComponent } from '../logic/schedules'
@@ -94,6 +95,7 @@ export type BaseComponents = {
 
   // cached live data
   hotScenes: IHotScenesComponent
+  worldsLiveData: IWorldsLiveDataComponent
 
   // logic
   categories: ICategoriesComponent
@@ -120,6 +122,7 @@ export type BaseComponents = {
   notifyStartedJob?: IJobComponent
   notifyEndedJob?: IJobComponent
   hotScenesRefreshJob?: IJobComponent
+  worldsLiveDataRefreshJob?: IJobComponent
   // SQS deployment consumer (present only when AWS_SQS_QUEUE_URL is configured)
   queueProcessor?: IQueueConsumerComponent
 }

@@ -4,6 +4,7 @@ import type { IWorldsRepository } from '../../src/adapters/worlds-repository'
 describe('when reading worlds', () => {
   let worldsRepository: jest.Mocked<IWorldsRepository>
   let pg: any
+  let worldsLiveData: any
   let logs: any
 
   beforeEach(() => {
@@ -16,6 +17,7 @@ describe('when reading worlds', () => {
       updateModeration: jest.fn()
     }
     pg = {}
+    worldsLiveData = { getUserCount: jest.fn().mockResolvedValue(0), refresh: jest.fn() }
     logs = { getLogger: () => ({ info: jest.fn(), error: jest.fn(), warn: jest.fn(), debug: jest.fn() }) }
   })
 
@@ -29,7 +31,7 @@ describe('when reading worlds', () => {
     })
 
     it('should throw a WorldNotFoundError', async () => {
-      const worlds = await createWorldsComponent({ pg, worldsRepository, logs })
+      const worlds = await createWorldsComponent({ pg, worldsRepository, worldsLiveData, logs })
 
       await expect(worlds.getWorld('missing.dcl.eth')).rejects.toThrow(WorldNotFoundError)
     })
@@ -42,7 +44,7 @@ describe('when reading worlds', () => {
     })
 
     it('should return the matching worlds and the total count', async () => {
-      const worlds = await createWorldsComponent({ pg, worldsRepository, logs })
+      const worlds = await createWorldsComponent({ pg, worldsRepository, worldsLiveData, logs })
       const result = await worlds.getWorlds({})
 
       expect(result).toEqual({ data: [], total: 0 })
