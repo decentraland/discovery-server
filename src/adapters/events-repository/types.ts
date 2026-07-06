@@ -50,4 +50,8 @@ export interface IEventsRepository {
   getLiveEntityIds(client: Queryable): Promise<{ placeIds: string[]; worldIds: string[] }>
   /** Recurrent, non-deleted events whose tracked next occurrence has passed but whose rule still has future dates. */
   findRecurrentNeedingUpdate(client: Queryable, limit: number): Promise<Event[]>
+  /** Approved, non-deleted events whose next_start_at falls in (since, until] (epoch ms). */
+  findInStartWindow(client: Queryable, sinceMs: number, untilMs: number): Promise<Event[]>
+  /** Approved, non-deleted events whose next_finish_at falls in (since, until] (epoch ms). */
+  findInFinishWindow(client: Queryable, sinceMs: number, untilMs: number): Promise<Event[]>
 }

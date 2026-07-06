@@ -184,5 +184,36 @@ export function createEventsRepository(): IEventsRepository {
     return result.rows
   }
 
-  return { create, findById, update, list, count, listAttending, getLiveEntityIds, findRecurrentNeedingUpdate }
+  async function findInStartWindow(client: Queryable, sinceMs: number, untilMs: number): Promise<Event[]> {
+    const result = await client.query<Event>(SQL`
+      SELECT * FROM events
+      WHERE approved IS true AND deleted_at IS NULL
+        AND next_start_at > to_timestamp(${sinceMs} / 1000.0)
+        AND next_start_at <= to_timestamp(${untilMs} / 1000.0)
+      ORDER BY next_start_at ASC`)
+    return result.rows
+  }
+
+  async function findInFinishWindow(client: Queryable, sinceMs: number, untilMs: number): Promise<Event[]> {
+    const result = await client.query<Event>(SQL`
+      SELECT * FROM events
+      WHERE approved IS true AND deleted_at IS NULL
+        AND next_finish_at > to_timestamp(${sinceMs} / 1000.0)
+        AND next_finish_at <= to_timestamp(${untilMs} / 1000.0)
+      ORDER BY next_finish_at ASC`)
+    return result.rows
+  }
+
+  return {
+    create,
+    findById,
+    update,
+    list,
+    count,
+    listAttending,
+    getLiveEntityIds,
+    findRecurrentNeedingUpdate,
+    findInStartWindow,
+    findInFinishWindow
+  }
 }

@@ -39,6 +39,7 @@ import { createReportsComponent } from './logic/reports'
 import { createSitemapComponent } from './logic/sitemap'
 import { createPostersComponent } from './logic/posters'
 import { createSocialComponent } from './logic/social'
+import { createNotificationsComponent } from './logic/notifications'
 import { metricDeclarations } from './metrics'
 import type { AppComponents, GlobalContext } from './types'
 
@@ -133,16 +134,31 @@ export async function initComponents(): Promise<AppComponents> {
   const sitemap = await createSitemapComponent({ config, eventsRepository, schedulesRepository, pg, logs })
   const posters = await createPostersComponent({ postersStorage, logs })
   const social = await createSocialComponent({ places, worlds, config, logs })
+  const notifications = await createNotificationsComponent({
+    pg,
+    eventsRepository,
+    attendeesRepository,
+    notificationCursorsRepository,
+    snsPublisher,
+    config,
+    logs
+  })
 
   // Background jobs: created only when enabled so exactly one deployment owns them.
   const backgroundJobsEnabled = (await config.getString('BACKGROUND_JOBS_ENABLED')) === 'true'
+  const jobIntervalMs = (await config.getNumber('UPDATE_NEXT_START_AT_INTERVAL_MS')) ?? 60_000
+  const notificationsIntervalMs = (await config.getNumber('NOTIFICATIONS_INTERVAL_MS')) ?? 60_000
   const updateNextStartAtJob = backgroundJobsEnabled
-    ? createJobComponent(
-        { logs },
-        () => events.updateNextStartAt(),
-        (await config.getNumber('UPDATE_NEXT_START_AT_INTERVAL_MS')) ?? 60_000,
-        { repeat: true }
-      )
+    ? createJobComponent({ logs }, () => events.updateNextStartAt(), jobIntervalMs, { repeat: true })
+    : undefined
+  const notifyUpcomingJob = backgroundJobsEnabled
+    ? createJobComponent({ logs }, () => notifications.notifyUpcoming(), notificationsIntervalMs, { repeat: true })
+    : undefined
+  const notifyStartedJob = backgroundJobsEnabled
+    ? createJobComponent({ logs }, () => notifications.notifyStarted(), notificationsIntervalMs, { repeat: true })
+    : undefined
+  const notifyEndedJob = backgroundJobsEnabled
+    ? createJobComponent({ logs }, () => notifications.notifyEnded(), notificationsIntervalMs, { repeat: true })
     : undefined
 
   return {
@@ -184,6 +200,10 @@ export async function initComponents(): Promise<AppComponents> {
     sitemap,
     posters,
     social,
-    ...(updateNextStartAtJob ? { updateNextStartAtJob } : {})
+    notifications,
+    ...(updateNextStartAtJob ? { updateNextStartAtJob } : {}),
+    ...(notifyUpcomingJob ? { notifyUpcomingJob } : {}),
+    ...(notifyStartedJob ? { notifyStartedJob } : {}),
+    ...(notifyEndedJob ? { notifyEndedJob } : {})
   }
 }
