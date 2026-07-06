@@ -50,6 +50,12 @@ export interface IEventsRepository {
   listAttending(client: Queryable, user: string): Promise<Event[]>
   /** Distinct place/world ids that currently have a live (approved, ongoing) event. */
   getLiveEntityIds(client: Queryable): Promise<{ placeIds: string[]; worldIds: string[] }>
+  /** The earliest upcoming approved event per place/world id (for destination decoration). */
+  getNextEventsForEntities(
+    client: Queryable,
+    placeIds: string[],
+    worldIds: string[]
+  ): Promise<Record<string, { id: string; name: string; next_start_at: string }>>
   /** Recurrent, non-deleted events whose tracked next occurrence has passed but whose rule still has future dates. */
   findRecurrentNeedingUpdate(client: Queryable, limit: number): Promise<Event[]>
   /** Approved, non-deleted events whose next_start_at falls in (since, until] (epoch ms). */

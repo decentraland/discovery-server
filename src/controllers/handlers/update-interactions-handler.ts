@@ -2,7 +2,7 @@ import type { HandlerContextWithPath, HTTPResponse } from '../../types'
 import { BadRequestError, UnauthorizedError } from '../../types/errors'
 import { resolveEntityType } from '../../logic/entity-id'
 
-type InteractionSummary = {
+export type InteractionSummary = {
   likes: number
   dislikes: number
   favorites: number
@@ -11,7 +11,7 @@ type InteractionSummary = {
   user_favorite: boolean
 }
 
-async function refreshedSummary(
+export async function refreshedSummary(
   components: Pick<HandlerContextWithPath<'places' | 'worlds'>['components'], 'places' | 'worlds'>,
   entityId: string,
   entityType: 'place' | 'world',

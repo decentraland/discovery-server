@@ -12,6 +12,8 @@ export type DestinationListFilters = {
   ids?: string[]
   kinds?: DestinationKind[]
   only_highlighted?: boolean
+  only_favorites?: boolean
+  owner?: string
   user?: string
   order_by?: DestinationOrderBy
   order?: 'asc' | 'desc'

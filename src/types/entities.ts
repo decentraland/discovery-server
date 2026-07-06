@@ -113,6 +113,8 @@ export type Destination = {
   user_count?: number
   /** 30-day unique visitors (places only; 0 for worlds), from scene-stats. */
   user_visits?: number
+  /** The next upcoming event at this destination, when decorated (with=next_event). */
+  next_event?: { id: string; name: string; next_start_at: string } | null
 }
 
 export type Event = {

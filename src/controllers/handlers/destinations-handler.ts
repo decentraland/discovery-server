@@ -19,6 +19,8 @@ function parseFilters(params: URLSearchParams, user?: string): DestinationListFi
     positions: multi(params, 'positions'),
     worldNames: multi(params, 'world_names') ?? multi(params, 'names'),
     only_highlighted: params.get('only_highlighted') === 'true',
+    only_favorites: params.get('only_favorites') === 'true',
+    owner: params.get('owner') ?? undefined,
     kinds: kinds?.length ? kinds : undefined,
     order_by: ORDER_BY_VALUES.includes(orderByParam as DestinationOrderBy)
       ? (orderByParam as DestinationOrderBy)
@@ -40,10 +42,12 @@ export async function getDestinationsListHandler(
   const withList = multi(params, 'with') ?? []
   const withLiveEvents = params.get('with_live_events') === 'true' || withList.includes('live_events')
   const withConnectedUsers = params.get('with_connected_users') === 'true' || withList.includes('connected_users')
+  const withNextEvent = withList.includes('next_event')
 
   const { data, total } = await destinations.getDestinations(parseFilters(params, user), {
     withLiveEvents,
-    withConnectedUsers
+    withConnectedUsers,
+    withNextEvent
   })
 
   return { status: 200, body: { ok: true, data, total } }
@@ -68,11 +72,15 @@ export async function getDestinationsByIdHandler(
   const ids = Array.isArray(body.ids) ? (body.ids as string[]) : undefined
   const positions = Array.isArray(body.positions) ? (body.positions as string[]) : undefined
   const worldNames = Array.isArray(body.world_names) ? (body.world_names as string[]) : undefined
-  const withLiveEvents = (multi(context.url.searchParams, 'with') ?? []).includes('live_events')
+  const withList = multi(context.url.searchParams, 'with') ?? []
 
   const { data, total } = await destinations.getDestinations(
     { ids, positions, worldNames, user, limit: 100 },
-    { withLiveEvents }
+    {
+      withLiveEvents: withList.includes('live_events'),
+      withConnectedUsers: withList.includes('connected_users'),
+      withNextEvent: withList.includes('next_event')
+    }
   )
 
   return { status: 200, body: { ok: true, data, total } }

@@ -182,6 +182,31 @@ export function createEventsRepository(): IEventsRepository {
     return { placeIds, worldIds }
   }
 
+  async function getNextEventsForEntities(
+    client: Queryable,
+    placeIds: string[],
+    worldIds: string[]
+  ): Promise<Record<string, { id: string; name: string; next_start_at: string }>> {
+    if (!placeIds.length && !worldIds.length) return {}
+    // Earliest still-upcoming approved event per place/world (DISTINCT ON the entity).
+    const result = await client.query<{ entity_id: string; id: string; name: string; next_start_at: string }>(SQL`
+      SELECT DISTINCT ON (entity_id) entity_id, id, name, next_start_at FROM (
+        SELECT place_id::text AS entity_id, id, name, next_start_at FROM events
+          WHERE approved IS true AND deleted_at IS NULL AND next_start_at > now()
+            AND place_id = ANY(${placeIds}::uuid[])
+        UNION ALL
+        SELECT world_id AS entity_id, id, name, next_start_at FROM events
+          WHERE approved IS true AND deleted_at IS NULL AND next_start_at > now()
+            AND world_id = ANY(${worldIds.map((w) => w.toLowerCase())})
+      ) upcoming
+      ORDER BY entity_id, next_start_at ASC`)
+    const byEntity: Record<string, { id: string; name: string; next_start_at: string }> = {}
+    for (const row of result.rows) {
+      byEntity[row.entity_id] = { id: row.id, name: row.name, next_start_at: row.next_start_at }
+    }
+    return byEntity
+  }
+
   async function findRecurrentNeedingUpdate(client: Queryable, limit: number): Promise<Event[]> {
     const result = await client.query<Event>(SQL`
       SELECT * FROM events
@@ -222,6 +247,7 @@ export function createEventsRepository(): IEventsRepository {
     count,
     listAttending,
     getLiveEntityIds,
+    getNextEventsForEntities,
     findRecurrentNeedingUpdate,
     findInStartWindow,
     findInFinishWindow

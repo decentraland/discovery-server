@@ -46,6 +46,14 @@ import {
 } from './handlers/events-handler'
 import { createAttendeeHandler, deleteAttendeeHandler, getAttendeesHandler } from './handlers/attendees-handler'
 import { getDestinationsByIdHandler, getDestinationsListHandler } from './handlers/destinations-handler'
+import {
+  getV1CategoriesHandler,
+  getV1DestinationEventsHandler,
+  getV1DestinationHandler,
+  getV1EventHandler,
+  updateV1FavoriteHandler,
+  updateV1LikeHandler
+} from './handlers/v1-handlers'
 import { createReportHandler } from './handlers/report-handler'
 import {
   getEventsSitemapHandler,
@@ -90,6 +98,19 @@ export async function setupRouter(globalContext: GlobalContext): Promise<Router<
   // Events read/moderation routes: optional-signed, with the admin bearer unlocking
   // the admin view (pending/rejected/deleted) and moderation.
   const eventsAuth = createOptionalSignedOrAdminBearer(components.fetcher, adminTokens)
+  // Schema validation for v1 mutation bodies (validates a clone; the body stays readable).
+  const validateFavorite = components.schemaValidator.withSchemaValidatorMiddleware({
+    type: 'object',
+    properties: { favorite: { type: 'boolean' } },
+    required: ['favorite'],
+    additionalProperties: false
+  })
+  const validateLike = components.schemaValidator.withSchemaValidatorMiddleware({
+    type: 'object',
+    properties: { like: { type: ['boolean', 'null'] } },
+    required: ['like'],
+    additionalProperties: false
+  })
 
   router.use(errorHandler)
 
@@ -171,6 +192,16 @@ export async function setupRouter(globalContext: GlobalContext): Promise<Router<
   router.post('/api/destinations', signedFetch({ optional: true }), getDestinationsByIdHandler)
   router.get('/v1/destinations', signedFetch({ optional: true }), getDestinationsListHandler)
   router.post('/v1/destinations/batch', signedFetch({ optional: true }), getDestinationsByIdHandler)
+  // More specific v1 destination routes before the :id matcher.
+  router.get('/v1/destinations/:id/events', signedFetch({ optional: true }), getV1DestinationEventsHandler)
+  router.patch('/v1/destinations/:id/favorite', signedFetch(), validateFavorite, updateV1FavoriteHandler)
+  router.patch('/v1/destinations/:id/like', signedFetch(), validateLike, updateV1LikeHandler)
+  router.get('/v1/destinations/:id', signedFetch({ optional: true }), getV1DestinationHandler)
+
+  // v1 events + categories (events reuse the admin-bearer-aware auth)
+  router.get('/v1/events', eventsAuth, getEventListHandler)
+  router.get('/v1/events/:event_id', eventsAuth, getV1EventHandler)
+  router.get('/v1/categories', getV1CategoriesHandler)
 
   // worlds (optional-signed reads, signed writes)
   router.get('/api/worlds', signedFetch({ optional: true }), getWorldListHandler)

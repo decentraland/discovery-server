@@ -74,6 +74,9 @@ export function createDestinationsRepository(): IDestinationsRepository {
         SELECT DISTINCT base_position FROM place_positions WHERE position = ANY(${filters.positions}::varchar[])
       )`)
     }
+    if (filters.owner) query.append(SQL` AND lower(p.owner) = ${filters.owner.toLowerCase()}`)
+    // only_favorites reuses the favorites LEFT JOIN (present only when a user is set).
+    if (filters.only_favorites && filters.user) query.append(SQL` AND uf_p."user" IS NOT NULL`)
     return query
   }
 
@@ -94,6 +97,8 @@ export function createDestinationsRepository(): IDestinationsRepository {
     if (filters.ids?.length) query.append(SQL` AND w.id = ANY(${filters.ids})`)
     if (filters.worldNames?.length)
       query.append(SQL` AND w.id = ANY(${filters.worldNames.map((n) => n.toLowerCase())})`)
+    if (filters.owner) query.append(SQL` AND lower(w.owner) = ${filters.owner.toLowerCase()}`)
+    if (filters.only_favorites && filters.user) query.append(SQL` AND uf_w."user" IS NOT NULL`)
     return query
   }
 
