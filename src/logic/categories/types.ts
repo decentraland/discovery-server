@@ -9,4 +9,6 @@ export interface ICategoriesComponent {
   getPlaceCategories(scope?: CategoryScope): Promise<PlaceCategoryView[]>
   /** Active event category (tag) names. */
   getEventCategories(): Promise<string[]>
+  /** Daily job: sync the `poi` category from dcl-lists. Returns the POI place count. */
+  syncPois(): Promise<number>
 }

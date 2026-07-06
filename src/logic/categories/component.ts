@@ -4,14 +4,14 @@ import { placeCategoriesI18n } from '../../intl/categories'
 import type { ICategoriesComponent, PlaceCategoryView } from './types'
 
 /**
- * Category listing. Reads counts via the categories repository and decorates
- * place/world categories with their English labels. (The daily POI-sync job that
- * also lives in this domain is wired in a later phase.)
+ * Category listing plus the daily POI sync. Counts come from the categories
+ * repository (decorated with English labels); syncPois reconciles the `poi`
+ * category from the dcl-lists positions in a single transaction.
  */
 export async function createCategoriesComponent(
-  components: Pick<AppComponents, 'pg' | 'categoriesRepository' | 'logs'>
+  components: Pick<AppComponents, 'pg' | 'categoriesRepository' | 'dclListsClient' | 'logs'>
 ): Promise<ICategoriesComponent> {
-  const { pg, categoriesRepository } = components
+  const { pg, categoriesRepository, dclListsClient } = components
 
   async function getPlaceCategories(scope: CategoryScope = 'all'): Promise<PlaceCategoryView[]> {
     const categories = await categoriesRepository.findActivePlaceCategoriesWithCounts(pg, scope)
@@ -25,8 +25,14 @@ export async function createCategoriesComponent(
     return categoriesRepository.findActiveEventCategories(pg)
   }
 
+  async function syncPois(): Promise<number> {
+    const pois = await dclListsClient.getPois()
+    return pg.withTransaction((tx) => categoriesRepository.reconcilePoiCategory(tx, pois))
+  }
+
   return {
     getPlaceCategories,
-    getEventCategories
+    getEventCategories,
+    syncPois
   }
 }

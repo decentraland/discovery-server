@@ -45,9 +45,42 @@ export function createCategoriesRepository(): ICategoriesRepository {
     return result.rows.map((row) => row.name)
   }
 
+  async function reconcilePoiCategory(client: Queryable, basePositions: string[]): Promise<number> {
+    const positions = basePositions.length ? basePositions : ['']
+    // Target places: enabled genesis places at the POI positions.
+    const target = await client.query<{ id: string }>(
+      SQL`SELECT id FROM places WHERE base_position = ANY(${positions}::varchar[]) AND disabled IS false AND world IS false`
+    )
+    const ids = target.rows.map((r) => r.id)
+
+    // Pivot: drop poi from non-target places, add it to target places.
+    await client.query(
+      SQL`DELETE FROM place_categories WHERE category_id = 'poi' AND NOT (place_id = ANY(${ids}::uuid[]))`
+    )
+    if (ids.length) {
+      await client.query(SQL`
+        INSERT INTO place_categories (category_id, place_id)
+        SELECT 'poi', unnest(${ids}::uuid[]) ON CONFLICT DO NOTHING`)
+    }
+
+    // Denormalized array mirror on places.categories.
+    await client.query(
+      SQL`UPDATE places SET categories = array_remove(categories, 'poi')
+          WHERE 'poi' = ANY(categories) AND NOT (id = ANY(${ids}::uuid[]))`
+    )
+    if (ids.length) {
+      await client.query(
+        SQL`UPDATE places SET categories = array_append(categories, 'poi')
+            WHERE id = ANY(${ids}::uuid[]) AND NOT ('poi' = ANY(categories))`
+      )
+    }
+    return ids.length
+  }
+
   return {
     findActivePlaceCategories,
     findActivePlaceCategoriesWithCounts,
-    findActiveEventCategories
+    findActiveEventCategories,
+    reconcilePoiCategory
   }
 }

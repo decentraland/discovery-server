@@ -27,6 +27,7 @@ import { createSnapshotClient } from './adapters/snapshot-client'
 import { createCommsGatekeeperClient } from './adapters/comms-gatekeeper-client'
 import { createHotScenesComponent } from './adapters/hot-scenes'
 import { createWorldsLiveDataComponent } from './adapters/worlds-live-data'
+import { createDclListsClient } from './adapters/dcl-lists-client'
 import { createJobComponent } from '@dcl/job-component'
 import { createCategoriesComponent } from './logic/categories'
 import { createSchedulesComponent } from './logic/schedules'
@@ -104,6 +105,7 @@ export async function initComponents(): Promise<AppComponents> {
   const commsGatekeeperClient = await createCommsGatekeeperClient({ config, logs, fetcher })
   const hotScenes = await createHotScenesComponent({ config, logs, fetcher })
   const worldsLiveData = await createWorldsLiveDataComponent({ config, logs, fetcher })
+  const dclListsClient = await createDclListsClient({ config, logs, fetcher })
 
   // storage (one adapter per bucket)
   const reportsStorage = await createStorageComponent(
@@ -116,7 +118,7 @@ export async function initComponents(): Promise<AppComponents> {
   )
 
   // logic
-  const categories = await createCategoriesComponent({ pg, categoriesRepository, logs })
+  const categories = await createCategoriesComponent({ pg, categoriesRepository, dclListsClient, logs })
   const schedules = await createSchedulesComponent({ pg, schedulesRepository, logs })
   const places = await createPlacesComponent({ pg, placesRepository, hotScenes, logs })
   const worlds = await createWorldsComponent({ pg, worldsRepository, worldsLiveData, logs })
@@ -191,6 +193,16 @@ export async function initComponents(): Promise<AppComponents> {
         { repeat: true }
       )
     : undefined
+  const poiSyncJob = backgroundJobsEnabled
+    ? createJobComponent(
+        { logs },
+        () => categories.syncPois(),
+        (await config.getNumber('POI_SYNC_INTERVAL_MS')) ?? 24 * 60 * 60_000,
+        {
+          repeat: true
+        }
+      )
+    : undefined
 
   const ingestion = await createIngestionComponent({ pg, placesRepository, logs })
 
@@ -231,6 +243,7 @@ export async function initComponents(): Promise<AppComponents> {
     snsPublisher,
     snapshotClient,
     commsGatekeeperClient,
+    dclListsClient,
     hotScenes,
     worldsLiveData,
     reportsStorage,
@@ -258,6 +271,7 @@ export async function initComponents(): Promise<AppComponents> {
     ...(notifyEndedJob ? { notifyEndedJob } : {}),
     ...(hotScenesRefreshJob ? { hotScenesRefreshJob } : {}),
     ...(worldsLiveDataRefreshJob ? { worldsLiveDataRefreshJob } : {}),
+    ...(poiSyncJob ? { poiSyncJob } : {}),
     ...(queueProcessor ? { queueProcessor } : {})
   }
 }

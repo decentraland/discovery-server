@@ -18,4 +18,9 @@ export interface ICategoriesRepository {
   findActivePlaceCategoriesWithCounts(client: Queryable, scope?: CategoryScope): Promise<CategoryWithCount[]>
   /** Active event category (tag) names. */
   findActiveEventCategories(client: Queryable): Promise<string[]>
+  /**
+   * Reconcile the `poi` category so exactly the places at `basePositions` carry
+   * it (pivot + denormalized array). Returns how many places now hold it.
+   */
+  reconcilePoiCategory(client: Queryable, basePositions: string[]): Promise<number>
 }
