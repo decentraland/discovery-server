@@ -5,7 +5,7 @@ describe('when running the notification crons', () => {
   let publish: jest.Mock
 
   beforeEach(() => {
-    publish = jest.fn().mockResolvedValue({ published: 0 })
+    publish = jest.fn().mockResolvedValue({ published: 0, failed: 0 })
     components = {
       pg: {},
       eventsRepository: {
@@ -72,6 +72,35 @@ describe('when running the notification crons', () => {
         'events_started',
         expect.any(Number)
       )
+    })
+  })
+
+  describe('and an SNS publish batch fails', () => {
+    beforeEach(() => {
+      const now = new Date()
+      publish.mockResolvedValue({ published: 0, failed: 2 })
+      components.eventsRepository.findInStartWindow.mockResolvedValueOnce([
+        {
+          id: 'e1',
+          name: 'Party',
+          image: 'img',
+          description: 'desc',
+          start_at: now,
+          finish_at: now,
+          next_start_at: now,
+          next_finish_at: now,
+          total_attendees: 2,
+          community_id: null
+        }
+      ])
+      components.attendeesRepository.listByEvent.mockResolvedValueOnce([{ user: '0xaaa' }, { user: '0xbbb' }])
+    })
+
+    it('should not advance the cursor so the window is retried', async () => {
+      const notifications = await createNotificationsComponent(components)
+      await notifications.notifyStarted()
+
+      expect(components.notificationCursorsRepository.set).not.toHaveBeenCalled()
     })
   })
 

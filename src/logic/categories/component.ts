@@ -27,6 +27,10 @@ export async function createCategoriesComponent(
 
   async function syncPois(): Promise<number> {
     const pois = await dclListsClient.getPois()
+    // The dcl-lists client returns [] when unconfigured or on any fetch error.
+    // Reconciling against an empty set would delete every POI assignment, so an
+    // empty list is treated as "no data, no changes" rather than a full wipe.
+    if (!pois.length) return 0
     return pg.withTransaction((tx) => categoriesRepository.reconcilePoiCategory(tx, pois))
   }
 

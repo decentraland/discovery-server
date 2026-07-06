@@ -50,6 +50,9 @@ export async function createHotScenesComponent(
     if (!baseUrl) return
     try {
       const response = await fetcher.fetch(`${baseUrl}/hot-scenes`)
+      // Don't overwrite the good snapshot with an error response, and don't parse
+      // an error body as scenes.
+      if (!response.ok) throw new Error(`unexpected status ${response.status}`)
       const scenes = (await response.json()) as HotScene[]
       const next = new Map<string, number>()
       for (const scene of scenes ?? []) {
@@ -58,6 +61,9 @@ export async function createHotScenesComponent(
       countByPosition = next
       lastRefresh = Date.now()
     } catch (error: any) {
+      // Back off for the TTL even on failure so a dead upstream isn't hammered by
+      // every request; the previous snapshot (possibly empty) is kept.
+      lastRefresh = Date.now()
       logger.warn(`Failed to refresh hot scenes: ${error?.message ?? String(error)}`)
     }
   }

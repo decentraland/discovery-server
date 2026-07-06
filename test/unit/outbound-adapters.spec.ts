@@ -25,7 +25,7 @@ describe('when the outbound adapters are not configured', () => {
       const publisher = await createSnsPublisher({ config, logs })
       const result = await publisher.publish([{ type: 'test' } as any])
 
-      expect(result).toEqual({ published: 0 })
+      expect(result).toEqual({ published: 0, failed: 0 })
     })
   })
 

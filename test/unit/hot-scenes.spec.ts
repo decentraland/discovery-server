@@ -35,6 +35,7 @@ describe('when reading hot scenes', () => {
         getNumber: jest.fn().mockResolvedValue(undefined)
       }
       fetcher.fetch.mockResolvedValue({
+        ok: true,
         json: async () => [
           { id: 's1', name: 'Busy', baseCoords: [10, 20], usersTotalCount: 5, parcels: [[10, 20]] },
           { id: 's2', name: 'Empty', baseCoords: [0, 0], usersTotalCount: 0, parcels: [[0, 0]] }

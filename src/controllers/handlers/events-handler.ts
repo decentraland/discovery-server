@@ -3,6 +3,7 @@ import type { Event } from '../../types/entities'
 import type { EventListFilters } from '../../adapters/events-repository'
 import type { EventWithAttendance } from '../../logic/events'
 import { BadRequestError, UnauthorizedError } from '../../types/errors'
+import { intParam } from './query-params'
 
 type ListContext = { viewer?: string; isAdmin?: boolean }
 
@@ -24,8 +25,8 @@ function parseFilters(params: URLSearchParams, ctx: ListContext = {}): EventList
     viewer: ctx.viewer,
     includeUnapproved,
     includeDeleted,
-    limit: params.get('limit') ? Number(params.get('limit')) : undefined,
-    offset: params.get('offset') ? Number(params.get('offset')) : undefined
+    limit: intParam(params, 'limit'),
+    offset: intParam(params, 'offset')
   }
 }
 

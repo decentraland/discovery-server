@@ -91,6 +91,10 @@ export async function createSnapshotClient(
           params: { network: '1', address: wallet, strategies: STRATEGIES, space, delegation: false }
         })
       })
+      // Don't cache an error response as vp=0 — route it through catch so a
+      // throttled/failed upstream recovers on the next call instead of pinning
+      // the wallet to 0 for the full TTL.
+      if (!response.ok) throw new Error(`unexpected status ${response.status}`)
       const body = (await response.json()) as { result?: { vp?: number } }
       const vp = Math.trunc(body?.result?.vp ?? 0)
       cache.set(wallet, vp)

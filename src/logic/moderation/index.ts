@@ -1,5 +1,6 @@
 import type { AppComponents } from '../../types'
 import type { Place, World } from '../../types/entities'
+import { isPlaceId } from '../entity-id'
 import { PlaceNotFoundError } from '../places'
 import { WorldNotFoundError } from '../worlds'
 
@@ -23,14 +24,21 @@ export async function createModerationComponent(
 ): Promise<IModerationComponent> {
   const { pg, placesRepository, worldsRepository, contentRatingsRepository } = components
 
+  // Place ids are uuids; a non-uuid can't exist (and would crash the uuid cast),
+  // so reject it as a not-found instead of letting Postgres 500.
+  function assertPlaceId(placeId: string): void {
+    if (!isPlaceId(placeId)) throw new PlaceNotFoundError(placeId)
+  }
+
   async function setPlaceRating(placeId: string, rating: string, moderator: string, comment?: string): Promise<Place> {
+    assertPlaceId(placeId)
     return pg.withTransaction(async (tx) => {
       const current = await placesRepository.findByIdWithAggregates(tx, placeId)
       if (!current) throw new PlaceNotFoundError(placeId)
       const updated = await placesRepository.updateModeration(tx, placeId, { content_rating: rating })
       if (!updated) throw new PlaceNotFoundError(placeId)
       await contentRatingsRepository.record(tx, {
-        entityId: placeId,
+        entityId: current.id,
         originalRating: current.content_rating,
         updateRating: rating,
         moderator,
@@ -41,12 +49,14 @@ export async function createModerationComponent(
   }
 
   async function setPlaceHighlight(placeId: string, highlighted: boolean): Promise<Place> {
+    assertPlaceId(placeId)
     const updated = await placesRepository.updateModeration(pg, placeId, { highlighted })
     if (!updated) throw new PlaceNotFoundError(placeId)
     return updated
   }
 
   async function setPlaceDisabled(placeId: string, disabled: boolean, reason = 'moderation'): Promise<Place> {
+    assertPlaceId(placeId)
     const updated = await placesRepository.updateModeration(pg, placeId, {
       disabled,
       disabled_reason: disabled ? reason : null
@@ -56,6 +66,7 @@ export async function createModerationComponent(
   }
 
   async function setPlaceRanking(placeId: string, ranking: number): Promise<Place> {
+    assertPlaceId(placeId)
     const updated = await placesRepository.updateModeration(pg, placeId, { ranking })
     if (!updated) throw new PlaceNotFoundError(placeId)
     return updated

@@ -228,8 +228,6 @@ export async function initComponents(): Promise<AppComponents> {
     logs,
     metrics,
     fetcher,
-    httpServer,
-    statusChecks,
     schemaValidator,
     pg,
     categoriesRepository,
@@ -270,6 +268,12 @@ export async function initComponents(): Promise<AppComponents> {
     social,
     notifications,
     ingestion,
+    // httpServer/statusChecks are placed after pg and the logic components so the
+    // WKC lifecycle (reverse-insertion stop order) stops the HTTP server and drains
+    // in-flight requests BEFORE the pg pool closes. Background jobs/queueProcessor
+    // come last so they stop first of all.
+    httpServer,
+    statusChecks,
     ...(updateNextStartAtJob ? { updateNextStartAtJob } : {}),
     ...(notifyUpcomingJob ? { notifyUpcomingJob } : {}),
     ...(notifyStartedJob ? { notifyStartedJob } : {}),

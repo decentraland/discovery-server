@@ -1,6 +1,8 @@
 import type { AppComponents } from '../../types'
 
-const EVENTS_PER_SITEMAP = 1000
+// Must not exceed the events repository's MAX_LIMIT (100) — a larger page size is
+// silently clamped there, which would drop the rest of each page from the sitemap.
+const EVENTS_PER_SITEMAP = 100
 
 export interface ISitemapComponent {
   getIndex(): Promise<string>
@@ -39,9 +41,13 @@ export async function createSitemapComponent(
   const baseUrl = ((await config.getString('EVENTS_BASE_URL')) ?? 'https://events.decentraland.org').replace(/\/$/, '')
 
   async function getIndex(): Promise<string> {
+    // Enumerate one events page per EVENTS_PER_SITEMAP block so every event is
+    // reachable from the index, not just the first page.
+    const total = await eventsRepository.count(pg, { list: 'all' })
+    const eventPages = Math.max(1, Math.ceil(total / EVENTS_PER_SITEMAP))
     const sitemaps = [
       `${baseUrl}/sitemap.static.xml`,
-      `${baseUrl}/sitemap.events.xml`,
+      ...Array.from({ length: eventPages }, (_, i) => `${baseUrl}/sitemap.events.xml?page=${i + 1}`),
       `${baseUrl}/sitemap.schedules.xml`
     ]
     const entries = sitemaps.map((loc) => `  <sitemap><loc>${escapeXml(loc)}</loc></sitemap>`).join('\n')

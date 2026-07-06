@@ -37,6 +37,7 @@ export async function createCommunitiesClient(
     if (!baseUrl) return []
     try {
       const response = await fetcher.fetch(`${baseUrl}/v1/communities/${address.toLowerCase()}/managed`, { headers })
+      if (!response.ok) throw new Error(`unexpected status ${response.status}`)
       const body = (await response.json()) as { data?: Community[] | { results?: Community[] } }
       const data = Array.isArray(body?.data) ? body.data : (body?.data?.results ?? [])
       return data
@@ -50,21 +51,28 @@ export async function createCommunitiesClient(
     if (!baseUrl) return []
     const members: string[] = []
     try {
+      // Page count is driven by a local counter (not the server-echoed `page`)
+      // so a 0-indexed or constant `page` response can't stall `offset` at 0 and
+      // loop forever. `totalPages` is refreshed from each response.
       let page = 1
-      let pages = 1
+      let totalPages = 1
       do {
         const offset = (page - 1) * MEMBERS_PAGE_SIZE
         const url = `${baseUrl}/v1/communities/${communityId}/members?limit=${MEMBERS_PAGE_SIZE}&offset=${offset}`
         const response = await fetcher.fetch(url, { headers })
+        if (!response.ok) throw new Error(`unexpected status ${response.status}`)
         const body = (await response.json()) as {
-          data?: { results?: Array<{ memberAddress?: string }>; pages?: number; page?: number }
+          data?: { results?: Array<{ memberAddress?: string }>; pages?: number }
         }
-        for (const member of body?.data?.results ?? []) {
+        const results = body?.data?.results ?? []
+        for (const member of results) {
           if (member.memberAddress) members.push(member.memberAddress.toLowerCase())
         }
-        pages = body?.data?.pages ?? 1
-        page = (body?.data?.page ?? page) + 1
-      } while (page <= pages)
+        totalPages = body?.data?.pages ?? 1
+        // Stop early on an empty/short page even if `pages` over-reports.
+        if (!results.length) break
+        page += 1
+      } while (page <= totalPages)
       return members
     } catch (error: any) {
       logger.warn(`Failed to fetch members for community ${communityId}: ${error?.message ?? String(error)}`)

@@ -65,6 +65,7 @@ describe('when using the communities client', () => {
     describe('and fetching managed communities', () => {
       beforeEach(() => {
         fetcher.fetch.mockResolvedValue({
+          ok: true,
           json: async () => ({ data: { results: [{ id: 'c1', name: 'One', ownerAddress: '0xowner' }] } })
         })
       })
@@ -99,9 +100,11 @@ describe('when using the communities client', () => {
       beforeEach(() => {
         fetcher.fetch
           .mockResolvedValueOnce({
+            ok: true,
             json: async () => ({ data: { results: [{ memberAddress: '0xAAA' }], page: 1, pages: 2 } })
           })
           .mockResolvedValueOnce({
+            ok: true,
             json: async () => ({ data: { results: [{ memberAddress: '0xBBB' }], page: 2, pages: 2 } })
           })
       })
@@ -140,6 +143,42 @@ describe('when using the communities client', () => {
         const members = await client.getCommunityMembers('community-1')
 
         expect(members).toEqual([])
+      })
+    })
+
+    describe('and the members API echoes a constant page number', () => {
+      beforeEach(() => {
+        // A 0-indexed / constant-page response used to stall offset at 0 forever.
+        fetcher.fetch.mockResolvedValue({
+          ok: true,
+          json: async () => ({ data: { results: [{ memberAddress: '0xaaa' }], page: 0, pages: 3 } })
+        })
+      })
+
+      it('should terminate after the reported number of pages instead of looping forever', async () => {
+        const client = await createCommunitiesClient({ config, logs, fetcher })
+        await client.getCommunityMembers('community-1')
+
+        expect(fetcher.fetch).toHaveBeenCalledTimes(3)
+      })
+    })
+
+    describe('and a members page comes back empty before the reported total', () => {
+      beforeEach(() => {
+        fetcher.fetch
+          .mockResolvedValueOnce({
+            ok: true,
+            json: async () => ({ data: { results: [{ memberAddress: '0xaaa' }], pages: 5 } })
+          })
+          .mockResolvedValueOnce({ ok: true, json: async () => ({ data: { results: [], pages: 5 } }) })
+      })
+
+      it('should stop fetching at the first empty page', async () => {
+        const client = await createCommunitiesClient({ config, logs, fetcher })
+        const members = await client.getCommunityMembers('community-1')
+
+        expect(members).toEqual(['0xaaa'])
+        expect(fetcher.fetch).toHaveBeenCalledTimes(2)
       })
     })
   })

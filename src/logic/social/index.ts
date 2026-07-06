@@ -47,12 +47,19 @@ export async function createSocialComponent(
   )
   const fallbackImage = `${placesBaseUrl}/og-image.png`
 
+  async function resolvePlace(params: { id?: string; position?: string }) {
+    // Never let a lookup error break the unfurl — fall through to the generic card.
+    try {
+      if (params.id) return await places.getPlace(params.id)
+      if (params.position) return (await places.getPlaces({ positions: [params.position], limit: 1 })).data[0] ?? null
+      return null
+    } catch {
+      return null
+    }
+  }
+
   async function getPlaceMetaHtml(params: { id?: string; position?: string }): Promise<string> {
-    const place = params.id
-      ? await places.getPlace(params.id).catch(() => null)
-      : params.position
-        ? ((await places.getPlaces({ positions: [params.position], limit: 1 })).data[0] ?? null)
-        : null
+    const place = await resolvePlace(params)
     if (!place) {
       return metaHtml({
         title: 'Decentraland',

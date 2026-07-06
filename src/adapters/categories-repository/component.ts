@@ -19,12 +19,14 @@ export function createCategoriesRepository(): ICategoriesRepository {
     client: Queryable,
     scope: CategoryScope = 'all'
   ): Promise<CategoryWithCount[]> {
+    // count(p.id) — not count(pc.place_id) — so disabled/scope-filtered places
+    // are excluded from the count. The scope predicate lives in the JOIN (not
+    // WHERE) so active categories with no matching entity still appear with 0.
     const query = SQL`
-      SELECT c.name, count(pc.place_id) AS count
+      SELECT c.name, count(p.id) AS count
       FROM categories c
       LEFT JOIN place_categories pc ON pc.category_id = c.name
-      LEFT JOIN places p ON pc.place_id = p.id AND p.disabled IS false
-      WHERE c.active IS true`
+      LEFT JOIN places p ON pc.place_id = p.id AND p.disabled IS false`
 
     if (scope === 'worlds') {
       query.append(SQL` AND p.world IS true`)
@@ -32,7 +34,7 @@ export function createCategoriesRepository(): ICategoriesRepository {
       query.append(SQL` AND p.world IS false`)
     }
 
-    query.append(SQL` GROUP BY c.name ORDER BY c.name`)
+    query.append(SQL` WHERE c.active IS true GROUP BY c.name ORDER BY c.name`)
 
     const result = await client.query<{ name: string; count: string }>(query)
     return result.rows.map((row) => ({ name: row.name, count: Number(row.count) }))

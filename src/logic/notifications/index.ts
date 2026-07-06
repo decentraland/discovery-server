@@ -52,10 +52,24 @@ export async function createNotificationsComponent(
     ''
   )
   const link = (event: Event) => `${eventsBaseUrl}/event/${event.id}`
+  // Occurrence identity for the idempotency key. A recurrent event reuses the
+  // same id across occurrences, so the key must include the occurrence instant
+  // or downstream dedup would drop every occurrence after the first.
+  const startOccurrence = (event: Event) => (event.next_start_at ?? event.start_at).getTime()
+  const finishOccurrence = (event: Event) => (event.next_finish_at ?? event.finish_at).getTime()
 
   async function lastRun(cursorId: string, now: number): Promise<number> {
     const cursor = await notificationCursorsRepository.get(pg, cursorId)
     return cursor?.last_successful_run_at ?? now
+  }
+
+  /**
+   * Advance the cursor only when the whole batch published. If any event was
+   * rejected by SNS, leave the cursor so the window is retried next run;
+   * already-published events are deduped downstream by their occurrence key.
+   */
+  async function advanceCursorIfClean(cursorId: string, now: number, failed: number): Promise<void> {
+    if (failed === 0) await notificationCursorsRepository.set(pg, cursorId, now)
   }
 
   async function notifyUpcoming(): Promise<number> {
@@ -70,7 +84,7 @@ export async function createNotificationsComponent(
         payload.push({
           type: Events.Type.EVENT,
           subType: Events.SubType.Event.EVENT_STARTS_SOON,
-          key: `${event.id}-${attendee.user}-starts-soon`,
+          key: `${event.id}-${startOccurrence(event)}-${attendee.user}-starts-soon`,
           timestamp: now,
           metadata: {
             name: event.name,
@@ -86,8 +100,8 @@ export async function createNotificationsComponent(
       }
     }
 
-    const { published } = await snsPublisher.publish(payload)
-    await notificationCursorsRepository.set(pg, CURSOR_STARTS_SOON, now)
+    const { published, failed } = await snsPublisher.publish(payload)
+    await advanceCursorIfClean(CURSOR_STARTS_SOON, now, failed)
     return published
   }
 
@@ -114,7 +128,7 @@ export async function createNotificationsComponent(
         payload.push({
           type: Events.Type.EVENT,
           subType: Events.SubType.Event.EVENT_STARTED,
-          key: `${event.id}-${recipient}-started`,
+          key: `${event.id}-${startOccurrence(event)}-${recipient}-started`,
           timestamp: now,
           metadata: {
             name: event.name,
@@ -129,8 +143,8 @@ export async function createNotificationsComponent(
       }
     }
 
-    const { published } = await snsPublisher.publish(payload)
-    await notificationCursorsRepository.set(pg, CURSOR_STARTED, now)
+    const { published, failed } = await snsPublisher.publish(payload)
+    await advanceCursorIfClean(CURSOR_STARTED, now, failed)
     return published
   }
 
@@ -144,7 +158,7 @@ export async function createNotificationsComponent(
         ({
           type: Events.Type.EVENT,
           subType: Events.SubType.Event.EVENT_ENDED,
-          key: `${event.id}-ended`,
+          key: `${event.id}-${finishOccurrence(event)}-ended`,
           timestamp: now,
           metadata: {
             totalAttendees: event.total_attendees,
@@ -153,8 +167,8 @@ export async function createNotificationsComponent(
         }) as never
     )
 
-    const { published } = await snsPublisher.publish(payload)
-    await notificationCursorsRepository.set(pg, CURSOR_ENDED, now)
+    const { published, failed } = await snsPublisher.publish(payload)
+    await advanceCursorIfClean(CURSOR_ENDED, now, failed)
     return published
   }
 

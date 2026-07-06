@@ -37,6 +37,9 @@ export async function createCommsGatekeeperClient(
     if (cached) return cached
     try {
       const response = await fetcher.fetch(`${baseUrl}/scene-participants?${query}`)
+      // Don't cache an error response as an empty list for the full TTL — let it
+      // fall through to the catch so the next call retries.
+      if (!response.ok) throw new Error(`unexpected status ${response.status}`)
       const body = (await response.json()) as SceneParticipantsResponse
       const addresses = body?.data?.addresses ?? []
       cache.set(cacheKey, addresses)

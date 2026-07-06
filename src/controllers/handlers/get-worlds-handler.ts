@@ -1,7 +1,7 @@
 import type { HandlerContextWithPath, HTTPResponse } from '../../types'
 import type { AggregateWorld } from '../../types/entities'
 import type { OrderDirection, WorldListFilters, WorldListOrderBy } from '../../adapters/worlds-repository'
-import { multiParam as multi } from './query-params'
+import { multiParam as multi, intParam } from './query-params'
 
 const ORDER_BY_VALUES: WorldListOrderBy[] = ['like_score', 'updated_at', 'created_at']
 
@@ -19,8 +19,8 @@ function parseFilters(params: URLSearchParams, user?: string): WorldListFilters 
     only_favorites: params.get('only_favorites') === 'true',
     order_by: orderBy,
     order: params.get('order') === 'asc' ? 'asc' : ('desc' as OrderDirection),
-    limit: params.get('limit') ? Number(params.get('limit')) : undefined,
-    offset: params.get('offset') ? Number(params.get('offset')) : undefined,
+    limit: intParam(params, 'limit'),
+    offset: intParam(params, 'offset'),
     user
   }
 }

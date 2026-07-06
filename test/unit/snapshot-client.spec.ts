@@ -27,7 +27,7 @@ describe('when fetching voting power', () => {
 
   describe('and Snapshot returns a voting power', () => {
     beforeEach(() => {
-      fetcher.fetch.mockResolvedValue({ json: async () => ({ result: { vp: 1234.7 } }) })
+      fetcher.fetch.mockResolvedValue({ ok: true, json: async () => ({ result: { vp: 1234.7 } }) })
     })
 
     it('should return the truncated integer voting power', async () => {
@@ -57,6 +57,22 @@ describe('when fetching voting power', () => {
       const vp = await client.getVotingPower('0xabcdef0123456789abcdef0123456789abcdef01')
 
       expect(vp).toBe(0)
+    })
+  })
+
+  describe('and Snapshot responds with a non-ok status', () => {
+    beforeEach(() => {
+      fetcher.fetch
+        .mockResolvedValueOnce({ ok: false, status: 500, json: async () => ({ error: 'boom' }) })
+        .mockResolvedValueOnce({ ok: true, json: async () => ({ result: { vp: 42 } }) })
+    })
+
+    it('should not cache the failure and recover on the next call', async () => {
+      const client = await createSnapshotClient({ config, logs, fetcher })
+      const address = '0xabcdef0123456789abcdef0123456789abcdef01'
+
+      expect(await client.getVotingPower(address)).toBe(0)
+      expect(await client.getVotingPower(address)).toBe(42)
     })
   })
 })

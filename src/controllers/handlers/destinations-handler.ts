@@ -5,7 +5,7 @@ import type {
   DestinationListFilters,
   DestinationOrderBy
 } from '../../adapters/destinations-repository'
-import { multiParam as multi } from './query-params'
+import { multiParam as multi, intParam } from './query-params'
 
 const ORDER_BY_VALUES: DestinationOrderBy[] = ['like_score', 'updated_at', 'created_at']
 const KIND_VALUES: DestinationKind[] = ['place', 'world']
@@ -24,8 +24,8 @@ function parseFilters(params: URLSearchParams, user?: string): DestinationListFi
       ? (orderByParam as DestinationOrderBy)
       : undefined,
     order: params.get('order') === 'asc' ? 'asc' : 'desc',
-    limit: params.get('limit') ? Number(params.get('limit')) : undefined,
-    offset: params.get('offset') ? Number(params.get('offset')) : undefined,
+    limit: intParam(params, 'limit'),
+    offset: intParam(params, 'offset'),
     user
   }
 }

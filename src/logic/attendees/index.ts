@@ -19,6 +19,9 @@ export async function createAttendeesComponent(
 
   async function attend(eventId: string, user: string, userName: string | null): Promise<void> {
     await pg.withTransaction(async (tx) => {
+      // Lock the event first so a concurrent attend/unattend can't recompute the
+      // counters from a stale snapshot and lose this write.
+      await attendeesRepository.lockEvent(tx, eventId)
       await attendeesRepository.add(tx, eventId, user, userName)
       await attendeesRepository.recomputeCounters(tx, eventId)
     })
@@ -26,6 +29,7 @@ export async function createAttendeesComponent(
 
   async function unattend(eventId: string, user: string): Promise<void> {
     await pg.withTransaction(async (tx) => {
+      await attendeesRepository.lockEvent(tx, eventId)
       await attendeesRepository.remove(tx, eventId, user)
       await attendeesRepository.recomputeCounters(tx, eventId)
     })

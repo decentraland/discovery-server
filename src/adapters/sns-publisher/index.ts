@@ -6,8 +6,12 @@ export type PublishableEvents = Parameters<IPublisherComponent['publishMessages'
 export interface ISnsPublisher {
   /** Whether SNS publishing is configured (AWS_SNS_ARN present). */
   readonly enabled: boolean
-  /** Publish a batch of events; a no-op returning 0 when SNS is not configured. */
-  publish(events: PublishableEvents): Promise<{ published: number }>
+  /**
+   * Publish a batch of events; a no-op returning `{ published: 0, failed: 0 }`
+   * when SNS is not configured. `failed` is the count of events SNS rejected so
+   * callers can decide whether to advance an idempotency cursor.
+   */
+  publish(events: PublishableEvents): Promise<{ published: number; failed: number }>
 }
 
 /**
@@ -24,13 +28,13 @@ export async function createSnsPublisher(
   const arn = await config.getString('AWS_SNS_ARN')
   const publisher = arn ? await createSnsComponent({ config }) : undefined
 
-  async function publish(events: PublishableEvents): Promise<{ published: number }> {
-    if (!publisher || !events.length) return { published: 0 }
+  async function publish(events: PublishableEvents): Promise<{ published: number; failed: number }> {
+    if (!publisher || !events.length) return { published: 0, failed: 0 }
     const result = await publisher.publishMessages(events)
     if (result.failedEvents.length) {
       logger.warn(`Failed to publish ${result.failedEvents.length} of ${events.length} SNS events`)
     }
-    return { published: result.successfulMessageIds.length }
+    return { published: result.successfulMessageIds.length, failed: result.failedEvents.length }
   }
 
   return { enabled: !!publisher, publish }

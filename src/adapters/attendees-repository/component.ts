@@ -32,6 +32,10 @@ export function createAttendeesRepository(): IAttendeesRepository {
     return (result.rowCount ?? 0) > 0
   }
 
+  async function lockEvent(client: Queryable, eventId: string): Promise<void> {
+    await client.query(SQL`SELECT 1 FROM events WHERE id = ${eventId} FOR UPDATE`)
+  }
+
   async function recomputeCounters(client: Queryable, eventId: string): Promise<void> {
     await client.query(SQL`
       WITH counted AS (
@@ -52,5 +56,5 @@ export function createAttendeesRepository(): IAttendeesRepository {
       WHERE events.id = ${eventId}`)
   }
 
-  return { add, remove, listByEvent, isAttending, recomputeCounters }
+  return { add, remove, listByEvent, isAttending, lockEvent, recomputeCounters }
 }

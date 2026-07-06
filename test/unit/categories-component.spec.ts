@@ -62,6 +62,39 @@ describe('when getting categories', () => {
     })
   })
 
+  describe('and syncing POIs', () => {
+    describe('and dcl-lists returns positions', () => {
+      beforeEach(() => {
+        dclListsClient.getPois.mockResolvedValue(['10,20', '30,40'])
+        pg.withTransaction = jest.fn((cb: (client: any) => Promise<unknown>) => cb(pg))
+        categoriesRepository.reconcilePoiCategory.mockResolvedValue(2)
+      })
+
+      it('should reconcile the poi category with the returned positions', async () => {
+        const categories = await createCategoriesComponent({ pg, categoriesRepository, dclListsClient, logs })
+        await categories.syncPois()
+
+        expect(categoriesRepository.reconcilePoiCategory).toHaveBeenCalledWith(pg, ['10,20', '30,40'])
+      })
+    })
+
+    describe('and dcl-lists returns an empty list', () => {
+      beforeEach(() => {
+        dclListsClient.getPois.mockResolvedValue([])
+        pg.withTransaction = jest.fn((cb: (client: any) => Promise<unknown>) => cb(pg))
+      })
+
+      it('should not reconcile so a transient outage cannot wipe every POI', async () => {
+        const categories = await createCategoriesComponent({ pg, categoriesRepository, dclListsClient, logs })
+        const result = await categories.syncPois()
+
+        expect(result).toBe(0)
+        expect(categoriesRepository.reconcilePoiCategory).not.toHaveBeenCalled()
+        expect(pg.withTransaction).not.toHaveBeenCalled()
+      })
+    })
+  })
+
   describe('and requesting event categories', () => {
     beforeEach(() => {
       categoriesRepository.findActiveEventCategories.mockResolvedValueOnce(['art', 'music'])

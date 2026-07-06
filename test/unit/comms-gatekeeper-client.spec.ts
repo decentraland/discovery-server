@@ -34,7 +34,10 @@ describe('when fetching connected participants', () => {
 
     beforeEach(() => {
       config = { getString: jest.fn().mockResolvedValue('https://comms-gatekeeper.decentraland.org') }
-      fetcher.fetch.mockResolvedValue({ json: async () => ({ ok: true, data: { addresses: ['0xa', '0xb'] } }) })
+      fetcher.fetch.mockResolvedValue({
+        ok: true,
+        json: async () => ({ ok: true, data: { addresses: ['0xa', '0xb'] } })
+      })
     })
 
     it('should return the participant addresses for a scene', async () => {

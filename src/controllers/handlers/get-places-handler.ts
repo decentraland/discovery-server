@@ -2,7 +2,7 @@ import type { HandlerContextWithPath, HTTPResponse } from '../../types'
 import type { AggregatePlace, PlaceStatus } from '../../types/entities'
 import type { OrderDirection, PlaceListFilters, PlaceListOrderBy } from '../../adapters/places-repository'
 import { BadRequestError } from '../../types/errors'
-import { multiParam as multi } from './query-params'
+import { multiParam as multi, intParam } from './query-params'
 
 const ORDER_BY_VALUES: PlaceListOrderBy[] = ['like_score', 'updated_at', 'created_at', 'most_active']
 
@@ -23,8 +23,8 @@ function parseFilters(params: URLSearchParams, user?: string): PlaceListFilters 
     sdk: params.get('sdk') ?? undefined,
     order_by: orderBy,
     order: params.get('order') === 'asc' ? 'asc' : ('desc' as OrderDirection),
-    limit: params.get('limit') ? Number(params.get('limit')) : undefined,
-    offset: params.get('offset') ? Number(params.get('offset')) : undefined,
+    limit: intParam(params, 'limit'),
+    offset: intParam(params, 'offset'),
     user
   }
 }

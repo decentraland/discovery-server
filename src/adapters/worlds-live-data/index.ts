@@ -37,6 +37,8 @@ export async function createWorldsLiveDataComponent(
     if (!url) return
     try {
       const response = await fetcher.fetch(url)
+      // Don't overwrite the good snapshot with an error response.
+      if (!response.ok) throw new Error(`unexpected status ${response.status}`)
       const body = (await response.json()) as WorldLiveDataResponse
       const next = new Map<string, number>()
       for (const entry of body?.data?.perWorld ?? []) {
@@ -45,6 +47,8 @@ export async function createWorldsLiveDataComponent(
       usersByWorld = next
       lastRefresh = Date.now()
     } catch (error: any) {
+      // Back off for the TTL even on failure so a dead upstream isn't hammered.
+      lastRefresh = Date.now()
       logger.warn(`Failed to refresh worlds live data: ${error?.message ?? String(error)}`)
     }
   }

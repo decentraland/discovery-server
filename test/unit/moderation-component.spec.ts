@@ -1,6 +1,8 @@
 import { createModerationComponent } from '../../src/logic/moderation'
 import { PlaceNotFoundError } from '../../src/logic/places'
 
+const PLACE_ID = '11111111-1111-4111-8111-111111111111'
+
 describe('when moderating a place', () => {
   let components: any
   let tx: any
@@ -22,25 +24,25 @@ describe('when moderating a place', () => {
 
   describe('and setting the content rating of an existing place', () => {
     beforeEach(() => {
-      components.placesRepository.findByIdWithAggregates.mockResolvedValueOnce({ id: 'p1', content_rating: 'PR' })
-      components.placesRepository.updateModeration.mockResolvedValueOnce({ id: 'p1', content_rating: 'R' })
+      components.placesRepository.findByIdWithAggregates.mockResolvedValueOnce({ id: PLACE_ID, content_rating: 'PR' })
+      components.placesRepository.updateModeration.mockResolvedValueOnce({ id: PLACE_ID, content_rating: 'R' })
     })
 
-    it('should record the previous rating in the audit log', async () => {
+    it('should record the previous rating in the audit log against the canonical id', async () => {
       const moderation = await createModerationComponent(components)
-      await moderation.setPlaceRating('p1', 'R', '0xMOD', 'inappropriate')
+      await moderation.setPlaceRating(PLACE_ID, 'R', '0xMOD', 'inappropriate')
 
       expect(components.contentRatingsRepository.record).toHaveBeenCalledWith(
         tx,
-        expect.objectContaining({ entityId: 'p1', originalRating: 'PR', updateRating: 'R', moderator: '0xMOD' })
+        expect.objectContaining({ entityId: PLACE_ID, originalRating: 'PR', updateRating: 'R', moderator: '0xMOD' })
       )
     })
 
     it('should update the place content rating', async () => {
       const moderation = await createModerationComponent(components)
-      await moderation.setPlaceRating('p1', 'R', '0xMOD')
+      await moderation.setPlaceRating(PLACE_ID, 'R', '0xMOD')
 
-      expect(components.placesRepository.updateModeration).toHaveBeenCalledWith(tx, 'p1', { content_rating: 'R' })
+      expect(components.placesRepository.updateModeration).toHaveBeenCalledWith(tx, PLACE_ID, { content_rating: 'R' })
     })
   })
 
@@ -52,20 +54,29 @@ describe('when moderating a place', () => {
     it('should throw a PlaceNotFoundError', async () => {
       const moderation = await createModerationComponent(components)
 
-      await expect(moderation.setPlaceRating('missing', 'R', '0xMOD')).rejects.toThrow(PlaceNotFoundError)
+      await expect(moderation.setPlaceRating(PLACE_ID, 'R', '0xMOD')).rejects.toThrow(PlaceNotFoundError)
+    })
+  })
+
+  describe('and the place id is not a valid uuid', () => {
+    it('should throw a PlaceNotFoundError without touching the database', async () => {
+      const moderation = await createModerationComponent(components)
+
+      await expect(moderation.setPlaceRating('not-a-uuid', 'R', '0xMOD')).rejects.toThrow(PlaceNotFoundError)
+      expect(components.placesRepository.findByIdWithAggregates).not.toHaveBeenCalled()
     })
   })
 
   describe('and disabling a place', () => {
     beforeEach(() => {
-      components.placesRepository.updateModeration.mockResolvedValueOnce({ id: 'p1', disabled: true })
+      components.placesRepository.updateModeration.mockResolvedValueOnce({ id: PLACE_ID, disabled: true })
     })
 
     it('should update the place with a moderation disabled reason', async () => {
       const moderation = await createModerationComponent(components)
-      await moderation.setPlaceDisabled('p1', true)
+      await moderation.setPlaceDisabled(PLACE_ID, true)
 
-      expect(components.placesRepository.updateModeration).toHaveBeenCalledWith(components.pg, 'p1', {
+      expect(components.placesRepository.updateModeration).toHaveBeenCalledWith(components.pg, PLACE_ID, {
         disabled: true,
         disabled_reason: 'moderation'
       })

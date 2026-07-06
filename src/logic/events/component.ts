@@ -298,8 +298,15 @@ export async function createEventsComponent(
         recurrent_monthday: patch.recurrent_monthday ?? event.recurrent_monthday,
         recurrent_weekday_mask: patch.recurrent_weekday_mask ?? event.recurrent_weekday_mask,
         recurrent_month_mask: patch.recurrent_month_mask ?? event.recurrent_month_mask,
-        recurrent_until: patch.recurrent_until ? new Date(patch.recurrent_until) : event.recurrent_until,
-        recurrent_count: patch.recurrent_count ?? event.recurrent_count
+        // Distinguish "leave unchanged" (key absent) from "clear" (explicit null),
+        // so a client can remove the recurrence end bound / count.
+        recurrent_until:
+          'recurrent_until' in patch
+            ? patch.recurrent_until
+              ? new Date(patch.recurrent_until)
+              : null
+            : event.recurrent_until,
+        recurrent_count: 'recurrent_count' in patch ? patch.recurrent_count : event.recurrent_count
       })
       Object.assign(update, {
         start_at: props.start_at,

@@ -34,6 +34,7 @@ describe('when reading worlds live data', () => {
         getNumber: jest.fn().mockResolvedValue(undefined)
       }
       fetcher.fetch.mockResolvedValue({
+        ok: true,
         json: async () => ({ data: { perWorld: [{ worldName: 'My-World.dcl.eth', users: 7 }] } })
       })
     })
