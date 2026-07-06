@@ -257,4 +257,37 @@ test('when managing events over the API', function ({ components }) {
       expect(event!.total_attendees).toBe(1)
     })
   })
+
+  describe('and searching events by community via POST /api/events/search', () => {
+    beforeEach(async () => {
+      await components.pg.query(SQL`DELETE FROM events`)
+      await components.pg.query(SQL`
+        INSERT INTO events (name, start_at, finish_at, duration, "user", approved, community_id,
+          next_start_at, next_finish_at)
+        VALUES ('Community party', now() + interval '1 hour', now() + interval '2 hours', 3600000, '0xowner', true,
+                'community-1', now() + interval '1 hour', now() + interval '2 hours'),
+               ('Other event', now() + interval '1 hour', now() + interval '2 hours', 3600000, '0xowner', true,
+                null, now() + interval '1 hour', now() + interval '2 hours')`)
+    })
+
+    it('should return only the events for the requested community', async () => {
+      const response = await components.localFetch.fetch('/api/events/search', {
+        method: 'POST',
+        body: JSON.stringify({ communityId: 'community-1' })
+      })
+      const body = await response.json()
+
+      expect(response.status).toBe(200)
+      expect(body.data).toHaveLength(1)
+      expect(body.data[0].name).toBe('Community party')
+    })
+
+    it('should tolerate a missing body and return the active events', async () => {
+      const response = await components.localFetch.fetch('/api/events/search', { method: 'POST' })
+      const body = await response.json()
+
+      expect(response.status).toBe(200)
+      expect(body.total).toBe(2)
+    })
+  })
 })

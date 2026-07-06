@@ -264,8 +264,8 @@ export async function createEventsComponent(
     return serialize(created)
   }
 
-  async function assertCanModify(event: Event, user: string): Promise<void> {
-    if (event.user === user.toLowerCase()) return
+  async function assertCanModify(event: Event, user: string, isAdmin: boolean): Promise<void> {
+    if (isAdmin || event.user === user.toLowerCase()) return
     const allowed = await profiles.hasAnyPermission(user, [Permission.EditAnyEvent, Permission.ApproveAnyEvent])
     if (!allowed) throw new EventUnauthorizedActionError()
   }
@@ -287,10 +287,18 @@ export async function createEventsComponent(
     'user_name'
   ]
 
-  async function updateEvent(id: string, patch: UpdateEventPayload, user: string): Promise<Event> {
+  async function updateEvent(
+    id: string,
+    patch: UpdateEventPayload,
+    user: string,
+    options: { isAdmin?: boolean; actor?: string } = {}
+  ): Promise<Event> {
+    const isAdmin = options.isAdmin ?? false
+    // The moderator recorded on approve/reject: an admin may override it (automation).
+    const actor = (isAdmin && options.actor?.trim()) || user.toLowerCase()
     const event = await eventsRepository.findById(pg, id)
     if (!event) throw new EventNotFoundError(id)
-    await assertCanModify(event, user)
+    await assertCanModify(event, user, isAdmin)
 
     const update: UpdateEventRow = {}
 
@@ -352,16 +360,17 @@ export async function createEventsComponent(
     // relevant permission (ApproveAnyEvent, or ApproveOwnEvent on one's own event).
     const isOwner = event.user === user.toLowerCase()
     const canModerate =
+      isAdmin ||
       (await profiles.hasAnyPermission(user, [Permission.ApproveAnyEvent])) ||
       (isOwner && (await profiles.hasAnyPermission(user, [Permission.ApproveOwnEvent])))
     if (canModerate) {
       if (patch.approved !== undefined) {
         update.approved = patch.approved
-        update.approved_by = user.toLowerCase()
+        update.approved_by = actor
       }
       if (patch.rejected !== undefined) {
         update.rejected = patch.rejected
-        update.rejected_by = user.toLowerCase()
+        update.rejected_by = actor
       }
       if (patch.rejection_reason !== undefined) update.rejection_reason = patch.rejection_reason
       if (patch.highlighted !== undefined) update.highlighted = patch.highlighted
@@ -370,24 +379,26 @@ export async function createEventsComponent(
     const updated = await eventsRepository.update(pg, id, update)
     if (!updated) throw new EventNotFoundError(id)
     if (canModerate && update.approved === true) {
-      alert(`:white_check_mark: Event approved: ${updated.name} by ${user.toLowerCase()}`)
+      alert(`:white_check_mark: Event approved: ${updated.name} by ${actor}`)
     }
     if (canModerate && update.rejected === true) {
       alert(
-        `:x: Event rejected: ${updated.name}${update.rejection_reason ? ` (${update.rejection_reason})` : ''} by ${user.toLowerCase()}`
+        `:x: Event rejected: ${updated.name}${update.rejection_reason ? ` (${update.rejection_reason})` : ''} by ${actor}`
       )
     }
     return serialize(updated)
   }
 
-  async function deleteEvent(id: string, user: string, byAdmin: boolean): Promise<void> {
+  async function deleteEvent(id: string, user: string, byAdmin: boolean, actor?: string): Promise<void> {
     const event = await eventsRepository.findById(pg, id)
     if (!event) throw new EventNotFoundError(id)
-    if (!byAdmin) await assertCanModify(event, user)
+    if (!byAdmin) await assertCanModify(event, user, false)
 
+    // Admins may record an override actor as the deleter (automation).
+    const deletedBy = (byAdmin && actor?.trim()) || user.toLowerCase()
     await eventsRepository.update(pg, id, {
       deleted_at: new Date(),
-      deleted_by: user.toLowerCase(),
+      deleted_by: deletedBy,
       deleted_by_user: !byAdmin,
       deleted_by_admin: byAdmin
     })

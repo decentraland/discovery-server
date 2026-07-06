@@ -2,10 +2,27 @@ import type { HandlerContextWithPath, HTTPResponse } from '../../types'
 import type { Event } from '../../types/entities'
 import type { EventListFilters } from '../../adapters/events-repository'
 import type { EventWithAttendance } from '../../logic/events'
+import type { IProfilesComponent } from '../../logic/profiles'
 import { BadRequestError, UnauthorizedError } from '../../types/errors'
+import { API_ADMIN_IDENTITY } from '../middlewares/authorization'
 import { intParam } from './query-params'
 
 type ListContext = { viewer?: string; isAdmin?: boolean }
+
+/**
+ * Resolve the requester + whether they act as admin. The admin service bearer sets
+ * a synthetic `API_ADMIN_IDENTITY` verification; a signed wallet is admin when it
+ * is in `ADMIN_ADDRESSES`.
+ */
+function resolveViewer(
+  verification: { auth?: string } | undefined,
+  profiles: IProfilesComponent
+): { viewer?: string; isAdmin: boolean } {
+  const viewer = verification?.auth?.toLowerCase()
+  if (!viewer) return { viewer: undefined, isAdmin: false }
+  const isAdmin = viewer === API_ADMIN_IDENTITY || profiles.isAdmin(viewer)
+  return { viewer, isAdmin }
+}
 
 function parseFilters(params: URLSearchParams, ctx: ListContext = {}): EventListFilters {
   const listParam = params.get('list')
@@ -34,11 +51,39 @@ function parseFilters(params: URLSearchParams, ctx: ListContext = {}): EventList
 export async function getEventListHandler(
   context: Pick<HandlerContextWithPath<'events' | 'profiles', '/api/events'>, 'components' | 'url' | 'verification'>
 ): Promise<HTTPResponse<Event[]>> {
-  const viewer = context.verification?.auth?.toLowerCase()
-  const isAdmin = viewer ? context.components.profiles.isAdmin(viewer) : false
+  const { viewer, isAdmin } = resolveViewer(context.verification, context.components.profiles)
   const { data, total } = await context.components.events.getEvents(
     parseFilters(context.url.searchParams, { viewer, isAdmin })
   )
+  return { status: 200, body: { ok: true, data, total } }
+}
+
+/**
+ * Legacy `POST /api/events/search` — same filters as `GET /api/events` (from the
+ * query string) plus body-driven `placeIds` / `communityId`.
+ */
+export async function searchEventsHandler(
+  context: Pick<
+    HandlerContextWithPath<'events' | 'profiles', '/api/events/search'>,
+    'components' | 'url' | 'request' | 'verification'
+  >
+): Promise<HTTPResponse<Event[]>> {
+  const { viewer, isAdmin } = resolveViewer(context.verification, context.components.profiles)
+  const filters = parseFilters(context.url.searchParams, { viewer, isAdmin })
+
+  let body: any = {}
+  try {
+    body = (await context.request.json()) ?? {}
+  } catch {
+    // A missing/invalid body just means "no extra filters" for a search POST.
+    body = {}
+  }
+  if (Array.isArray(body.placeIds) && body.placeIds.length) {
+    filters.placeIds = body.placeIds.filter((id: unknown) => typeof id === 'string')
+  }
+  if (typeof body.communityId === 'string') filters.communityId = body.communityId
+
+  const { data, total } = await context.components.events.getEvents(filters)
   return { status: 200, body: { ok: true, data, total } }
 }
 
@@ -60,9 +105,8 @@ export async function getEventHandler(
     'components' | 'params' | 'verification'
   >
 ): Promise<HTTPResponse<EventWithAttendance>> {
-  const user = context.verification?.auth?.toLowerCase()
-  const isAdmin = user ? context.components.profiles.isAdmin(user) : false
-  const data = await context.components.events.getEvent(context.params.event_id, user, isAdmin)
+  const { viewer, isAdmin } = resolveViewer(context.verification, context.components.profiles)
+  const data = await context.components.events.getEvent(context.params.event_id, viewer, isAdmin)
   return { status: 200, body: { ok: true, data } }
 }
 
@@ -84,15 +128,15 @@ export async function createEventHandler(
   return { status: 200, body: { ok: true, data } }
 }
 
-/** Legacy `PATCH /api/events/:event_id` — update an event (owner/editor). */
+/** Legacy `PATCH /api/events/:event_id` — update an event (owner/editor, or admin/admin-bearer). */
 export async function updateEventHandler(
   context: Pick<
-    HandlerContextWithPath<'events', '/api/events/:event_id'>,
+    HandlerContextWithPath<'events' | 'profiles', '/api/events/:event_id'>,
     'components' | 'params' | 'request' | 'verification'
   >
 ): Promise<HTTPResponse<Event>> {
-  const user = context.verification?.auth?.toLowerCase()
-  if (!user) throw new UnauthorizedError('Authentication required')
+  const { viewer, isAdmin } = resolveViewer(context.verification, context.components.profiles)
+  if (!viewer) throw new UnauthorizedError('Authentication required')
 
   let body: any
   try {
@@ -101,21 +145,22 @@ export async function updateEventHandler(
     throw new BadRequestError('Invalid JSON body')
   }
 
-  const data = await context.components.events.updateEvent(context.params.event_id, body, user)
+  const actor = typeof body.actor === 'string' ? body.actor : undefined
+  const data = await context.components.events.updateEvent(context.params.event_id, body, viewer, { isAdmin, actor })
   return { status: 200, body: { ok: true, data } }
 }
 
-/** Legacy `DELETE /api/events/:event_id` — soft-delete an event (owner/admin). */
+/** Legacy `DELETE /api/events/:event_id` — soft-delete an event (owner/admin/admin-bearer). */
 export async function deleteEventHandler(
   context: Pick<
     HandlerContextWithPath<'events' | 'profiles', '/api/events/:event_id'>,
-    'components' | 'params' | 'verification'
+    'components' | 'params' | 'url' | 'verification'
   >
 ): Promise<HTTPResponse<{ id: string }>> {
-  const user = context.verification?.auth?.toLowerCase()
-  if (!user) throw new UnauthorizedError('Authentication required')
+  const { viewer, isAdmin } = resolveViewer(context.verification, context.components.profiles)
+  if (!viewer) throw new UnauthorizedError('Authentication required')
 
-  const byAdmin = context.components.profiles.isAdmin(user)
-  await context.components.events.deleteEvent(context.params.event_id, user, byAdmin)
+  const actor = context.url.searchParams.get('actor') ?? undefined
+  await context.components.events.deleteEvent(context.params.event_id, viewer, isAdmin, actor)
   return { status: 200, body: { ok: true, data: { id: context.params.event_id } } }
 }

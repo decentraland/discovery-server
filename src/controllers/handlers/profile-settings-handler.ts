@@ -30,6 +30,23 @@ export async function getMyProfileSettingsHandler(
   return { status: 200, body: { ok: true, data } }
 }
 
+/**
+ * Legacy `PATCH /api/profiles/me/settings` — the authenticated wallet's own settings.
+ * The legacy route only ever accepted email/notify/local-time fields, all of which
+ * were dropped from the schema (the email path is dead and permissions are never
+ * self-service). The body is therefore accepted but has no updatable field, so this
+ * returns the caller's current settings unchanged (preserving the route for clients).
+ */
+export async function updateMyProfileSettingsHandler(
+  context: Pick<HandlerContextWithPath<'profiles', '/api/profiles/me/settings'>, 'components' | 'verification'>
+): Promise<HTTPResponse<ProfileSettings>> {
+  const user = context.verification?.auth?.toLowerCase()
+  if (!user) throw new UnauthorizedError('Authentication required')
+
+  const data = await context.components.profiles.getSettings(user)
+  return { status: 200, body: { ok: true, data } }
+}
+
 /** Legacy `GET /api/profiles/:profile_id/settings` — another wallet's settings (admin/EditAnyProfile). */
 export async function getProfileSettingsHandler(
   context: Pick<HandlerContextWithPath<'profiles'>, 'components' | 'params'>

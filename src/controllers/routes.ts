@@ -6,21 +6,33 @@ import { pingHandler } from './handlers/ping-handler'
 import { statusHandler } from './handlers/status-handler'
 import { getCategoriesHandler } from './handlers/get-categories-handler'
 import { getEventCategoriesHandler } from './handlers/get-event-categories-handler'
-import { getScheduleByIdHandler, getSchedulesHandler } from './handlers/get-schedules-handler'
 import {
+  createScheduleHandler,
+  getScheduleByIdHandler,
+  getSchedulesHandler,
+  updateScheduleHandler
+} from './handlers/get-schedules-handler'
+import {
+  getPlaceCategoriesHandler,
   getPlaceHandler,
   getPlaceListByIdHandler,
   getPlaceListHandler,
   getPlaceStatusListHandler
 } from './handlers/get-places-handler'
+import { getMapHandler, getMapPlacesHandler } from './handlers/map-handler'
 import { getWorldHandler, getWorldListHandler, getWorldNamesHandler } from './handlers/get-worlds-handler'
 import { updateFavoritesHandler, updateLikesHandler } from './handlers/update-interactions-handler'
-import { createAdminAuth, createRequirePermission } from './middlewares/authorization'
+import {
+  createAdminAuth,
+  createOptionalSignedOrAdminBearer,
+  createRequirePermission
+} from './middlewares/authorization'
 import { ProfilePermission } from '../types/entities'
 import {
   getMyProfileSettingsHandler,
   getProfileSettingsHandler,
   getProfileSettingsListHandler,
+  updateMyProfileSettingsHandler,
   updateProfileSettingsHandler
 } from './handlers/profile-settings-handler'
 import {
@@ -29,6 +41,7 @@ import {
   getAttendingEventsHandler,
   getEventHandler,
   getEventListHandler,
+  searchEventsHandler,
   updateEventHandler
 } from './handlers/events-handler'
 import { createAttendeeHandler, deleteAttendeeHandler, getAttendeesHandler } from './handlers/attendees-handler'
@@ -66,13 +79,17 @@ export async function setupRouter(globalContext: GlobalContext): Promise<Router<
   const dataTeamToken = await components.config.getString('DATA_TEAM_AUTH_TOKEN')
   // Data-team ranking routes are only mounted when their bearer token is configured.
   const withDataTeamBearer = dataTeamToken ? createAnyBearerMiddleware([dataTeamToken]) : undefined
-  // Moderation routes accept a signed admin wallet OR the service admin bearer
-  // token (unified + legacy rotation aliases).
-  const adminAuth = createAdminAuth(components.fetcher, components.profiles, [
+  // Service admin bearer tokens (unified + legacy rotation aliases).
+  const adminTokens = [
     await components.config.getString('API_ADMIN_TOKEN'),
     await components.config.getString('LEGACY_PLACES_ADMIN_AUTH_TOKEN'),
     await components.config.getString('LEGACY_EVENTS_ADMIN_AUTH_TOKEN')
-  ])
+  ]
+  // Moderation routes: signed admin wallet OR the service admin bearer.
+  const adminAuth = createAdminAuth(components.fetcher, components.profiles, adminTokens)
+  // Events read/moderation routes: optional-signed, with the admin bearer unlocking
+  // the admin view (pending/rejected/deleted) and moderation.
+  const eventsAuth = createOptionalSignedOrAdminBearer(components.fetcher, adminTokens)
 
   router.use(errorHandler)
 
@@ -83,17 +100,31 @@ export async function setupRouter(globalContext: GlobalContext): Promise<Router<
   router.get('/api/categories', getCategoriesHandler)
   router.get('/api/events/categories', getEventCategoriesHandler)
 
-  // schedules (public reads)
+  // schedules (public reads; writes gated by EditAnySchedule)
   router.get('/api/schedules', getSchedulesHandler)
   router.get('/api/schedules/:schedule_id', getScheduleByIdHandler)
+  router.post(
+    '/api/schedules',
+    signedFetch(),
+    requirePermission(ProfilePermission.EditAnySchedule),
+    createScheduleHandler
+  )
+  router.patch(
+    '/api/schedules/:schedule_id',
+    signedFetch(),
+    requirePermission(ProfilePermission.EditAnySchedule),
+    updateScheduleHandler
+  )
 
-  // events — static/collection routes registered before the :event_id matcher
-  router.get('/api/events', signedFetch({ optional: true }), getEventListHandler)
+  // events — static/collection routes registered before the :event_id matcher.
+  // eventsAuth = optional-signed + admin bearer (unlocks the admin view/moderation).
+  router.get('/api/events', eventsAuth, getEventListHandler)
+  router.post('/api/events/search', eventsAuth, searchEventsHandler)
   router.post('/api/events', signedFetch(), createEventHandler)
   router.get('/api/events/attending', signedFetch(), getAttendingEventsHandler)
-  router.get('/api/events/:event_id', signedFetch({ optional: true }), getEventHandler)
-  router.patch('/api/events/:event_id', signedFetch(), updateEventHandler)
-  router.delete('/api/events/:event_id', signedFetch(), deleteEventHandler)
+  router.get('/api/events/:event_id', eventsAuth, getEventHandler)
+  router.patch('/api/events/:event_id', eventsAuth, updateEventHandler)
+  router.delete('/api/events/:event_id', eventsAuth, deleteEventHandler)
   router.get('/api/events/:event_id/attendees', getAttendeesHandler)
   router.post('/api/events/:event_id/attendees', signedFetch(), createAttendeeHandler)
   router.delete('/api/events/:event_id/attendees', signedFetch(), deleteAttendeeHandler)
@@ -103,6 +134,7 @@ export async function setupRouter(globalContext: GlobalContext): Promise<Router<
   router.post('/api/places', signedFetch({ optional: true }), getPlaceListByIdHandler)
   router.post('/api/places/status', getPlaceStatusListHandler)
   router.get('/api/places/:place_id', signedFetch({ optional: true }), getPlaceHandler)
+  router.get('/api/places/:place_id/categories', getPlaceCategoriesHandler)
   router.patch('/api/places/:entity_id/likes', signedFetch(), updateLikesHandler)
   router.patch('/api/places/:entity_id/favorites', signedFetch(), updateFavoritesHandler)
   // places moderation (signed admin or service admin bearer); ranking is data-team bearer
@@ -112,6 +144,10 @@ export async function setupRouter(globalContext: GlobalContext): Promise<Router<
   if (withDataTeamBearer) {
     router.put('/api/places/:place_id/ranking', withDataTeamBearer, updatePlaceRankingHandler)
   }
+
+  // map (optional-signed reads): genesis keyed feed + unified places+worlds list
+  router.get('/api/map', signedFetch({ optional: true }), getMapHandler)
+  router.get('/api/map/places', signedFetch({ optional: true }), getMapPlacesHandler)
 
   // content-moderation report (signed → presigned S3 upload URL)
   router.post('/api/report', signedFetch(), createReportHandler)
@@ -157,6 +193,7 @@ export async function setupRouter(globalContext: GlobalContext): Promise<Router<
     getProfileSettingsListHandler
   )
   router.get('/api/profiles/me/settings', signedFetch(), getMyProfileSettingsHandler)
+  router.patch('/api/profiles/me/settings', signedFetch(), updateMyProfileSettingsHandler)
   router.get(
     '/api/profiles/:profile_id/settings',
     signedFetch(),

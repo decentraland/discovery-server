@@ -34,6 +34,14 @@ test('when reading places from a real server', function ({ components }) {
       expect(body.data.map((p: { id: string }) => p.id).sort()).toEqual([genesisId, highlightedId].sort())
     })
 
+    it('should return the place category slugs via the categories sub-route', async () => {
+      const response = await components.localFetch.fetch(`/api/places/${genesisId}/categories`)
+      const body = await response.json()
+
+      expect(response.status).toBe(200)
+      expect(body.data).toEqual({ categories: ['art'] })
+    })
+
     it('should filter to only highlighted places', async () => {
       const response = await components.localFetch.fetch('/api/places?only_highlighted=true')
       const body = await response.json()

@@ -96,6 +96,34 @@ describe('when creating an event', () => {
     })
   })
 
+  describe('and an admin updates an event via the admin bearer', () => {
+    beforeEach(() => {
+      components.eventsRepository.findById.mockResolvedValue({
+        id: 'e1',
+        user: '0xsomeoneelse',
+        name: 'Party',
+        approved: false,
+        rejected: false
+      })
+      components.eventsRepository.update.mockImplementation(async (_c: unknown, _id: string, patch: any) => ({
+        id: 'e1',
+        name: 'Party',
+        ...patch
+      }))
+    })
+
+    it('should approve without a per-wallet permission and stamp the override actor', async () => {
+      const events = await createEventsComponent(components)
+      await events.updateEvent('e1', { approved: true }, '0xADMIN', { isAdmin: true, actor: 'jarvis-agent' })
+
+      expect(components.eventsRepository.update).toHaveBeenCalledWith(
+        components.pg,
+        'e1',
+        expect.objectContaining({ approved: true, approved_by: 'jarvis-agent' })
+      )
+    })
+  })
+
   describe('and the payload references a community', () => {
     let payload: any
 

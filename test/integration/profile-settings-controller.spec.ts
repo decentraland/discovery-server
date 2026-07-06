@@ -21,6 +21,20 @@ test('when accessing profile settings', function ({ components }) {
       expect(response.status).toBe(200)
       expect(body.data).toEqual(expect.objectContaining({ permissions: [] }))
     })
+
+    it('should accept a PATCH to own settings and return the current settings', async () => {
+      const path = '/api/profiles/me/settings'
+      const headers = getSignedAuthHeaders('PATCH', path, {}, identity)
+      const response = await components.localFetch.fetch(path, {
+        method: 'PATCH',
+        headers,
+        body: JSON.stringify({ notify_by_email: true })
+      })
+      const body = await response.json()
+
+      expect(response.status).toBe(200)
+      expect(body.data).toEqual(expect.objectContaining({ permissions: [] }))
+    })
   })
 
   describe('and listing all profiles with permissions', () => {

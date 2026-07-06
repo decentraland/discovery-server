@@ -1,4 +1,8 @@
-import { createAdminAuth, API_ADMIN_IDENTITY } from '../../src/controllers/middlewares/authorization'
+import {
+  createAdminAuth,
+  createOptionalSignedOrAdminBearer,
+  API_ADMIN_IDENTITY
+} from '../../src/controllers/middlewares/authorization'
 
 describe('when authorizing a moderation request with the admin bearer', () => {
   let fetcher: any
@@ -56,6 +60,55 @@ describe('when authorizing a moderation request with the admin bearer', () => {
       const middleware = createAdminAuth(fetcher, profiles, [undefined, undefined])
 
       await expect(middleware(contextWithAuth('Bearer anything'), next)).rejects.toThrow()
+      expect(next).not.toHaveBeenCalled()
+    })
+  })
+})
+
+describe('when authorizing an events request with the optional-signed-or-admin-bearer middleware', () => {
+  let fetcher: any
+  let next: jest.Mock
+
+  const contextWithAuth = (header: string | null) =>
+    ({ request: { headers: { get: (name: string) => (name === 'authorization' ? header : null) } } }) as any
+
+  beforeEach(() => {
+    // No signed-fetch identity headers -> optional signed-fetch leaves verification unset.
+    fetcher = { fetch: jest.fn() }
+    next = jest.fn().mockResolvedValue({ status: 200 })
+  })
+
+  afterEach(() => {
+    jest.clearAllMocks()
+  })
+
+  describe('and a valid admin bearer is presented on an anonymous request', () => {
+    it('should stamp the synthetic admin identity and continue', async () => {
+      const middleware = createOptionalSignedOrAdminBearer(fetcher, ['secret-token'])
+      const ctx = contextWithAuth('Bearer secret-token')
+      await middleware(ctx, next)
+
+      expect(ctx.verification).toEqual({ auth: API_ADMIN_IDENTITY, authMetadata: {} })
+      expect(next).toHaveBeenCalledTimes(1)
+    })
+  })
+
+  describe('and no auth is presented', () => {
+    it('should pass through anonymously without verification', async () => {
+      const middleware = createOptionalSignedOrAdminBearer(fetcher, ['secret-token'])
+      const ctx = contextWithAuth(null)
+      await middleware(ctx, next)
+
+      expect(ctx.verification?.auth).toBeUndefined()
+      expect(next).toHaveBeenCalledTimes(1)
+    })
+  })
+
+  describe('and an invalid admin bearer is presented', () => {
+    it('should reject the request', async () => {
+      const middleware = createOptionalSignedOrAdminBearer(fetcher, ['secret-token'])
+
+      await expect(middleware(contextWithAuth('Bearer wrong'), next)).rejects.toThrow()
       expect(next).not.toHaveBeenCalled()
     })
   })

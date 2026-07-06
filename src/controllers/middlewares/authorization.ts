@@ -73,3 +73,35 @@ export function createAdminAuth(
     return signed(ctx as Parameters<typeof signed>[0], () => requireAdmin(ctx, next))
   }
 }
+
+/**
+ * Optional-signed auth for events routes that also honor the service admin bearer.
+ * A signed wallet (if present) wins; otherwise a valid admin `Bearer` sets the
+ * synthetic `API_ADMIN_IDENTITY` (unlocking the admin event view/moderation).
+ * Anonymous is allowed (handlers enforce presence where they require it); an
+ * invalid signature or an unmatched bearer is rejected.
+ */
+export function createOptionalSignedOrAdminBearer(fetcher: IFetchComponent, adminTokens: Array<string | undefined>) {
+  const secrets = adminTokens.filter((token): token is string => !!token).map((token) => Buffer.from(token))
+  const signedOptional = createSignedFetchMiddleware(fetcher)({ optional: true })
+
+  return async (
+    ctx: AuthedContext,
+    next: () => Promise<IHttpServerComponent.IResponse>
+  ): Promise<IHttpServerComponent.IResponse> => {
+    return signedOptional(ctx as Parameters<typeof signedOptional>[0], async () => {
+      if (!ctx.verification?.auth) {
+        const header = ctx.request.headers.get('authorization')
+        if (header?.startsWith('Bearer ')) {
+          const value = Buffer.from(header.slice('Bearer '.length))
+          const ok = secrets.some((secret) => secret.length === value.length && timingSafeEqual(value, secret))
+          if (!ok) {
+            throw new UnauthorizedError('Invalid authorization header')
+          }
+          ctx.verification = { auth: API_ADMIN_IDENTITY, authMetadata: {} }
+        }
+      }
+      return next()
+    })
+  }
+}

@@ -53,6 +53,17 @@ export async function getPlaceHandler(
   return { status: 200, body: { ok: true, data } }
 }
 
+/** Legacy `GET /api/places/:place_id/categories` — the place's category slugs. */
+export async function getPlaceCategoriesHandler(
+  context: Pick<HandlerContextWithPath<'places', '/api/places/:place_id/categories'>, 'components' | 'params'>
+): Promise<HTTPResponse<{ categories: string[] }>> {
+  const { places } = context.components
+
+  const place = await places.getPlace(context.params.place_id)
+
+  return { status: 200, body: { ok: true, data: { categories: place.categories ?? [] } } }
+}
+
 async function readIds(context: { request: { json: () => Promise<unknown> } }): Promise<string[]> {
   let body: unknown
   try {

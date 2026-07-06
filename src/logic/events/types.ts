@@ -52,8 +52,18 @@ export interface IEventsComponent {
   getEvents(filters: EventListFilters): Promise<{ data: Event[]; total: number }>
   getAttendingEvents(user: string): Promise<Event[]>
   createEvent(payload: CreateEventPayload, user: string): Promise<Event>
-  updateEvent(id: string, patch: UpdateEventPayload, user: string): Promise<Event>
-  deleteEvent(id: string, user: string, byAdmin: boolean): Promise<void>
+  /**
+   * Update an event. `options.isAdmin` grants the moderation fields
+   * (approve/reject/highlight) without a per-wallet permission; `options.actor`
+   * overrides the recorded moderator identity (admin automation).
+   */
+  updateEvent(
+    id: string,
+    patch: UpdateEventPayload,
+    user: string,
+    options?: { isAdmin?: boolean; actor?: string }
+  ): Promise<Event>
+  deleteEvent(id: string, user: string, byAdmin: boolean, actor?: string): Promise<void>
   /** Cron: recompute next_start_at/next_finish_at/recurrent_dates for recurrent events whose window passed. Returns the count updated. */
   updateNextStartAt(batchSize?: number): Promise<number>
 }
