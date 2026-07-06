@@ -48,4 +48,6 @@ export interface IEventsRepository {
   listAttending(client: Queryable, user: string): Promise<Event[]>
   /** Distinct place/world ids that currently have a live (approved, ongoing) event. */
   getLiveEntityIds(client: Queryable): Promise<{ placeIds: string[]; worldIds: string[] }>
+  /** Recurrent, non-deleted events whose tracked next occurrence has passed but whose rule still has future dates. */
+  findRecurrentNeedingUpdate(client: Queryable, limit: number): Promise<Event[]>
 }

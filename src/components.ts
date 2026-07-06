@@ -23,6 +23,7 @@ import { createStorageComponent } from './adapters/storage'
 import { createNotificationCursorsRepository } from './adapters/notification-cursors-repository'
 import { createSlackNotifier } from './adapters/slack-notifier'
 import { createSnsPublisher } from './adapters/sns-publisher'
+import { createJobComponent } from '@dcl/job-component'
 import { createCategoriesComponent } from './logic/categories'
 import { createSchedulesComponent } from './logic/schedules'
 import { createPlacesComponent } from './logic/places'
@@ -127,6 +128,17 @@ export async function initComponents(): Promise<AppComponents> {
   })
   const reports = await createReportsComponent({ reportsStorage, logs })
 
+  // Background jobs: created only when enabled so exactly one deployment owns them.
+  const backgroundJobsEnabled = (await config.getString('BACKGROUND_JOBS_ENABLED')) === 'true'
+  const updateNextStartAtJob = backgroundJobsEnabled
+    ? createJobComponent(
+        { logs },
+        () => events.updateNextStartAt(),
+        (await config.getNumber('UPDATE_NEXT_START_AT_INTERVAL_MS')) ?? 60_000,
+        { repeat: true }
+      )
+    : undefined
+
   return {
     config,
     logs,
@@ -162,6 +174,7 @@ export async function initComponents(): Promise<AppComponents> {
     attendees,
     destinations,
     moderation,
-    reports
+    reports,
+    ...(updateNextStartAtJob ? { updateNextStartAtJob } : {})
   }
 }

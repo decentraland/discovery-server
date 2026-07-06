@@ -48,4 +48,6 @@ export interface IEventsComponent {
   createEvent(payload: CreateEventPayload, user: string): Promise<Event>
   updateEvent(id: string, patch: UpdateEventPayload, user: string): Promise<Event>
   deleteEvent(id: string, user: string, byAdmin: boolean): Promise<void>
+  /** Cron: recompute next_start_at/next_finish_at/recurrent_dates for recurrent events whose window passed. Returns the count updated. */
+  updateNextStartAt(batchSize?: number): Promise<number>
 }

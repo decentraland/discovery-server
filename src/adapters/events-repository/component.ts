@@ -172,5 +172,17 @@ export function createEventsRepository(): IEventsRepository {
     return { placeIds, worldIds }
   }
 
-  return { create, findById, update, list, count, listAttending, getLiveEntityIds }
+  async function findRecurrentNeedingUpdate(client: Queryable, limit: number): Promise<Event[]> {
+    const result = await client.query<Event>(SQL`
+      SELECT * FROM events
+      WHERE recurrent IS true
+        AND deleted_at IS NULL
+        AND finish_at > now()
+        AND (next_finish_at IS NULL OR next_finish_at <= now())
+      ORDER BY next_finish_at ASC NULLS FIRST
+      LIMIT ${limit}`)
+    return result.rows
+  }
+
+  return { create, findById, update, list, count, listAttending, getLiveEntityIds, findRecurrentNeedingUpdate }
 }

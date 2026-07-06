@@ -21,6 +21,7 @@ import type { IStorageComponent } from '../adapters/storage'
 import type { INotificationCursorsRepository } from '../adapters/notification-cursors-repository'
 import type { ISlackNotifier } from '../adapters/slack-notifier'
 import type { ISnsPublisher } from '../adapters/sns-publisher'
+import type { IJobComponent } from '@dcl/job-component'
 import type { ICategoriesComponent } from '../logic/categories'
 import type { ISchedulesComponent } from '../logic/schedules'
 import type { IPlacesComponent } from '../logic/places'
@@ -91,6 +92,9 @@ export type BaseComponents = {
   destinations: IDestinationsComponent
   moderation: IModerationComponent
   reports: IReportsComponent
+
+  // background jobs (present only when BACKGROUND_JOBS_ENABLED)
+  updateNextStartAtJob?: IJobComponent
 }
 
 export type AppComponents = BaseComponents

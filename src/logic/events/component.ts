@@ -206,5 +206,42 @@ export async function createEventsComponent(
     })
   }
 
-  return { getEvent, getEvents, getAttendingEvents, createEvent, updateEvent, deleteEvent }
+  async function updateNextStartAt(batchSize = 100): Promise<number> {
+    const events = await eventsRepository.findRecurrentNeedingUpdate(pg, batchSize)
+    let updated = 0
+    for (const event of events) {
+      if (recurrence.estimateRecurrentPastIterations(event as never) > MAX_RECURRENT_PAST_ITERATIONS) continue
+
+      const props = recurrence.calculateRecurrentProperties({
+        start_at: event.start_at,
+        duration: event.duration,
+        finish_at: event.finish_at,
+        recurrent: event.recurrent,
+        recurrent_frequency: event.recurrent_frequency as never,
+        recurrent_interval: event.recurrent_interval,
+        recurrent_setpos: event.recurrent_setpos,
+        recurrent_monthday: event.recurrent_monthday,
+        recurrent_weekday_mask: event.recurrent_weekday_mask,
+        recurrent_month_mask: event.recurrent_month_mask,
+        recurrent_until: event.recurrent_until,
+        recurrent_count: event.recurrent_count,
+        recurrent_dates: event.recurrent_dates
+      })
+      const next = recurrence.calculateNextRecurrentDates({
+        start_at: props.start_at,
+        duration: props.duration,
+        recurrent_dates: props.recurrent_dates
+      })
+      await eventsRepository.update(pg, event.id, {
+        recurrent_dates: props.recurrent_dates,
+        finish_at: props.finish_at,
+        next_start_at: next.next_start_at,
+        next_finish_at: next.next_finish_at
+      })
+      updated++
+    }
+    return updated
+  }
+
+  return { getEvent, getEvents, getAttendingEvents, createEvent, updateEvent, deleteEvent, updateNextStartAt }
 }
