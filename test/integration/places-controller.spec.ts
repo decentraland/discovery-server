@@ -88,4 +88,41 @@ test('when reading places from a real server', function ({ components }) {
       expect(response.status).toBe(404)
     })
   })
+
+  describe('and requesting a place with a non-uuid id', () => {
+    it('should respond with a 404 rather than a 500', async () => {
+      const response = await components.localFetch.fetch('/api/places/not-a-uuid')
+
+      expect(response.status).toBe(404)
+    })
+  })
+
+  describe('and requesting status for malformed ids', () => {
+    it('should ignore non-uuid ids instead of erroring', async () => {
+      const response = await components.localFetch.fetch('/api/places/status', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ ids: ['not-a-uuid'] })
+      })
+      const body = await response.json()
+
+      expect(response.status).toBe(200)
+      expect(body.data).toEqual([])
+    })
+  })
+
+  describe('and requesting only_favorites without authentication', () => {
+    beforeEach(async () => {
+      await components.pg.query(SQL`DELETE FROM places`)
+      await components.placesRepository.insert(components.pg, { title: 'Public', base_position: '0,0' })
+    })
+
+    it('should return an empty list rather than the full catalog', async () => {
+      const response = await components.localFetch.fetch('/api/places?only_favorites=true')
+      const body = await response.json()
+
+      expect(response.status).toBe(200)
+      expect(body.total).toBe(0)
+    })
+  })
 })

@@ -1,6 +1,7 @@
 import type { AppComponents } from '../../types'
 import type { AggregatePlace, PlaceStatus } from '../../types/entities'
 import type { PlaceListFilters } from '../../adapters/places-repository'
+import { isPlaceId } from '../entity-id'
 import type { IPlacesComponent, PlaceListResult } from './types'
 import { PlaceNotFoundError } from './errors'
 
@@ -23,6 +24,8 @@ export async function createPlacesComponent(
   }
 
   async function getPlace(id: string, user?: string): Promise<AggregatePlace> {
+    // Place ids are uuids; a non-uuid can't exist (and would crash the uuid cast).
+    if (!isPlaceId(id)) throw new PlaceNotFoundError(id)
     const place = await placesRepository.findByIdWithAggregates(pg, id, user)
     if (!place) {
       throw new PlaceNotFoundError(id)
@@ -31,6 +34,8 @@ export async function createPlacesComponent(
   }
 
   async function getPlaces(filters: PlaceListFilters): Promise<PlaceListResult> {
+    // Legacy parity: favorites for a specific user only; anonymous → empty.
+    if (filters.only_favorites && !filters.user) return { data: [], total: 0 }
     const effectiveFilters =
       filters.order_by === 'most_active'
         ? { ...filters, mostActivePositions: await hotScenes.getActivePositions() }
@@ -44,13 +49,14 @@ export async function createPlacesComponent(
   }
 
   async function getPlacesByIds(ids: string[], user?: string): Promise<AggregatePlace[]> {
-    if (!ids.length) return []
-    const rows = await placesRepository.findWithAggregates(pg, { ids: ids.slice(0, MAX_IDS), user, limit: MAX_IDS })
+    const validIds = ids.filter(isPlaceId).slice(0, MAX_IDS)
+    if (!validIds.length) return []
+    const rows = await placesRepository.findWithAggregates(pg, { ids: validIds, user, limit: MAX_IDS })
     return Promise.all(rows.map(decorate))
   }
 
   async function getPlacesStatus(ids: string[]): Promise<PlaceStatus[]> {
-    return placesRepository.findByIds(pg, ids.slice(0, MAX_IDS))
+    return placesRepository.findByIds(pg, ids.filter(isPlaceId).slice(0, MAX_IDS))
   }
 
   return { getPlace, getPlaces, getPlacesByIds, getPlacesStatus }

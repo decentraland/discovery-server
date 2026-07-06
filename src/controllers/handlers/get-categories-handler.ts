@@ -9,8 +9,14 @@ export async function getCategoriesHandler(
   const { categories } = context.components
   const params = context.url.searchParams
 
+  // Accept the legacy `target=places|worlds` param as well as only_places/only_worlds.
+  const target = params.get('target')
   const scope: CategoryScope =
-    params.get('only_worlds') === 'true' ? 'worlds' : params.get('only_places') === 'true' ? 'places' : 'all'
+    target === 'worlds' || params.get('only_worlds') === 'true'
+      ? 'worlds'
+      : target === 'places' || params.get('only_places') === 'true'
+        ? 'places'
+        : 'all'
 
   const data = await categories.getPlaceCategories(scope)
 

@@ -76,13 +76,14 @@ describe('when reading places', () => {
       placesRepository.findWithAggregates.mockResolvedValueOnce([])
     })
 
-    it('should query the repository with the ids filter', async () => {
+    it('should query the repository with the valid uuid ids filter', async () => {
+      const ids = ['11111111-1111-1111-1111-111111111111', '22222222-2222-2222-2222-222222222222']
       const places = await createPlacesComponent({ pg, placesRepository, hotScenes, logs })
-      await places.getPlacesByIds(['a', 'b'], '0xUSER')
+      await places.getPlacesByIds([...ids, 'not-a-uuid'], '0xUSER')
 
       expect(placesRepository.findWithAggregates).toHaveBeenCalledWith(
         pg,
-        expect.objectContaining({ ids: ['a', 'b'], user: '0xUSER' })
+        expect.objectContaining({ ids, user: '0xUSER' })
       )
     })
   })

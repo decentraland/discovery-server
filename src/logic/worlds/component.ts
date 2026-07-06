@@ -27,6 +27,8 @@ export async function createWorldsComponent(
   }
 
   async function getWorlds(filters: WorldListFilters): Promise<WorldListResult> {
+    // Legacy parity: favorites for a specific user only; anonymous → empty.
+    if (filters.only_favorites && !filters.user) return { data: [], total: 0 }
     const [rows, total] = await Promise.all([
       worldsRepository.findWithAggregates(pg, filters),
       worldsRepository.count(pg, filters)

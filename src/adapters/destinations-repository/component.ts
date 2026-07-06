@@ -25,10 +25,12 @@ export function createDestinationsRepository(): IDestinationsRepository {
     return filters.kinds.includes(branch)
   }
 
-  // A branch is excluded entirely (AND FALSE) when a filter targets the other kind.
+  // A branch is excluded only when a kind-specific filter targets the OTHER kind
+  // and nothing targets this one. When both positions and world_names are supplied
+  // (e.g. a mixed by-ids batch), each branch keeps the rows its own filter matches.
   function branchExclusions(filters: DestinationListFilters, branch: Branch): boolean {
-    if (branch === 'world' && filters.positions?.length) return true
-    if (branch === 'place' && filters.worldNames?.length) return true
+    if (branch === 'world' && filters.positions?.length && !filters.worldNames?.length) return true
+    if (branch === 'place' && filters.worldNames?.length && !filters.positions?.length) return true
     return false
   }
 
