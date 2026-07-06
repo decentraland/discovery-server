@@ -18,6 +18,9 @@ import type { IAttendeesRepository } from '../adapters/attendees-repository'
 import type { IDestinationsRepository } from '../adapters/destinations-repository'
 import type { IContentRatingsRepository } from '../adapters/content-ratings-repository'
 import type { IStorageComponent } from '../adapters/storage'
+import type { INotificationCursorsRepository } from '../adapters/notification-cursors-repository'
+import type { ISlackNotifier } from '../adapters/slack-notifier'
+import type { ISnsPublisher } from '../adapters/sns-publisher'
 import type { ICategoriesComponent } from '../logic/categories'
 import type { ISchedulesComponent } from '../logic/schedules'
 import type { IPlacesComponent } from '../logic/places'
@@ -65,10 +68,15 @@ export type BaseComponents = {
   attendeesRepository: IAttendeesRepository
   destinationsRepository: IDestinationsRepository
   contentRatingsRepository: IContentRatingsRepository
+  notificationCursorsRepository: INotificationCursorsRepository
 
   // storage (one per bucket)
   reportsStorage: IStorageComponent
   postersStorage: IStorageComponent
+
+  // outbound
+  slackNotifier: ISlackNotifier
+  snsPublisher: ISnsPublisher
 
   // logic
   categories: ICategoriesComponent

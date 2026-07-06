@@ -20,6 +20,9 @@ import { createAttendeesRepository } from './adapters/attendees-repository'
 import { createDestinationsRepository } from './adapters/destinations-repository'
 import { createContentRatingsRepository } from './adapters/content-ratings-repository'
 import { createStorageComponent } from './adapters/storage'
+import { createNotificationCursorsRepository } from './adapters/notification-cursors-repository'
+import { createSlackNotifier } from './adapters/slack-notifier'
+import { createSnsPublisher } from './adapters/sns-publisher'
 import { createCategoriesComponent } from './logic/categories'
 import { createSchedulesComponent } from './logic/schedules'
 import { createPlacesComponent } from './logic/places'
@@ -79,6 +82,11 @@ export async function initComponents(): Promise<AppComponents> {
   const attendeesRepository = createAttendeesRepository()
   const destinationsRepository = createDestinationsRepository()
   const contentRatingsRepository = createContentRatingsRepository()
+  const notificationCursorsRepository = createNotificationCursorsRepository()
+
+  // outbound adapters (optional: no-op when unconfigured)
+  const slackNotifier = await createSlackNotifier({ config, logs })
+  const snsPublisher = await createSnsPublisher({ config, logs })
 
   // storage (one adapter per bucket)
   const reportsStorage = await createStorageComponent(
@@ -138,6 +146,9 @@ export async function initComponents(): Promise<AppComponents> {
     attendeesRepository,
     destinationsRepository,
     contentRatingsRepository,
+    notificationCursorsRepository,
+    slackNotifier,
+    snsPublisher,
     reportsStorage,
     postersStorage,
     categories,
