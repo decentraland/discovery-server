@@ -11,19 +11,13 @@ import type { Pool } from 'pg'
  */
 
 export type EtlPools = { placesSource: Pool; eventsSource: Pool; target: Pool }
-export type EtlOptions = { dryRun?: boolean; batchSize?: number }
+export type EtlOptions = { dryRun?: boolean }
 
-const DEFAULT_BATCH = 5000
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 export type TableReport = { table: string; source: number; loaded: number }
 
-async function count(pool: Pool, table: string): Promise<number> {
-  const result = await pool.query<{ n: string }>(`SELECT count(*) AS n FROM ${table}`)
-  return Number(result.rows[0].n)
-}
-
-/** Copy worlds verbatim (btrim owner). */
+/** Copy worlds (btrim owner, lowercase id to satisfy the worlds_id_lowercase CHECK). */
 export async function migrateWorlds(pools: EtlPools, options: EtlOptions = {}): Promise<TableReport> {
   const { rows } = await pools.placesSource.query(`
     SELECT id, world_name, title, description, image, content_rating, categories, btrim(owner) AS owner,
@@ -41,8 +35,8 @@ export async function migrateWorlds(pools: EtlPools, options: EtlOptions = {}): 
          ON CONFLICT (id) DO UPDATE SET world_name = EXCLUDED.world_name, title = EXCLUDED.title,
            description = EXCLUDED.description, image = EXCLUDED.image, updated_at = EXCLUDED.updated_at`,
         [
-          w.id, w.world_name, w.title, w.description, w.image, w.content_rating, w.categories, w.owner,
-          w.show_in_places, w.single_player, w.skybox_time, w.is_private, w.likes, w.dislikes, w.favorites,
+          String(w.id).toLowerCase(), w.world_name, w.title, w.description, w.image, w.content_rating, w.categories,
+          w.owner, w.show_in_places, w.single_player, w.skybox_time, w.is_private, w.likes, w.dislikes, w.favorites,
           w.like_rate, w.like_score, w.highlighted, w.highlighted_image, w.ranking, w.created_at, w.updated_at
         ]
       )
@@ -60,9 +54,14 @@ export async function migratePlaces(pools: EtlPools, options: EtlOptions = {}): 
            like_rate, like_score, ranking, highlighted, highlighted_image, disabled, disabled_at, disabled_reason,
            world, world_name, world_id, deployed_at, categories, sdk, created_at, updated_at
     FROM places`)
+  // Resolve world_id against the target so a missing/case-mismatched ref becomes NULL
+  // rather than an FK violation that aborts the run.
+  const worldIds = new Set((await pools.target.query<{ id: string }>(`SELECT id FROM worlds`)).rows.map((r) => r.id))
   let loaded = 0
   if (!options.dryRun) {
     for (const p of rows) {
+      const worldId = p.world_id ? String(p.world_id).trim().toLowerCase() : null
+      const resolvedWorldId = worldId && worldIds.has(worldId) ? worldId : null
       await pools.target.query(
         `INSERT INTO places (id, title, description, image, owner, creator_address, positions, base_position,
            contact_name, contact_email, content_rating, likes, dislikes, favorites, like_rate, like_score, ranking,
@@ -76,7 +75,7 @@ export async function migratePlaces(pools: EtlPools, options: EtlOptions = {}): 
           p.id, p.title, p.description, p.image, p.owner, p.creator_address, p.positions, p.base_position,
           p.contact_name, p.contact_email, p.content_rating, p.likes, p.dislikes, p.favorites, p.like_rate,
           p.like_score, p.ranking, p.highlighted, p.highlighted_image, p.disabled, p.disabled_at, p.disabled_reason,
-          p.world, p.world_name, p.world_id, p.deployed_at, p.categories, p.sdk, p.created_at, p.updated_at
+          p.world, p.world_name, resolvedWorldId, p.deployed_at, p.categories, p.sdk, p.created_at, p.updated_at
         ]
       )
       loaded++
@@ -112,7 +111,9 @@ export async function migrateEvents(pools: EtlPools, options: EtlOptions = {}): 
         worldId = legacyRef && worldIds.has(legacyRef.toLowerCase()) ? legacyRef.toLowerCase() : null
         if (legacyRef && !worldId) nulledRefs++
       } else if (legacyRef && UUID_RE.test(legacyRef)) {
-        placeId = placeIds.has(legacyRef) ? legacyRef : null
+        // placeIds holds canonical lowercase uuid::text — match case-insensitively.
+        const lower = legacyRef.toLowerCase()
+        placeId = placeIds.has(lower) ? lower : null
         if (!placeId) nulledRefs++
       }
 
