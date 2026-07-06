@@ -24,6 +24,7 @@ import { createNotificationCursorsRepository } from './adapters/notification-cur
 import { createSlackNotifier } from './adapters/slack-notifier'
 import { createSnsPublisher } from './adapters/sns-publisher'
 import { createSnapshotClient } from './adapters/snapshot-client'
+import { createCommsGatekeeperClient } from './adapters/comms-gatekeeper-client'
 import { createJobComponent } from '@dcl/job-component'
 import { createCategoriesComponent } from './logic/categories'
 import { createSchedulesComponent } from './logic/schedules'
@@ -98,6 +99,7 @@ export async function initComponents(): Promise<AppComponents> {
   const slackNotifier = await createSlackNotifier({ config, logs })
   const snsPublisher = await createSnsPublisher({ config, logs })
   const snapshotClient = await createSnapshotClient({ config, logs, fetcher })
+  const commsGatekeeperClient = await createCommsGatekeeperClient({ config, logs, fetcher })
 
   // storage (one adapter per bucket)
   const reportsStorage = await createStorageComponent(
@@ -128,7 +130,13 @@ export async function initComponents(): Promise<AppComponents> {
     logs
   })
   const attendees = await createAttendeesComponent({ pg, attendeesRepository, logs })
-  const destinations = await createDestinationsComponent({ pg, destinationsRepository, eventsRepository, logs })
+  const destinations = await createDestinationsComponent({
+    pg,
+    destinationsRepository,
+    eventsRepository,
+    commsGatekeeperClient,
+    logs
+  })
   const moderation = await createModerationComponent({
     pg,
     placesRepository,
@@ -205,6 +213,7 @@ export async function initComponents(): Promise<AppComponents> {
     slackNotifier,
     snsPublisher,
     snapshotClient,
+    commsGatekeeperClient,
     reportsStorage,
     postersStorage,
     categories,

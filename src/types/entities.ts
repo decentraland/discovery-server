@@ -103,6 +103,8 @@ export type Destination = {
   user_favorite: boolean
   /** Decorated by the destinations logic from the events domain (in-process). */
   live_event?: boolean
+  /** Realtime connected users, decorated from comms-gatekeeper when requested. */
+  user_count?: number
 }
 
 export type Event = {

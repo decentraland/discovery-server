@@ -22,6 +22,7 @@ import type { INotificationCursorsRepository } from '../adapters/notification-cu
 import type { ISlackNotifier } from '../adapters/slack-notifier'
 import type { ISnsPublisher } from '../adapters/sns-publisher'
 import type { ISnapshotClient } from '../adapters/snapshot-client'
+import type { ICommsGatekeeperClient } from '../adapters/comms-gatekeeper-client'
 import type { IJobComponent } from '@dcl/job-component'
 import type { ICategoriesComponent } from '../logic/categories'
 import type { ISchedulesComponent } from '../logic/schedules'
@@ -88,6 +89,7 @@ export type BaseComponents = {
 
   // external clients
   snapshotClient: ISnapshotClient
+  commsGatekeeperClient: ICommsGatekeeperClient
 
   // logic
   categories: ICategoriesComponent

@@ -45,10 +45,14 @@ export async function getDestinationsListHandler(
   const { destinations } = context.components
   const params = context.url.searchParams
   const user = context.verification?.auth?.toLowerCase()
-  const withLiveEvents =
-    params.get('with_live_events') === 'true' || (multi(params, 'with') ?? []).includes('live_events')
+  const withList = multi(params, 'with') ?? []
+  const withLiveEvents = params.get('with_live_events') === 'true' || withList.includes('live_events')
+  const withConnectedUsers = params.get('with_connected_users') === 'true' || withList.includes('connected_users')
 
-  const { data, total } = await destinations.getDestinations(parseFilters(params, user), { withLiveEvents })
+  const { data, total } = await destinations.getDestinations(parseFilters(params, user), {
+    withLiveEvents,
+    withConnectedUsers
+  })
 
   return { status: 200, body: { ok: true, data, total } }
 }

@@ -37,6 +37,14 @@ test('when discovering destinations', function ({ components }) {
       expect(body.data[0]).toEqual(expect.objectContaining({ kind: 'world', world_name: 'my-world.dcl.eth' }))
     })
 
+    it('should decorate destinations with a connected-user count when requested', async () => {
+      const response = await components.localFetch.fetch('/api/destinations?with_connected_users=true')
+      const body = await response.json()
+
+      // comms-gatekeeper is unconfigured in tests, so counts resolve to 0 but the field is present.
+      expect(body.data.every((d: { user_count?: number }) => d.user_count === 0)).toBe(true)
+    })
+
     it('should decorate destinations with live-event flags when requested', async () => {
       await components.pg.query(SQL`
         INSERT INTO events (name, start_at, finish_at, duration, "user", approved, place_id, next_start_at, next_finish_at)
