@@ -30,6 +30,7 @@ import { createSceneStatsComponent } from './adapters/scene-stats'
 import { createWorldsLiveDataComponent } from './adapters/worlds-live-data'
 import { createDclListsClient } from './adapters/dcl-lists-client'
 import { createCatalystClient } from './adapters/catalyst-client'
+import { createSubgraphsClient } from './adapters/subgraphs-client'
 import { createCommunitiesClient } from './adapters/communities-client'
 import { createJobComponent } from '@dcl/job-component'
 import { createCategoriesComponent } from './logic/categories'
@@ -111,6 +112,7 @@ export async function initComponents(): Promise<AppComponents> {
   const worldsLiveData = await createWorldsLiveDataComponent({ config, logs, fetcher })
   const dclListsClient = await createDclListsClient({ config, logs, fetcher })
   const catalystClient = await createCatalystClient({ config, logs, fetcher })
+  const subgraphsClient = await createSubgraphsClient({ config, logs, fetcher })
   const communitiesClient = await createCommunitiesClient({ config, logs, fetcher })
 
   // storage (one adapter per bucket)
@@ -269,7 +271,13 @@ export async function initComponents(): Promise<AppComponents> {
       )
     : undefined
 
-  const ingestion = await createIngestionComponent({ pg, placesRepository, logs })
+  const ingestion = await createIngestionComponent({
+    pg,
+    placesRepository,
+    worldsRepository,
+    subgraphsClient,
+    logs
+  })
 
   // SQS deployment consumer: only when a queue is configured and jobs are enabled.
   const sqsQueueUrl = await config.getString('AWS_SQS_QUEUE_URL')
@@ -277,18 +285,29 @@ export async function initComponents(): Promise<AppComponents> {
   if (backgroundJobsEnabled && sqsQueueUrl) {
     const sqs = await createSqsComponent(config)
     queueProcessor = createQueueConsumerComponent({ sqs, logs })
+    const withMetrics = (handler: (message: unknown) => Promise<unknown>) => async (message: unknown) => {
+      try {
+        await handler(message)
+        metrics.increment('sqs_messages_processed_total', { result: 'success' })
+      } catch (error) {
+        metrics.increment('sqs_messages_processed_total', { result: 'error' })
+        throw error
+      }
+    }
     queueProcessor.addMessageHandler(
       Events.Type.CATALYST_DEPLOYMENT,
       Events.SubType.CatalystDeployment.SCENE,
-      async (message) => {
-        try {
-          await ingestion.processCatalystDeployment(message as never)
-          metrics.increment('sqs_messages_processed_total', { result: 'success' })
-        } catch (error) {
-          metrics.increment('sqs_messages_processed_total', { result: 'error' })
-          throw error
-        }
-      }
+      withMetrics((message) => ingestion.processCatalystDeployment(message as never))
+    )
+    queueProcessor.addMessageHandler(
+      Events.Type.WORLD,
+      Events.SubType.Worlds.WORLD_SETTINGS_CHANGED,
+      withMetrics((message) => ingestion.processWorldSettingsChanged(message as never))
+    )
+    queueProcessor.addMessageHandler(
+      Events.Type.WORLD,
+      Events.SubType.Worlds.WORLD_SCENES_UNDEPLOYMENT,
+      withMetrics((message) => ingestion.processWorldScenesUndeployment(message as never))
     )
   }
 
@@ -316,6 +335,7 @@ export async function initComponents(): Promise<AppComponents> {
     commsGatekeeperClient,
     dclListsClient,
     catalystClient,
+    subgraphsClient,
     communitiesClient,
     hotScenes,
     sceneStats,

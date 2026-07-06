@@ -4,6 +4,23 @@ import type { AggregateWorld, World } from '../../types/entities'
 import type { IWorldsRepository, UpsertWorldInput, WorldListFilters, WorldListOrderBy } from './types'
 
 const MAX_LIMIT = 100
+// Columns `upsert` will update on conflict (identifiers are safe to inline).
+const UPSERT_UPDATABLE_COLUMNS: Array<keyof UpsertWorldInput> = [
+  'world_name',
+  'title',
+  'description',
+  'image',
+  'content_rating',
+  'categories',
+  'owner',
+  'show_in_places',
+  'single_player',
+  'skybox_time',
+  'is_private',
+  'highlighted',
+  'highlighted_image'
+]
+
 const ORDER_COLUMNS: Record<WorldListOrderBy, string> = {
   like_score: 'like_score',
   updated_at: 'updated_at',
@@ -118,20 +135,24 @@ export function createWorldsRepository(): IWorldsRepository {
   }
 
   async function upsert(client: Queryable, input: UpsertWorldInput): Promise<World> {
-    const result = await client.query<World>(SQL`
+    // On conflict only the fields explicitly provided (and not undefined) are
+    // updated, so an ingestion event that omits a field (e.g. owner on a
+    // settings-changed) never clobbers the stored value with a default.
+    const query = SQL`
       INSERT INTO worlds (id, world_name, title, description, image, content_rating, categories, owner,
                           show_in_places, single_player, skybox_time, is_private, highlighted, highlighted_image)
       VALUES (${input.id.toLowerCase()}, ${input.world_name}, ${input.title ?? null}, ${input.description ?? null},
               ${input.image ?? null}, ${input.content_rating ?? 'RP'}, ${input.categories ?? []}, ${input.owner ?? null},
               ${input.show_in_places ?? true}, ${input.single_player ?? false}, ${input.skybox_time ?? null},
               ${input.is_private ?? false}, ${input.highlighted ?? false}, ${input.highlighted_image ?? null})
-      ON CONFLICT (id) DO UPDATE SET
-        world_name = EXCLUDED.world_name, title = EXCLUDED.title, description = EXCLUDED.description,
-        image = EXCLUDED.image, content_rating = EXCLUDED.content_rating, categories = EXCLUDED.categories,
-        owner = EXCLUDED.owner, show_in_places = EXCLUDED.show_in_places, single_player = EXCLUDED.single_player,
-        skybox_time = EXCLUDED.skybox_time, is_private = EXCLUDED.is_private, highlighted = EXCLUDED.highlighted,
-        highlighted_image = EXCLUDED.highlighted_image, updated_at = now()
-      RETURNING *`)
+      ON CONFLICT (id) DO UPDATE SET updated_at = now()`
+    for (const column of UPSERT_UPDATABLE_COLUMNS) {
+      if (column in input && input[column] !== undefined) {
+        query.append(`, "${column}" = `).append(SQL`${input[column] as unknown}`)
+      }
+    }
+    query.append(SQL` RETURNING *`)
+    const result = await client.query<World>(query)
     return result.rows[0]
   }
 

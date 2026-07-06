@@ -63,4 +63,11 @@ export interface IPlacesRepository {
   updateModeration(client: Queryable, id: string, fields: PlaceModerationFields): Promise<Place | null>
   /** Upsert a genesis place from a scene deployment (matched on base_position); re-enables it. */
   upsertScene(client: Queryable, scene: ScenePlaceInput): Promise<Place>
+  /** Disable a world's places at the given base positions deployed before `before`. Returns the count disabled. */
+  disableByWorldIdAndPositions(
+    client: Queryable,
+    worldId: string,
+    basePositions: string[],
+    before: Date
+  ): Promise<number>
 }

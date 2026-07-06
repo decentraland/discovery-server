@@ -28,6 +28,7 @@ import type { ISceneStatsComponent } from '../adapters/scene-stats'
 import type { IWorldsLiveDataComponent } from '../adapters/worlds-live-data'
 import type { IDclListsClient } from '../adapters/dcl-lists-client'
 import type { ICatalystClient } from '../adapters/catalyst-client'
+import type { ISubgraphsClient } from '../adapters/subgraphs-client'
 import type { ICommunitiesClient } from '../adapters/communities-client'
 import type { IJobComponent } from '@dcl/job-component'
 import type { ICategoriesComponent } from '../logic/categories'
@@ -98,6 +99,7 @@ export type BaseComponents = {
   commsGatekeeperClient: ICommsGatekeeperClient
   dclListsClient: IDclListsClient
   catalystClient: ICatalystClient
+  subgraphsClient: ISubgraphsClient
   communitiesClient: ICommunitiesClient
 
   // cached live data

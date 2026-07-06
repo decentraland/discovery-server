@@ -215,5 +215,31 @@ export function createPlacesRepository(): IPlacesRepository {
     return result.rows[0]
   }
 
-  return { findByIdWithAggregates, findByIds, findWithAggregates, count, insert, updateModeration, upsertScene }
+  async function disableByWorldIdAndPositions(
+    client: Queryable,
+    worldId: string,
+    basePositions: string[],
+    before: Date
+  ): Promise<number> {
+    if (!basePositions.length) return 0
+    // Stale-event guard: only disable places deployed before the undeployment.
+    const result = await client.query(SQL`
+      UPDATE places SET disabled = true, disabled_at = now(), disabled_reason = 'undeployment', updated_at = now()
+      WHERE world_id = ${worldId.toLowerCase()}
+        AND base_position = ANY(${basePositions}::varchar[])
+        AND deployed_at < ${before.toISOString()}
+        AND disabled IS false`)
+    return result.rowCount ?? 0
+  }
+
+  return {
+    findByIdWithAggregates,
+    findByIds,
+    findWithAggregates,
+    count,
+    insert,
+    updateModeration,
+    upsertScene,
+    disableByWorldIdAndPositions
+  }
 }

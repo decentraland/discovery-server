@@ -18,7 +18,8 @@ describe('when reading places', () => {
       count: jest.fn(),
       insert: jest.fn(),
       updateModeration: jest.fn(),
-      upsertScene: jest.fn()
+      upsertScene: jest.fn(),
+      disableByWorldIdAndPositions: jest.fn()
     }
     pg = {}
     hotScenes = {

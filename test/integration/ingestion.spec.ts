@@ -74,4 +74,67 @@ test('when ingesting Catalyst scene deployments', function ({ components }) {
       expect(result.processed).toBe(false)
     })
   })
+
+  describe('and a world settings-changed event is ingested', () => {
+    beforeEach(async () => {
+      await components.pg.query(SQL`DELETE FROM worlds WHERE id = 'ingested-world.dcl.eth'`)
+    })
+
+    it('should upsert a visible world row', async () => {
+      const result = await components.ingestion.processWorldSettingsChanged({
+        metadata: {
+          worldName: 'ingested-world.dcl.eth',
+          title: 'Ingested World',
+          contentRating: 'T',
+          showInPlaces: true,
+          accessType: 'unrestricted'
+        }
+      } as any)
+
+      expect(result.processed).toBe(true)
+      const world = await components.worldsRepository.findByIdWithAggregates(components.pg, 'ingested-world.dcl.eth')
+      expect(world).toEqual(
+        expect.objectContaining({ id: 'ingested-world.dcl.eth', title: 'Ingested World', show_in_places: true })
+      )
+    })
+
+    it('should not clobber an existing owner when the event omits it', async () => {
+      await components.worldsRepository.upsert(components.pg, {
+        id: 'ingested-world.dcl.eth',
+        world_name: 'ingested-world.dcl.eth',
+        owner: '0xexistingowner'
+      })
+      await components.ingestion.processWorldSettingsChanged({
+        metadata: { worldName: 'ingested-world.dcl.eth', title: 'Renamed' }
+      } as any)
+
+      const world = await components.worldsRepository.findByIdWithAggregates(components.pg, 'ingested-world.dcl.eth')
+      expect(world).toEqual(expect.objectContaining({ owner: '0xexistingowner', title: 'Renamed' }))
+    })
+  })
+
+  describe('and a world scenes-undeployment event is ingested', () => {
+    beforeEach(async () => {
+      await components.pg.query(SQL`DELETE FROM places WHERE world_id = 'undeploy-world.dcl.eth'`)
+      await components.pg.query(SQL`DELETE FROM worlds WHERE id = 'undeploy-world.dcl.eth'`)
+      await components.pg.query(SQL`
+        INSERT INTO worlds (id, world_name, show_in_places) VALUES ('undeploy-world.dcl.eth', 'undeploy-world.dcl.eth', true)`)
+      await components.pg.query(SQL`
+        INSERT INTO places (id, title, owner, base_position, positions, world, world_id, deployed_at, disabled)
+        VALUES (gen_random_uuid(), 'World scene', '0xowner', '5,5', '{"5,5"}', true, 'undeploy-world.dcl.eth',
+                now() - interval '1 hour', false)`)
+    })
+
+    it('should disable the undeployed world places', async () => {
+      await components.ingestion.processWorldScenesUndeployment({
+        timestamp: Date.now(),
+        metadata: { worldName: 'undeploy-world.dcl.eth', scenes: [{ entityId: 'e1', baseParcel: '5,5' }] }
+      } as any)
+
+      const { rows } = await components.pg.query<{ disabled: boolean }>(
+        SQL`SELECT disabled FROM places WHERE world_id = 'undeploy-world.dcl.eth'`
+      )
+      expect(rows[0].disabled).toBe(true)
+    })
+  })
 })
