@@ -50,6 +50,7 @@ import { createPostersComponent } from './logic/posters'
 import { createSocialComponent } from './logic/social'
 import { createNotificationsComponent } from './logic/notifications'
 import { createIngestionComponent } from './logic/ingestion'
+import { createManifestComponent } from './logic/manifest'
 import { createSqsComponent } from '@dcl/sqs-component'
 import { createQueueConsumerComponent } from '@dcl/queue-consumer-component'
 import { Events } from '@dcl/schemas'
@@ -124,6 +125,7 @@ export async function initComponents(): Promise<AppComponents> {
     { config, logs },
     { bucketConfigKey: 'POSTER_BUCKET_NAME', hostnameConfigKey: 'POSTER_BUCKET_URL' }
   )
+  const manifestStorage = await createStorageComponent({ config, logs }, { bucketConfigKey: 'PUBLIC_BUCKET' })
 
   // logic
   const categories = await createCategoriesComponent({ pg, categoriesRepository, dclListsClient, logs })
@@ -270,6 +272,16 @@ export async function initComponents(): Promise<AppComponents> {
         { repeat: true }
       )
     : undefined
+  // Periodic (not per-deploy) so a burst of deployments doesn't trigger repeated
+  // full-grid recomputes; a no-op unless PUBLIC_BUCKET is configured.
+  const manifestRefreshJob = backgroundJobsEnabled
+    ? createJobComponent(
+        { logs },
+        runJob('manifestRefresh', () => manifest.rebuild()),
+        (await config.getNumber('MANIFEST_REFRESH_INTERVAL_MS')) ?? 10 * 60_000,
+        { repeat: true }
+      )
+    : undefined
 
   const ingestion = await createIngestionComponent({
     pg,
@@ -278,6 +290,7 @@ export async function initComponents(): Promise<AppComponents> {
     subgraphsClient,
     logs
   })
+  const manifest = await createManifestComponent({ pg, placesRepository, manifestStorage, config, logs })
 
   // SQS deployment consumer: only when a queue is configured and jobs are enabled.
   const sqsQueueUrl = await config.getString('AWS_SQS_QUEUE_URL')
@@ -342,6 +355,7 @@ export async function initComponents(): Promise<AppComponents> {
     worldsLiveData,
     reportsStorage,
     postersStorage,
+    manifestStorage,
     categories,
     schedules,
     places,
@@ -359,6 +373,7 @@ export async function initComponents(): Promise<AppComponents> {
     social,
     notifications,
     ingestion,
+    manifest,
     // httpServer/statusChecks are placed after pg and the logic components so the
     // WKC lifecycle (reverse-insertion stop order) stops the HTTP server and drains
     // in-flight requests BEFORE the pg pool closes. Background jobs/queueProcessor
@@ -372,6 +387,7 @@ export async function initComponents(): Promise<AppComponents> {
     ...(hotScenesRefreshJob ? { hotScenesRefreshJob } : {}),
     ...(worldsLiveDataRefreshJob ? { worldsLiveDataRefreshJob } : {}),
     ...(poiSyncJob ? { poiSyncJob } : {}),
+    ...(manifestRefreshJob ? { manifestRefreshJob } : {}),
     ...(queueProcessor ? { queueProcessor } : {})
   }
 }

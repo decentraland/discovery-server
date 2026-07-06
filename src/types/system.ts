@@ -48,6 +48,7 @@ import type { IPostersComponent } from '../logic/posters'
 import type { ISocialComponent } from '../logic/social'
 import type { INotificationsComponent } from '../logic/notifications'
 import type { IIngestionComponent } from '../logic/ingestion'
+import type { IManifestComponent } from '../logic/manifest'
 import type { IQueueConsumerComponent } from '@dcl/queue-consumer-component'
 import { metricDeclarations } from '../metrics'
 
@@ -89,6 +90,7 @@ export type BaseComponents = {
   // storage (one per bucket)
   reportsStorage: IStorageComponent
   postersStorage: IStorageComponent
+  manifestStorage: IStorageComponent
 
   // outbound
   slackNotifier: ISlackNotifier
@@ -125,6 +127,7 @@ export type BaseComponents = {
   social: ISocialComponent
   notifications: INotificationsComponent
   ingestion: IIngestionComponent
+  manifest: IManifestComponent
 
   // background jobs (present only when BACKGROUND_JOBS_ENABLED)
   updateNextStartAtJob?: IJobComponent
@@ -134,6 +137,7 @@ export type BaseComponents = {
   hotScenesRefreshJob?: IJobComponent
   worldsLiveDataRefreshJob?: IJobComponent
   poiSyncJob?: IJobComponent
+  manifestRefreshJob?: IJobComponent
   // SQS deployment consumer (present only when AWS_SQS_QUEUE_URL is configured)
   queueProcessor?: IQueueConsumerComponent
 }

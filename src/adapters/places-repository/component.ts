@@ -232,6 +232,11 @@ export function createPlacesRepository(): IPlacesRepository {
     return result.rowCount ?? 0
   }
 
+  async function listOccupiedPositions(client: Queryable): Promise<string[]> {
+    const result = await client.query<{ position: string }>(SQL`SELECT DISTINCT position FROM place_positions`)
+    return result.rows.map((row) => row.position)
+  }
+
   return {
     findByIdWithAggregates,
     findByIds,
@@ -240,6 +245,7 @@ export function createPlacesRepository(): IPlacesRepository {
     insert,
     updateModeration,
     upsertScene,
-    disableByWorldIdAndPositions
+    disableByWorldIdAndPositions,
+    listOccupiedPositions
   }
 }

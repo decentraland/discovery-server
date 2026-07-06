@@ -70,4 +70,6 @@ export interface IPlacesRepository {
     basePositions: string[],
     before: Date
   ): Promise<number>
+  /** Distinct occupied parcel positions (for the Genesis City manifest). */
+  listOccupiedPositions(client: Queryable): Promise<string[]>
 }
