@@ -36,6 +36,7 @@ import { createAttendeesComponent } from './logic/attendees'
 import { createDestinationsComponent } from './logic/destinations'
 import { createModerationComponent } from './logic/moderation'
 import { createReportsComponent } from './logic/reports'
+import { createSitemapComponent } from './logic/sitemap'
 import { metricDeclarations } from './metrics'
 import type { AppComponents, GlobalContext } from './types'
 
@@ -127,6 +128,7 @@ export async function initComponents(): Promise<AppComponents> {
     logs
   })
   const reports = await createReportsComponent({ reportsStorage, logs })
+  const sitemap = await createSitemapComponent({ config, eventsRepository, schedulesRepository, pg, logs })
 
   // Background jobs: created only when enabled so exactly one deployment owns them.
   const backgroundJobsEnabled = (await config.getString('BACKGROUND_JOBS_ENABLED')) === 'true'
@@ -175,6 +177,7 @@ export async function initComponents(): Promise<AppComponents> {
     destinations,
     moderation,
     reports,
+    sitemap,
     ...(updateNextStartAtJob ? { updateNextStartAtJob } : {})
   }
 }

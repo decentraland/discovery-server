@@ -34,6 +34,12 @@ import {
 import { createAttendeeHandler, deleteAttendeeHandler, getAttendeesHandler } from './handlers/attendees-handler'
 import { getDestinationsByIdHandler, getDestinationsListHandler } from './handlers/destinations-handler'
 import { createReportHandler } from './handlers/report-handler'
+import {
+  getEventsSitemapHandler,
+  getSchedulesSitemapHandler,
+  getSitemapIndexHandler,
+  getStaticSitemapHandler
+} from './handlers/sitemap-handler'
 import { createAnyBearerMiddleware } from './middlewares/bearer-token'
 import {
   updatePlaceDisabledHandler,
@@ -100,6 +106,12 @@ export async function setupRouter(globalContext: GlobalContext): Promise<Router<
 
   // content-moderation report (signed → presigned S3 upload URL)
   router.post('/api/report', signedFetch(), createReportHandler)
+
+  // events sitemaps (public XML)
+  router.get('/events/sitemap.xml', getSitemapIndexHandler)
+  router.get('/events/sitemap.static.xml', getStaticSitemapHandler)
+  router.get('/events/sitemap.events.xml', getEventsSitemapHandler)
+  router.get('/events/sitemap.schedules.xml', getSchedulesSitemapHandler)
 
   // destinations — unified places+worlds discovery (legacy + new /v1 surface)
   router.get('/api/destinations', signedFetch({ optional: true }), getDestinationsListHandler)
