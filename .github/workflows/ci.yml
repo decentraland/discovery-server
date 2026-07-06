@@ -38,3 +38,5 @@ jobs:
           AWS_REGION: us-east-1
           CONTENT_MODERATION_BUCKET_NAME: moderation-reports
           POSTER_BUCKET_NAME: event-posters
+          # Fast-failing URL keeps VP lookups hermetic (getVotingPower degrades to 0).
+          SNAPSHOT_SCORE_URL: http://localhost:1/

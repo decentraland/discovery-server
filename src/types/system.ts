@@ -21,6 +21,7 @@ import type { IStorageComponent } from '../adapters/storage'
 import type { INotificationCursorsRepository } from '../adapters/notification-cursors-repository'
 import type { ISlackNotifier } from '../adapters/slack-notifier'
 import type { ISnsPublisher } from '../adapters/sns-publisher'
+import type { ISnapshotClient } from '../adapters/snapshot-client'
 import type { IJobComponent } from '@dcl/job-component'
 import type { ICategoriesComponent } from '../logic/categories'
 import type { ISchedulesComponent } from '../logic/schedules'
@@ -84,6 +85,9 @@ export type BaseComponents = {
   // outbound
   slackNotifier: ISlackNotifier
   snsPublisher: ISnsPublisher
+
+  // external clients
+  snapshotClient: ISnapshotClient
 
   // logic
   categories: ICategoriesComponent

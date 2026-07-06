@@ -23,6 +23,7 @@ import { createStorageComponent } from './adapters/storage'
 import { createNotificationCursorsRepository } from './adapters/notification-cursors-repository'
 import { createSlackNotifier } from './adapters/slack-notifier'
 import { createSnsPublisher } from './adapters/sns-publisher'
+import { createSnapshotClient } from './adapters/snapshot-client'
 import { createJobComponent } from '@dcl/job-component'
 import { createCategoriesComponent } from './logic/categories'
 import { createSchedulesComponent } from './logic/schedules'
@@ -96,6 +97,7 @@ export async function initComponents(): Promise<AppComponents> {
   // outbound adapters (optional: no-op when unconfigured)
   const slackNotifier = await createSlackNotifier({ config, logs })
   const snsPublisher = await createSnsPublisher({ config, logs })
+  const snapshotClient = await createSnapshotClient({ config, logs, fetcher })
 
   // storage (one adapter per bucket)
   const reportsStorage = await createStorageComponent(
@@ -112,7 +114,7 @@ export async function initComponents(): Promise<AppComponents> {
   const schedules = await createSchedulesComponent({ pg, schedulesRepository, logs })
   const places = await createPlacesComponent({ pg, placesRepository, logs })
   const worlds = await createWorldsComponent({ pg, worldsRepository, logs })
-  const interactions = await createInteractionsComponent({ pg, interactionsRepository, logs })
+  const interactions = await createInteractionsComponent({ pg, interactionsRepository, snapshotClient, logs })
   const profiles = await createProfilesComponent({ pg, profileSettingsRepository, config, logs })
   const recurrence = createRecurrenceComponent()
   const events = await createEventsComponent({
@@ -202,6 +204,7 @@ export async function initComponents(): Promise<AppComponents> {
     notificationCursorsRepository,
     slackNotifier,
     snsPublisher,
+    snapshotClient,
     reportsStorage,
     postersStorage,
     categories,

@@ -5,6 +5,7 @@ describe('when recording interactions', () => {
   let interactionsRepository: jest.Mocked<IInteractionsRepository>
   let pg: any
   let tx: any
+  let snapshotClient: any
   let logs: any
 
   beforeEach(() => {
@@ -16,6 +17,7 @@ describe('when recording interactions', () => {
       recomputeLikes: jest.fn(),
       recomputeFavorites: jest.fn()
     }
+    snapshotClient = { getVotingPower: jest.fn().mockResolvedValue(0) }
     logs = { getLogger: () => ({ info: jest.fn(), error: jest.fn(), warn: jest.fn(), debug: jest.fn() }) }
   })
 
@@ -25,7 +27,7 @@ describe('when recording interactions', () => {
 
   describe('and liking a place', () => {
     beforeEach(async () => {
-      const interactions = await createInteractionsComponent({ pg, interactionsRepository, logs })
+      const interactions = await createInteractionsComponent({ pg, interactionsRepository, snapshotClient, logs })
       await interactions.setLike({ entityId: 'p1', entityType: 'place', user: '0xA', userActivity: 200, like: true })
     })
 
@@ -43,7 +45,7 @@ describe('when recording interactions', () => {
 
   describe('and favoriting a place without a supplied activity', () => {
     beforeEach(async () => {
-      const interactions = await createInteractionsComponent({ pg, interactionsRepository, logs })
+      const interactions = await createInteractionsComponent({ pg, interactionsRepository, snapshotClient, logs })
       await interactions.setFavorite({ entityId: 'p1', entityType: 'place', user: '0xA', favorite: true })
     })
 

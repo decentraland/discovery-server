@@ -9,12 +9,17 @@ import type { FavoriteCommand, IInteractionsComponent, LikeCommand } from './typ
  * `userActivity` (fetched through the snapshot adapter once it lands).
  */
 export async function createInteractionsComponent(
-  components: Pick<AppComponents, 'pg' | 'interactionsRepository' | 'logs'>
+  components: Pick<AppComponents, 'pg' | 'interactionsRepository' | 'snapshotClient' | 'logs'>
 ): Promise<IInteractionsComponent> {
-  const { pg, interactionsRepository } = components
+  const { pg, interactionsRepository, snapshotClient } = components
+
+  // VP weights like_rate/like_score. Callers may pass it; otherwise fetch it from Snapshot.
+  async function resolveActivity(command: { user: string; userActivity?: number }): Promise<number> {
+    return command.userActivity ?? (await snapshotClient.getVotingPower(command.user))
+  }
 
   async function setLike(command: LikeCommand): Promise<void> {
-    const userActivity = command.userActivity ?? 0
+    const userActivity = await resolveActivity(command)
     await pg.withTransaction(async (tx) => {
       await interactionsRepository.setLike(tx, {
         entityId: command.entityId,
@@ -28,7 +33,7 @@ export async function createInteractionsComponent(
   }
 
   async function setFavorite(command: FavoriteCommand): Promise<void> {
-    const userActivity = command.userActivity ?? 0
+    const userActivity = await resolveActivity(command)
     await pg.withTransaction(async (tx) => {
       await interactionsRepository.setFavorite(tx, {
         entityId: command.entityId,
