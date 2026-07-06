@@ -41,6 +41,7 @@ import {
   getStaticSitemapHandler
 } from './handlers/sitemap-handler'
 import { createPosterHandler, createVerticalPosterHandler } from './handlers/posters-handler'
+import { getPlaceSocialHandler, getWorldSocialHandler } from './handlers/social-handler'
 import { createAnyBearerMiddleware } from './middlewares/bearer-token'
 import {
   updatePlaceDisabledHandler,
@@ -111,6 +112,10 @@ export async function setupRouter(globalContext: GlobalContext): Promise<Router<
   // event posters (signed + multipart upload; parsed via the web Request's .formData())
   router.post('/api/poster', signedFetch(), createPosterHandler)
   router.post('/api/poster-vertical', signedFetch(), createVerticalPosterHandler)
+
+  // link-preview (Open Graph) HTML for place/world share pages (public)
+  router.get('/places/place/', getPlaceSocialHandler)
+  router.get('/places/world/', getWorldSocialHandler)
 
   // events sitemaps (public XML)
   router.get('/events/sitemap.xml', getSitemapIndexHandler)

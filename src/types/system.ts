@@ -36,6 +36,7 @@ import type { IModerationComponent } from '../logic/moderation'
 import type { IReportsComponent } from '../logic/reports'
 import type { ISitemapComponent } from '../logic/sitemap'
 import type { IPostersComponent } from '../logic/posters'
+import type { ISocialComponent } from '../logic/social'
 import { metricDeclarations } from '../metrics'
 
 export type GlobalContext = {
@@ -96,6 +97,7 @@ export type BaseComponents = {
   reports: IReportsComponent
   sitemap: ISitemapComponent
   posters: IPostersComponent
+  social: ISocialComponent
 
   // background jobs (present only when BACKGROUND_JOBS_ENABLED)
   updateNextStartAtJob?: IJobComponent
