@@ -37,10 +37,19 @@ const RECURRENCE_KEYS: Array<keyof UpdateEventPayload> = [
 export async function createEventsComponent(
   components: Pick<
     AppComponents,
-    'pg' | 'eventsRepository' | 'attendeesRepository' | 'places' | 'worlds' | 'profiles' | 'recurrence' | 'logs'
+    | 'pg'
+    | 'eventsRepository'
+    | 'attendeesRepository'
+    | 'places'
+    | 'worlds'
+    | 'profiles'
+    | 'recurrence'
+    | 'communitiesClient'
+    | 'logs'
   >
 ): Promise<IEventsComponent> {
-  const { pg, eventsRepository, attendeesRepository, places, worlds, profiles, recurrence } = components
+  const { pg, eventsRepository, attendeesRepository, places, worlds, profiles, recurrence, communitiesClient } =
+    components
 
   // Legacy contract: the `place_id` field carries the world id for world events.
   function serialize(event: Event): Event {
@@ -171,11 +180,18 @@ export async function createEventsComponent(
       recurrent_count: payload.recurrent_count ?? null
     })
 
+    // When the communities API is configured, an event may only be attached to a
+    // community the creator owns or moderates (legacy parity). When it is not
+    // configured (dev/test), the check is skipped.
+    if (payload.community_id && communitiesClient.enabled) {
+      const managed = await communitiesClient.getManagedCommunities(user)
+      if (!managed.some((community) => community.id === payload.community_id)) {
+        throw new EventValidationError(`community "${payload.community_id}" not found or not managed by you`)
+      }
+    }
+
     const location = await resolveLocation(payload)
     const canApprove = await profiles.hasAnyPermission(user, [Permission.ApproveOwnEvent, Permission.ApproveAnyEvent])
-
-    // NOTE: community_id is stored unvalidated. Ownership/membership validation is
-    // a follow-up that needs the communities client (not yet built).
     const row: CreateEventRow = {
       name: payload.name,
       image: payload.image ?? null,

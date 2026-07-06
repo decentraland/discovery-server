@@ -26,6 +26,7 @@ import type { ICommsGatekeeperClient } from '../adapters/comms-gatekeeper-client
 import type { IHotScenesComponent } from '../adapters/hot-scenes'
 import type { IWorldsLiveDataComponent } from '../adapters/worlds-live-data'
 import type { IDclListsClient } from '../adapters/dcl-lists-client'
+import type { ICommunitiesClient } from '../adapters/communities-client'
 import type { IJobComponent } from '@dcl/job-component'
 import type { ICategoriesComponent } from '../logic/categories'
 import type { ISchedulesComponent } from '../logic/schedules'
@@ -94,6 +95,7 @@ export type BaseComponents = {
   snapshotClient: ISnapshotClient
   commsGatekeeperClient: ICommsGatekeeperClient
   dclListsClient: IDclListsClient
+  communitiesClient: ICommunitiesClient
 
   // cached live data
   hotScenes: IHotScenesComponent

@@ -32,11 +32,20 @@ export async function createNotificationsComponent(
     | 'attendeesRepository'
     | 'notificationCursorsRepository'
     | 'snsPublisher'
+    | 'communitiesClient'
     | 'config'
     | 'logs'
   >
 ): Promise<INotificationsComponent> {
-  const { pg, eventsRepository, attendeesRepository, notificationCursorsRepository, snsPublisher, config } = components
+  const {
+    pg,
+    eventsRepository,
+    attendeesRepository,
+    notificationCursorsRepository,
+    snsPublisher,
+    communitiesClient,
+    config
+  } = components
 
   const eventsBaseUrl = ((await config.getString('EVENTS_BASE_URL')) ?? 'https://events.decentraland.org').replace(
     /\/$/,
@@ -89,12 +98,23 @@ export async function createNotificationsComponent(
 
     const payload: PublishableEvents = []
     for (const event of events) {
+      // Explicit attendees always get notified; community-attached events also
+      // reach every community member. A member who is also an attendee is
+      // notified once (deduped by lowercased address).
+      const recipients = new Set<string>()
       const attendees = await attendeesRepository.listByEvent(pg, event.id)
-      for (const attendee of attendees) {
+      for (const attendee of attendees) recipients.add(attendee.user.toLowerCase())
+      if (event.community_id && communitiesClient.enabled) {
+        for (const member of await communitiesClient.getCommunityMembers(event.community_id)) {
+          recipients.add(member)
+        }
+      }
+
+      for (const recipient of recipients) {
         payload.push({
           type: Events.Type.EVENT,
           subType: Events.SubType.Event.EVENT_STARTED,
-          key: `${event.id}-${attendee.user}-started`,
+          key: `${event.id}-${recipient}-started`,
           timestamp: now,
           metadata: {
             name: event.name,
@@ -102,7 +122,7 @@ export async function createNotificationsComponent(
             link: link(event),
             title: event.name,
             description: event.description ?? '',
-            attendee: attendee.user,
+            attendee: recipient,
             ...(event.community_id ? { communityId: event.community_id } : {})
           }
         } as never)

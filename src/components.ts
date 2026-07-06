@@ -28,6 +28,7 @@ import { createCommsGatekeeperClient } from './adapters/comms-gatekeeper-client'
 import { createHotScenesComponent } from './adapters/hot-scenes'
 import { createWorldsLiveDataComponent } from './adapters/worlds-live-data'
 import { createDclListsClient } from './adapters/dcl-lists-client'
+import { createCommunitiesClient } from './adapters/communities-client'
 import { createJobComponent } from '@dcl/job-component'
 import { createCategoriesComponent } from './logic/categories'
 import { createSchedulesComponent } from './logic/schedules'
@@ -106,6 +107,7 @@ export async function initComponents(): Promise<AppComponents> {
   const hotScenes = await createHotScenesComponent({ config, logs, fetcher })
   const worldsLiveData = await createWorldsLiveDataComponent({ config, logs, fetcher })
   const dclListsClient = await createDclListsClient({ config, logs, fetcher })
+  const communitiesClient = await createCommunitiesClient({ config, logs, fetcher })
 
   // storage (one adapter per bucket)
   const reportsStorage = await createStorageComponent(
@@ -133,6 +135,7 @@ export async function initComponents(): Promise<AppComponents> {
     worlds,
     profiles,
     recurrence,
+    communitiesClient,
     logs
   })
   const attendees = await createAttendeesComponent({ pg, attendeesRepository, logs })
@@ -160,6 +163,7 @@ export async function initComponents(): Promise<AppComponents> {
     attendeesRepository,
     notificationCursorsRepository,
     snsPublisher,
+    communitiesClient,
     config,
     logs
   })
@@ -244,6 +248,7 @@ export async function initComponents(): Promise<AppComponents> {
     snapshotClient,
     commsGatekeeperClient,
     dclListsClient,
+    communitiesClient,
     hotScenes,
     worldsLiveData,
     reportsStorage,

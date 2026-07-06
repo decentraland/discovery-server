@@ -18,6 +18,11 @@ describe('when running the notification crons', () => {
         set: jest.fn()
       },
       snsPublisher: { enabled: true, publish },
+      communitiesClient: {
+        enabled: false,
+        getManagedCommunities: jest.fn().mockResolvedValue([]),
+        getCommunityMembers: jest.fn().mockResolvedValue([])
+      },
       config: { getString: jest.fn().mockResolvedValue('https://events.decentraland.org') },
       logs: { getLogger: () => ({ info: jest.fn(), error: jest.fn(), warn: jest.fn(), debug: jest.fn() }) }
     }
@@ -67,6 +72,46 @@ describe('when running the notification crons', () => {
         'events_started',
         expect.any(Number)
       )
+    })
+  })
+
+  describe('and a started event is attached to a community', () => {
+    beforeEach(() => {
+      const now = new Date()
+      components.communitiesClient.enabled = true
+      components.eventsRepository.findInStartWindow.mockResolvedValueOnce([
+        {
+          id: 'e1',
+          name: 'Party',
+          image: 'img',
+          description: 'desc',
+          start_at: now,
+          finish_at: now,
+          next_start_at: now,
+          next_finish_at: now,
+          total_attendees: 1,
+          community_id: 'c1'
+        }
+      ])
+      components.attendeesRepository.listByEvent.mockResolvedValueOnce([{ user: '0xAAA' }])
+      components.communitiesClient.getCommunityMembers.mockResolvedValueOnce(['0xaaa', '0xbbb'])
+    })
+
+    it('should notify the union of attendees and community members exactly once each', async () => {
+      const notifications = await createNotificationsComponent(components)
+      await notifications.notifyStarted()
+
+      const published = publish.mock.calls[0][0]
+      const recipients = published.map((p: any) => p.metadata.attendee).sort()
+      expect(recipients).toEqual(['0xaaa', '0xbbb'])
+    })
+
+    it('should stamp the community id on every published notification', async () => {
+      const notifications = await createNotificationsComponent(components)
+      await notifications.notifyStarted()
+
+      const published = publish.mock.calls[0][0]
+      expect(published.every((p: any) => p.metadata.communityId === 'c1')).toBe(true)
     })
   })
 
