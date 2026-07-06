@@ -45,11 +45,30 @@ export async function createEventsComponent(
     | 'profiles'
     | 'recurrence'
     | 'communitiesClient'
+    | 'slackNotifier'
+    | 'config'
     | 'logs'
   >
 ): Promise<IEventsComponent> {
-  const { pg, eventsRepository, attendeesRepository, places, worlds, profiles, recurrence, communitiesClient } =
-    components
+  const {
+    pg,
+    eventsRepository,
+    attendeesRepository,
+    places,
+    worlds,
+    profiles,
+    recurrence,
+    communitiesClient,
+    slackNotifier,
+    config
+  } = components
+
+  // Events lifecycle alerts channel (legacy events SLACK_WEBHOOK); a no-op when
+  // Slack or the channel is unconfigured.
+  const eventsChannel = (await config.getString('SLACK_EVENTS_CHANNEL')) ?? undefined
+  const alert = (text: string) => {
+    void slackNotifier.notify(text, eventsChannel)
+  }
 
   // Legacy contract: the `place_id` field carries the world id for world events.
   function serialize(event: Event): Event {
@@ -240,7 +259,9 @@ export async function createEventsComponent(
       schedules: payload.schedules ?? []
     }
 
-    return serialize(await eventsRepository.create(pg, row))
+    const created = await eventsRepository.create(pg, row)
+    alert(`:tada: New event submitted: ${created.name} by ${user.toLowerCase()}`)
+    return serialize(created)
   }
 
   async function assertCanModify(event: Event, user: string): Promise<void> {
@@ -348,6 +369,14 @@ export async function createEventsComponent(
 
     const updated = await eventsRepository.update(pg, id, update)
     if (!updated) throw new EventNotFoundError(id)
+    if (canModerate && update.approved === true) {
+      alert(`:white_check_mark: Event approved: ${updated.name} by ${user.toLowerCase()}`)
+    }
+    if (canModerate && update.rejected === true) {
+      alert(
+        `:x: Event rejected: ${updated.name}${update.rejection_reason ? ` (${update.rejection_reason})` : ''} by ${user.toLowerCase()}`
+      )
+    }
     return serialize(updated)
   }
 

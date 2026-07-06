@@ -15,7 +15,7 @@ import {
 } from './handlers/get-places-handler'
 import { getWorldHandler, getWorldListHandler, getWorldNamesHandler } from './handlers/get-worlds-handler'
 import { updateFavoritesHandler, updateLikesHandler } from './handlers/update-interactions-handler'
-import { createRequirePermission } from './middlewares/authorization'
+import { createAdminAuth, createRequirePermission } from './middlewares/authorization'
 import { ProfilePermission } from '../types/entities'
 import {
   getMyProfileSettingsHandler,
@@ -66,6 +66,13 @@ export async function setupRouter(globalContext: GlobalContext): Promise<Router<
   const dataTeamToken = await components.config.getString('DATA_TEAM_AUTH_TOKEN')
   // Data-team ranking routes are only mounted when their bearer token is configured.
   const withDataTeamBearer = dataTeamToken ? createAnyBearerMiddleware([dataTeamToken]) : undefined
+  // Moderation routes accept a signed admin wallet OR the service admin bearer
+  // token (unified + legacy rotation aliases).
+  const adminAuth = createAdminAuth(components.fetcher, components.profiles, [
+    await components.config.getString('API_ADMIN_TOKEN'),
+    await components.config.getString('LEGACY_PLACES_ADMIN_AUTH_TOKEN'),
+    await components.config.getString('LEGACY_EVENTS_ADMIN_AUTH_TOKEN')
+  ])
 
   router.use(errorHandler)
 
@@ -98,10 +105,10 @@ export async function setupRouter(globalContext: GlobalContext): Promise<Router<
   router.get('/api/places/:place_id', signedFetch({ optional: true }), getPlaceHandler)
   router.patch('/api/places/:entity_id/likes', signedFetch(), updateLikesHandler)
   router.patch('/api/places/:entity_id/favorites', signedFetch(), updateFavoritesHandler)
-  // places moderation (signed admin); ranking is data-team bearer
-  router.put('/api/places/:place_id/rating', signedFetch(), requirePermission(), updatePlaceRatingHandler)
-  router.put('/api/places/:place_id/highlight', signedFetch(), requirePermission(), updatePlaceHighlightHandler)
-  router.put('/api/places/:place_id/disable', signedFetch(), requirePermission(), updatePlaceDisabledHandler)
+  // places moderation (signed admin or service admin bearer); ranking is data-team bearer
+  router.put('/api/places/:place_id/rating', adminAuth, updatePlaceRatingHandler)
+  router.put('/api/places/:place_id/highlight', adminAuth, updatePlaceHighlightHandler)
+  router.put('/api/places/:place_id/disable', adminAuth, updatePlaceDisabledHandler)
   if (withDataTeamBearer) {
     router.put('/api/places/:place_id/ranking', withDataTeamBearer, updatePlaceRankingHandler)
   }
@@ -135,9 +142,9 @@ export async function setupRouter(globalContext: GlobalContext): Promise<Router<
   router.get('/api/worlds/:world_id', signedFetch({ optional: true }), getWorldHandler)
   router.patch('/api/worlds/:world_id/likes', signedFetch(), updateLikesHandler)
   router.patch('/api/worlds/:world_id/favorites', signedFetch(), updateFavoritesHandler)
-  // worlds moderation (signed admin); ranking is data-team bearer
-  router.put('/api/worlds/:world_id/rating', signedFetch(), requirePermission(), updateWorldRatingHandler)
-  router.put('/api/worlds/:world_id/highlight', signedFetch(), requirePermission(), updateWorldHighlightHandler)
+  // worlds moderation (signed admin or service admin bearer); ranking is data-team bearer
+  router.put('/api/worlds/:world_id/rating', adminAuth, updateWorldRatingHandler)
+  router.put('/api/worlds/:world_id/highlight', adminAuth, updateWorldHighlightHandler)
   if (withDataTeamBearer) {
     router.put('/api/worlds/:world_id/ranking', withDataTeamBearer, updateWorldRankingHandler)
   }

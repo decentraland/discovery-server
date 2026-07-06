@@ -24,6 +24,8 @@ describe('when creating an event', () => {
         getManagedCommunities: jest.fn().mockResolvedValue([]),
         getCommunityMembers: jest.fn().mockResolvedValue([])
       },
+      slackNotifier: { notify: jest.fn() },
+      config: { getString: jest.fn().mockResolvedValue(undefined) },
       logs: { getLogger: () => ({ info: jest.fn(), error: jest.fn(), warn: jest.fn(), debug: jest.fn() }) }
     }
   })
@@ -57,6 +59,19 @@ describe('when creating an event', () => {
       expect(components.eventsRepository.create).toHaveBeenCalledWith(
         components.pg,
         expect.objectContaining({ approved: false, place_id: 'place-1', world: false })
+      )
+    })
+
+    it('should post a Slack alert about the new submission', async () => {
+      const events = await createEventsComponent(components)
+      await events.createEvent(
+        { name: 'Party', start_at: new Date(Date.now() + 3600_000).toISOString(), x: 0, y: 0 },
+        '0xUSER'
+      )
+
+      expect(components.slackNotifier.notify).toHaveBeenCalledWith(
+        expect.stringContaining('New event submitted'),
+        undefined
       )
     })
   })

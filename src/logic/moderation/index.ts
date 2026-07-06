@@ -20,9 +20,19 @@ export interface IModerationComponent {
  * rating and why. Highlight/disable/ranking are single-field updates.
  */
 export async function createModerationComponent(
-  components: Pick<AppComponents, 'pg' | 'placesRepository' | 'worldsRepository' | 'contentRatingsRepository' | 'logs'>
+  components: Pick<
+    AppComponents,
+    'pg' | 'placesRepository' | 'worldsRepository' | 'contentRatingsRepository' | 'slackNotifier' | 'config' | 'logs'
+  >
 ): Promise<IModerationComponent> {
-  const { pg, placesRepository, worldsRepository, contentRatingsRepository } = components
+  const { pg, placesRepository, worldsRepository, contentRatingsRepository, slackNotifier, config } = components
+
+  // Content-moderation alerts channel (legacy CONTENT_MODERATION_SLACK_WEBHOOK); a
+  // no-op when Slack or the channel is unconfigured.
+  const moderationChannel = (await config.getString('SLACK_CONTENT_MODERATION_CHANNEL')) ?? undefined
+  const alert = (text: string) => {
+    void slackNotifier.notify(text, moderationChannel)
+  }
 
   // Place ids are uuids; a non-uuid can't exist (and would crash the uuid cast),
   // so reject it as a not-found instead of letting Postgres 500.
@@ -44,6 +54,9 @@ export async function createModerationComponent(
         moderator,
         comment
       })
+      alert(
+        `:label: Place content rating changed: ${current.id} ${current.content_rating ?? '—'} → ${rating} by ${moderator}`
+      )
       return updated
     })
   }
@@ -62,6 +75,7 @@ export async function createModerationComponent(
       disabled_reason: disabled ? reason : null
     })
     if (!updated) throw new PlaceNotFoundError(placeId)
+    alert(`:x: Place ${disabled ? 'disabled' : 're-enabled'}: ${placeId}${disabled ? ` (${reason})` : ''}`)
     return updated
   }
 
@@ -85,6 +99,9 @@ export async function createModerationComponent(
         moderator,
         comment
       })
+      alert(
+        `:label: World content rating changed: ${current.id} ${current.content_rating ?? '—'} → ${rating} by ${moderator}`
+      )
       return updated
     })
   }

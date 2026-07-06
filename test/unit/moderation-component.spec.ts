@@ -14,6 +14,8 @@ describe('when moderating a place', () => {
       placesRepository: { findByIdWithAggregates: jest.fn(), updateModeration: jest.fn() },
       worldsRepository: { findByIdWithAggregates: jest.fn(), updateModeration: jest.fn() },
       contentRatingsRepository: { record: jest.fn() },
+      slackNotifier: { notify: jest.fn() },
+      config: { getString: jest.fn().mockResolvedValue(undefined) },
       logs: { getLogger: () => ({ info: jest.fn(), error: jest.fn(), warn: jest.fn(), debug: jest.fn() }) }
     }
   })
@@ -43,6 +45,16 @@ describe('when moderating a place', () => {
       await moderation.setPlaceRating(PLACE_ID, 'R', '0xMOD')
 
       expect(components.placesRepository.updateModeration).toHaveBeenCalledWith(tx, PLACE_ID, { content_rating: 'R' })
+    })
+
+    it('should post a Slack alert about the rating change', async () => {
+      const moderation = await createModerationComponent(components)
+      await moderation.setPlaceRating(PLACE_ID, 'R', '0xMOD')
+
+      expect(components.slackNotifier.notify).toHaveBeenCalledWith(
+        expect.stringContaining('content rating changed'),
+        undefined
+      )
     })
   })
 

@@ -136,6 +136,8 @@ export async function initComponents(): Promise<AppComponents> {
     profiles,
     recurrence,
     communitiesClient,
+    slackNotifier,
+    config,
     logs
   })
   const attendees = await createAttendeesComponent({ pg, attendeesRepository, logs })
@@ -151,6 +153,8 @@ export async function initComponents(): Promise<AppComponents> {
     placesRepository,
     worldsRepository,
     contentRatingsRepository,
+    slackNotifier,
+    config,
     logs
   })
   const reports = await createReportsComponent({ reportsStorage, logs })
@@ -168,31 +172,85 @@ export async function initComponents(): Promise<AppComponents> {
     logs
   })
 
+  // Job/consumer metric wrappers. Instrumenting here (rather than inside every
+  // logic component) keeps the job_* / notifications_published / sqs_* series
+  // observed without threading `metrics` through the domain layer.
+  const runJob = (job: string, fn: () => Promise<unknown>) => async (): Promise<void> => {
+    const timer = metrics.startTimer('job_execution_duration_seconds', { job })
+    try {
+      await fn()
+      metrics.increment('job_execution_total', { job, result: 'success' })
+    } catch (error) {
+      metrics.increment('job_execution_total', { job, result: 'error' })
+      throw error
+    } finally {
+      timer.end({ job })
+    }
+  }
+  const runNotifyJob = (job: string, type: string, fn: () => Promise<number>) => async (): Promise<void> => {
+    const timer = metrics.startTimer('job_execution_duration_seconds', { job })
+    try {
+      const published = await fn()
+      metrics.increment('job_execution_total', { job, result: 'success' })
+      if (published > 0) metrics.increment('notifications_published_total', { type }, published)
+    } catch (error) {
+      metrics.increment('job_execution_total', { job, result: 'error' })
+      throw error
+    } finally {
+      timer.end({ job })
+    }
+  }
+
   // Background jobs: created only when enabled so exactly one deployment owns them.
   const backgroundJobsEnabled = (await config.getString('BACKGROUND_JOBS_ENABLED')) === 'true'
   const jobIntervalMs = (await config.getNumber('UPDATE_NEXT_START_AT_INTERVAL_MS')) ?? 60_000
   const notificationsIntervalMs = (await config.getNumber('NOTIFICATIONS_INTERVAL_MS')) ?? 60_000
   const updateNextStartAtJob = backgroundJobsEnabled
-    ? createJobComponent({ logs }, () => events.updateNextStartAt(), jobIntervalMs, { repeat: true })
+    ? createJobComponent(
+        { logs },
+        runJob('updateNextStartAt', () => events.updateNextStartAt()),
+        jobIntervalMs,
+        {
+          repeat: true
+        }
+      )
     : undefined
   const notifyUpcomingJob = backgroundJobsEnabled
-    ? createJobComponent({ logs }, () => notifications.notifyUpcoming(), notificationsIntervalMs, { repeat: true })
+    ? createJobComponent(
+        { logs },
+        runNotifyJob('notifyUpcoming', 'upcoming', () => notifications.notifyUpcoming()),
+        notificationsIntervalMs,
+        { repeat: true }
+      )
     : undefined
   const notifyStartedJob = backgroundJobsEnabled
-    ? createJobComponent({ logs }, () => notifications.notifyStarted(), notificationsIntervalMs, { repeat: true })
+    ? createJobComponent(
+        { logs },
+        runNotifyJob('notifyStarted', 'started', () => notifications.notifyStarted()),
+        notificationsIntervalMs,
+        { repeat: true }
+      )
     : undefined
   const notifyEndedJob = backgroundJobsEnabled
-    ? createJobComponent({ logs }, () => notifications.notifyEnded(), notificationsIntervalMs, { repeat: true })
+    ? createJobComponent(
+        { logs },
+        runNotifyJob('notifyEnded', 'ended', () => notifications.notifyEnded()),
+        notificationsIntervalMs,
+        { repeat: true }
+      )
     : undefined
   const hotScenesRefreshJob = backgroundJobsEnabled
-    ? createJobComponent({ logs }, () => hotScenes.refresh(), (await config.getNumber('HOT_SCENES_TTL_MS')) ?? 60_000, {
-        repeat: true
-      })
+    ? createJobComponent(
+        { logs },
+        runJob('hotScenesRefresh', () => hotScenes.refresh()),
+        (await config.getNumber('HOT_SCENES_TTL_MS')) ?? 60_000,
+        { repeat: true }
+      )
     : undefined
   const worldsLiveDataRefreshJob = backgroundJobsEnabled
     ? createJobComponent(
         { logs },
-        () => worldsLiveData.refresh(),
+        runJob('worldsLiveDataRefresh', () => worldsLiveData.refresh()),
         (await config.getNumber('WORLDS_LIVE_DATA_TTL_MS')) ?? 60_000,
         { repeat: true }
       )
@@ -200,11 +258,9 @@ export async function initComponents(): Promise<AppComponents> {
   const poiSyncJob = backgroundJobsEnabled
     ? createJobComponent(
         { logs },
-        () => categories.syncPois(),
+        runJob('poiSync', () => categories.syncPois()),
         (await config.getNumber('POI_SYNC_INTERVAL_MS')) ?? 24 * 60 * 60_000,
-        {
-          repeat: true
-        }
+        { repeat: true }
       )
     : undefined
 
@@ -219,7 +275,15 @@ export async function initComponents(): Promise<AppComponents> {
     queueProcessor.addMessageHandler(
       Events.Type.CATALYST_DEPLOYMENT,
       Events.SubType.CatalystDeployment.SCENE,
-      (message) => ingestion.processCatalystDeployment(message as never).then(() => undefined)
+      async (message) => {
+        try {
+          await ingestion.processCatalystDeployment(message as never)
+          metrics.increment('sqs_messages_processed_total', { result: 'success' })
+        } catch (error) {
+          metrics.increment('sqs_messages_processed_total', { result: 'error' })
+          throw error
+        }
+      }
     )
   }
 
