@@ -67,7 +67,14 @@ export function createEventsRepository(): IEventsRepository {
       where.append(SQL` AND e.deleted_at IS NULL`)
     }
     if (!filters.includeUnapproved) {
-      where.append(SQL` AND e.approved IS true AND e.rejected IS false`)
+      // Approved+non-rejected are public; a viewer also sees their own pending/rejected events.
+      if (filters.viewer) {
+        where.append(
+          SQL` AND ((e.approved IS true AND e.rejected IS false) OR e."user" = ${filters.viewer.toLowerCase()})`
+        )
+      } else {
+        where.append(SQL` AND e.approved IS true AND e.rejected IS false`)
+      }
     }
     if (filters.search && filters.search.length >= MIN_SEARCH_LENGTH) {
       where.append(SQL` AND e.textsearch @@ websearch_to_tsquery('english', ${filters.search})`)
@@ -93,6 +100,9 @@ export function createEventsRepository(): IEventsRepository {
       where.append(SQL` AND e.next_start_at <= now() AND e.next_finish_at >= now()`)
     } else if (filters.list === 'upcoming') {
       where.append(SQL` AND e.next_start_at > now()`)
+    } else if (filters.list === 'active') {
+      // Legacy default: hide events whose current occurrence has already finished.
+      where.append(SQL` AND e.next_finish_at > now()`)
     }
     return where
   }

@@ -5,6 +5,112 @@ import { test } from '../components'
 
 const HOUR_MS = 60 * 60 * 1000
 
+test('when moderating and viewing events', function ({ components }) {
+  describe('and a pending event exists', () => {
+    let owner: Awaited<ReturnType<typeof getIdentity>>
+    let eventId: string
+
+    beforeEach(async () => {
+      await components.pg.query(SQL`DELETE FROM events`)
+      await components.pg.query(SQL`DELETE FROM profile_settings`)
+      owner = await getIdentity()
+      const created = await components.events.createEvent(
+        { name: 'Pending', start_at: new Date(Date.now() + HOUR_MS).toISOString(), duration: HOUR_MS, x: 0, y: 0 },
+        owner.realAccount.address
+      )
+      eventId = created.id
+    })
+
+    it('should let the owner see their own pending event in the list', async () => {
+      const path = '/api/events'
+      const headers = getSignedAuthHeaders('GET', path, {}, owner)
+      const body = await (await components.localFetch.fetch(path, { headers })).json()
+
+      expect(body.data.map((e: { id: string }) => e.id)).toContain(eventId)
+    })
+
+    it('should hide the pending event from anonymous callers', async () => {
+      const body = await (await components.localFetch.fetch('/api/events')).json()
+
+      expect(body.total).toBe(0)
+    })
+
+    it('should let a moderator approve it via PATCH, making it public', async () => {
+      const moderator = await getIdentity()
+      await components.profileSettingsRepository.upsertPermissions(components.pg, moderator.realAccount.address, [
+        ProfilePermission.ApproveAnyEvent
+      ])
+      const path = `/api/events/${eventId}`
+      const headers = getSignedAuthHeaders('PATCH', path, {}, moderator)
+      const response = await components.localFetch.fetch(path, {
+        method: 'PATCH',
+        headers: { ...headers, 'content-type': 'application/json' },
+        body: JSON.stringify({ approved: true })
+      })
+
+      expect(response.status).toBe(200)
+      const list = await (await components.localFetch.fetch('/api/events')).json()
+      expect(list.data.map((e: { id: string }) => e.id)).toContain(eventId)
+    })
+  })
+
+  describe('and a world event exists', () => {
+    beforeEach(async () => {
+      await components.pg.query(SQL`DELETE FROM events`)
+      await components.pg.query(SQL`DELETE FROM worlds`)
+      await components.worldsRepository.upsert(components.pg, {
+        id: 'my-world.dcl.eth',
+        world_name: 'my-world.dcl.eth',
+        show_in_places: true
+      })
+      const owner = await getIdentity()
+      // Grant self-approval so the event is public and anonymously fetchable.
+      await components.profileSettingsRepository.upsertPermissions(components.pg, owner.realAccount.address, [
+        ProfilePermission.ApproveOwnEvent
+      ])
+      await components.events.createEvent(
+        {
+          name: 'World event',
+          start_at: new Date(Date.now() + HOUR_MS).toISOString(),
+          duration: HOUR_MS,
+          world: true,
+          server: 'my-world.dcl.eth'
+        },
+        owner.realAccount.address
+      )
+    })
+
+    it('should serve place_id as the world id (legacy contract)', async () => {
+      const { rows } = await components.pg.query<{ id: string }>(SQL`SELECT id FROM events LIMIT 1`)
+      const body = await (await components.localFetch.fetch(`/api/events/${rows[0].id}`)).json()
+
+      expect(body.data.world).toBe(true)
+      expect(body.data.place_id).toBe('my-world.dcl.eth')
+      expect(body.data.world_id).toBe('my-world.dcl.eth')
+    })
+  })
+
+  describe('and a finished event exists', () => {
+    beforeEach(async () => {
+      await components.pg.query(SQL`DELETE FROM events`)
+      await components.pg.query(SQL`
+        INSERT INTO events (name, start_at, finish_at, duration, "user", approved, next_start_at, next_finish_at)
+        VALUES ('Finished', now() - interval '3 hours', now() - interval '1 hour', 3600000, '0xowner', true,
+                now() - interval '3 hours', now() - interval '1 hour')`)
+    })
+
+    it('should exclude it from the default (active) list', async () => {
+      const body = await (await components.localFetch.fetch('/api/events')).json()
+      expect(body.total).toBe(0)
+    })
+
+    it('should include it when list=all is requested', async () => {
+      const body = await (await components.localFetch.fetch('/api/events?list=all')).json()
+      expect(body.total).toBe(1)
+    })
+  })
+})
+
 test('when managing events over the API', function ({ components }) {
   describe('and an authenticated user creates an event at a known place', () => {
     let identity: Awaited<ReturnType<typeof getIdentity>>

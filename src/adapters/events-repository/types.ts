@@ -13,8 +13,10 @@ export type EventListFilters = {
   creator?: string
   /** Only events the given user is attending. */
   attendee?: string
-  /** live = happening now; upcoming = future; all = both (by next_start_at). */
-  list?: 'live' | 'upcoming' | 'all'
+  /** The requesting wallet: their own pending/rejected events remain visible to them. */
+  viewer?: string
+  /** live = happening now; upcoming = future; active = not yet finished; all = no time filter. */
+  list?: 'live' | 'upcoming' | 'active' | 'all'
   limit?: number
   offset?: number
 }

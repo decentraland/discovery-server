@@ -36,7 +36,13 @@ export type CreateEventPayload = {
   recurrent_monthday?: number | null
 }
 
-export type UpdateEventPayload = Partial<CreateEventPayload>
+export type UpdateEventPayload = Partial<CreateEventPayload> & {
+  /** Moderation fields — only applied for holders of the relevant permission. */
+  approved?: boolean
+  rejected?: boolean
+  rejection_reason?: string | null
+  highlighted?: boolean
+}
 
 /** An event decorated with the requesting user's attendance flag. */
 export type EventWithAttendance = Event & { attending: boolean }

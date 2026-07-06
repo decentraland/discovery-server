@@ -4,14 +4,26 @@ import type { EventListFilters } from '../../adapters/events-repository'
 import type { EventWithAttendance } from '../../logic/events'
 import { BadRequestError, UnauthorizedError } from '../../types/errors'
 
-function parseFilters(params: URLSearchParams): EventListFilters {
+type ListContext = { viewer?: string; isAdmin?: boolean }
+
+function parseFilters(params: URLSearchParams, ctx: ListContext = {}): EventListFilters {
   const listParam = params.get('list')
-  const list = listParam === 'live' || listParam === 'upcoming' ? listParam : 'all'
+  // Legacy default is the "active" feed (events not yet finished); `all` is opt-in.
+  const list =
+    listParam === 'live' || listParam === 'upcoming' || listParam === 'all' || listParam === 'active'
+      ? listParam
+      : 'active'
+  // Admins may opt into pending/rejected/deleted events for moderation.
+  const includeUnapproved = ctx.isAdmin ? params.get('allow_pending') === 'true' : false
+  const includeDeleted = ctx.isAdmin ? params.get('allow_deleted') === 'true' : false
   return {
     search: params.get('search') ?? undefined,
     communityId: params.get('community_id') ?? undefined,
     creator: params.get('creator') ?? undefined,
     list,
+    viewer: ctx.viewer,
+    includeUnapproved,
+    includeDeleted,
     limit: params.get('limit') ? Number(params.get('limit')) : undefined,
     offset: params.get('offset') ? Number(params.get('offset')) : undefined
   }
@@ -19,9 +31,13 @@ function parseFilters(params: URLSearchParams): EventListFilters {
 
 /** Legacy `GET /api/events` — filtered, paginated event list. */
 export async function getEventListHandler(
-  context: Pick<HandlerContextWithPath<'events', '/api/events'>, 'components' | 'url'>
+  context: Pick<HandlerContextWithPath<'events' | 'profiles', '/api/events'>, 'components' | 'url' | 'verification'>
 ): Promise<HTTPResponse<Event[]>> {
-  const { data, total } = await context.components.events.getEvents(parseFilters(context.url.searchParams))
+  const viewer = context.verification?.auth?.toLowerCase()
+  const isAdmin = viewer ? context.components.profiles.isAdmin(viewer) : false
+  const { data, total } = await context.components.events.getEvents(
+    parseFilters(context.url.searchParams, { viewer, isAdmin })
+  )
   return { status: 200, body: { ok: true, data, total } }
 }
 
@@ -38,10 +54,14 @@ export async function getAttendingEventsHandler(
 
 /** Legacy `GET /api/events/:event_id` — a single event. */
 export async function getEventHandler(
-  context: Pick<HandlerContextWithPath<'events', '/api/events/:event_id'>, 'components' | 'params' | 'verification'>
+  context: Pick<
+    HandlerContextWithPath<'events' | 'profiles', '/api/events/:event_id'>,
+    'components' | 'params' | 'verification'
+  >
 ): Promise<HTTPResponse<EventWithAttendance>> {
   const user = context.verification?.auth?.toLowerCase()
-  const data = await context.components.events.getEvent(context.params.event_id, user)
+  const isAdmin = user ? context.components.profiles.isAdmin(user) : false
+  const data = await context.components.events.getEvent(context.params.event_id, user, isAdmin)
   return { status: 200, body: { ok: true, data } }
 }
 
