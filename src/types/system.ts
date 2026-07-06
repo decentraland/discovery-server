@@ -23,6 +23,7 @@ import type { ISlackNotifier } from '../adapters/slack-notifier'
 import type { ISnsPublisher } from '../adapters/sns-publisher'
 import type { ISnapshotClient } from '../adapters/snapshot-client'
 import type { ICommsGatekeeperClient } from '../adapters/comms-gatekeeper-client'
+import type { IHotScenesComponent } from '../adapters/hot-scenes'
 import type { IJobComponent } from '@dcl/job-component'
 import type { ICategoriesComponent } from '../logic/categories'
 import type { ISchedulesComponent } from '../logic/schedules'
@@ -91,6 +92,9 @@ export type BaseComponents = {
   snapshotClient: ISnapshotClient
   commsGatekeeperClient: ICommsGatekeeperClient
 
+  // cached live data
+  hotScenes: IHotScenesComponent
+
   // logic
   categories: ICategoriesComponent
   schedules: ISchedulesComponent
@@ -115,6 +119,7 @@ export type BaseComponents = {
   notifyUpcomingJob?: IJobComponent
   notifyStartedJob?: IJobComponent
   notifyEndedJob?: IJobComponent
+  hotScenesRefreshJob?: IJobComponent
   // SQS deployment consumer (present only when AWS_SQS_QUEUE_URL is configured)
   queueProcessor?: IQueueConsumerComponent
 }

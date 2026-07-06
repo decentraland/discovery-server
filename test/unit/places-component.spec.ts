@@ -5,6 +5,7 @@ import type { AggregatePlace } from '../../src/types/entities'
 describe('when reading places', () => {
   let placesRepository: jest.Mocked<IPlacesRepository>
   let pg: any
+  let hotScenes: any
   let logs: any
 
   beforeEach(() => {
@@ -18,6 +19,11 @@ describe('when reading places', () => {
       upsertScene: jest.fn()
     }
     pg = {}
+    hotScenes = {
+      getUserCount: jest.fn().mockResolvedValue(0),
+      getActivePositions: jest.fn().mockResolvedValue([]),
+      refresh: jest.fn()
+    }
     logs = { getLogger: () => ({ info: jest.fn(), error: jest.fn(), warn: jest.fn(), debug: jest.fn() }) }
   })
 
@@ -31,7 +37,7 @@ describe('when reading places', () => {
     })
 
     it('should throw a PlaceNotFoundError', async () => {
-      const places = await createPlacesComponent({ pg, placesRepository, logs })
+      const places = await createPlacesComponent({ pg, placesRepository, hotScenes, logs })
 
       await expect(places.getPlace('missing')).rejects.toThrow(PlaceNotFoundError)
     })
@@ -46,11 +52,22 @@ describe('when reading places', () => {
       placesRepository.count.mockResolvedValueOnce(1)
     })
 
-    it('should return the matching places and the total count', async () => {
-      const places = await createPlacesComponent({ pg, placesRepository, logs })
+    it('should return the matching places, a total count, and a decorated user_count', async () => {
+      const places = await createPlacesComponent({ pg, placesRepository, hotScenes, logs })
       const result = await places.getPlaces({ only_highlighted: true })
 
-      expect(result).toEqual({ data: [place], total: 1 })
+      expect(result).toEqual({ data: [{ ...place, user_count: 0 }], total: 1 })
+    })
+
+    it('should resolve most_active positions from hot scenes when ordering by most_active', async () => {
+      hotScenes.getActivePositions.mockResolvedValueOnce(['0,0', '1,1'])
+      const places = await createPlacesComponent({ pg, placesRepository, hotScenes, logs })
+      await places.getPlaces({ order_by: 'most_active' })
+
+      expect(placesRepository.findWithAggregates).toHaveBeenCalledWith(
+        pg,
+        expect.objectContaining({ order_by: 'most_active', mostActivePositions: ['0,0', '1,1'] })
+      )
     })
   })
 
@@ -60,7 +77,7 @@ describe('when reading places', () => {
     })
 
     it('should query the repository with the ids filter', async () => {
-      const places = await createPlacesComponent({ pg, placesRepository, logs })
+      const places = await createPlacesComponent({ pg, placesRepository, hotScenes, logs })
       await places.getPlacesByIds(['a', 'b'], '0xUSER')
 
       expect(placesRepository.findWithAggregates).toHaveBeenCalledWith(
@@ -72,7 +89,7 @@ describe('when reading places', () => {
 
   describe('and requesting places by an empty id list', () => {
     it('should short-circuit without querying the repository', async () => {
-      const places = await createPlacesComponent({ pg, placesRepository, logs })
+      const places = await createPlacesComponent({ pg, placesRepository, hotScenes, logs })
       const result = await places.getPlacesByIds([])
 
       expect(result).toEqual([])

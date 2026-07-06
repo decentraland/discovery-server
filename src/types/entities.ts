@@ -40,6 +40,8 @@ export type AggregatePlace = Place & {
   user_like: boolean
   user_dislike: boolean
   user_favorite: boolean
+  /** Realtime connected users, decorated from hot-scenes when available. */
+  user_count?: number
 }
 
 /** Minimal status row returned by the by-ids status endpoint. */

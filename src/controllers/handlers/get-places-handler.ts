@@ -3,7 +3,7 @@ import type { AggregatePlace, PlaceStatus } from '../../types/entities'
 import type { OrderDirection, PlaceListFilters, PlaceListOrderBy } from '../../adapters/places-repository'
 import { BadRequestError } from '../../types/errors'
 
-const ORDER_BY_VALUES: PlaceListOrderBy[] = ['like_score', 'updated_at', 'created_at']
+const ORDER_BY_VALUES: PlaceListOrderBy[] = ['like_score', 'updated_at', 'created_at', 'most_active']
 
 function multi(params: URLSearchParams, key: string): string[] | undefined {
   const values = params

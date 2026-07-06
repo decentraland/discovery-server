@@ -8,7 +8,9 @@ const MAX_LIMIT = 100
 const ORDER_COLUMNS: Record<PlaceListOrderBy, string> = {
   like_score: 'like_score',
   updated_at: 'updated_at',
-  created_at: 'created_at'
+  created_at: 'created_at',
+  // most_active ranks by hot-scene membership first, then falls back to this column.
+  most_active: 'like_score'
 }
 
 /**
@@ -119,6 +121,9 @@ export function createPlacesRepository(): IPlacesRepository {
 
     query.append(SQL` ORDER BY `)
     if (filters.search && filters.search.length >= MIN_SEARCH_LENGTH) query.append(SQL`rank DESC, `)
+    if (filters.order_by === 'most_active' && filters.mostActivePositions?.length) {
+      query.append(SQL`(p.base_position = ANY(${filters.mostActivePositions}::varchar[])) DESC, `)
+    }
     // orderBy and direction are whitelisted above, so this is safe to append as raw text.
     query.append(` p.${orderBy} ${direction} NULLS LAST, p.deployed_at DESC`)
     query.append(SQL` LIMIT ${limit} OFFSET ${offset}`)

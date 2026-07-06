@@ -1,7 +1,7 @@
 import type { Queryable } from '../pg'
 import type { AggregatePlace, Place, PlaceStatus } from '../../types/entities'
 
-export type PlaceListOrderBy = 'like_score' | 'updated_at' | 'created_at'
+export type PlaceListOrderBy = 'like_score' | 'updated_at' | 'created_at' | 'most_active'
 export type OrderDirection = 'asc' | 'desc'
 
 export type PlaceListFilters = {
@@ -19,6 +19,8 @@ export type PlaceListFilters = {
   user?: string
   order_by?: PlaceListOrderBy
   order?: OrderDirection
+  /** Base positions of currently-active scenes; enables `most_active` ordering. */
+  mostActivePositions?: string[]
   limit?: number
   offset?: number
 }

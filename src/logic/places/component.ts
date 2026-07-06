@@ -7,35 +7,46 @@ import { PlaceNotFoundError } from './errors'
 const MAX_IDS = 100
 
 /**
- * Place reads. Stored aggregates and per-user like/favorite state come straight
- * from the repository. Realtime user counts (hot-scenes) and Catalyst operated-
- * lands enrichment are layered in once those adapters land — they decorate the
- * result, they do not gate it.
+ * Place reads. Stored aggregates and per-user like/favorite state come from the
+ * repository; realtime connected-user counts are decorated from the hot-scenes
+ * cache, and `most_active` ordering is resolved by feeding the cache's active
+ * base positions into the query. Enrichment is best-effort — it decorates the
+ * result, never gates it.
  */
 export async function createPlacesComponent(
-  components: Pick<AppComponents, 'pg' | 'placesRepository' | 'logs'>
+  components: Pick<AppComponents, 'pg' | 'placesRepository' | 'hotScenes' | 'logs'>
 ): Promise<IPlacesComponent> {
-  const { pg, placesRepository } = components
+  const { pg, placesRepository, hotScenes } = components
+
+  async function decorate(place: AggregatePlace): Promise<AggregatePlace> {
+    return { ...place, user_count: await hotScenes.getUserCount(place.base_position) }
+  }
 
   async function getPlace(id: string, user?: string): Promise<AggregatePlace> {
     const place = await placesRepository.findByIdWithAggregates(pg, id, user)
     if (!place) {
       throw new PlaceNotFoundError(id)
     }
-    return place
+    return decorate(place)
   }
 
   async function getPlaces(filters: PlaceListFilters): Promise<PlaceListResult> {
-    const [data, total] = await Promise.all([
-      placesRepository.findWithAggregates(pg, filters),
-      placesRepository.count(pg, filters)
+    const effectiveFilters =
+      filters.order_by === 'most_active'
+        ? { ...filters, mostActivePositions: await hotScenes.getActivePositions() }
+        : filters
+    const [rows, total] = await Promise.all([
+      placesRepository.findWithAggregates(pg, effectiveFilters),
+      placesRepository.count(pg, effectiveFilters)
     ])
+    const data = await Promise.all(rows.map(decorate))
     return { data, total }
   }
 
   async function getPlacesByIds(ids: string[], user?: string): Promise<AggregatePlace[]> {
     if (!ids.length) return []
-    return placesRepository.findWithAggregates(pg, { ids: ids.slice(0, MAX_IDS), user, limit: MAX_IDS })
+    const rows = await placesRepository.findWithAggregates(pg, { ids: ids.slice(0, MAX_IDS), user, limit: MAX_IDS })
+    return Promise.all(rows.map(decorate))
   }
 
   async function getPlacesStatus(ids: string[]): Promise<PlaceStatus[]> {

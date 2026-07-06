@@ -25,6 +25,7 @@ import { createSlackNotifier } from './adapters/slack-notifier'
 import { createSnsPublisher } from './adapters/sns-publisher'
 import { createSnapshotClient } from './adapters/snapshot-client'
 import { createCommsGatekeeperClient } from './adapters/comms-gatekeeper-client'
+import { createHotScenesComponent } from './adapters/hot-scenes'
 import { createJobComponent } from '@dcl/job-component'
 import { createCategoriesComponent } from './logic/categories'
 import { createSchedulesComponent } from './logic/schedules'
@@ -100,6 +101,7 @@ export async function initComponents(): Promise<AppComponents> {
   const snsPublisher = await createSnsPublisher({ config, logs })
   const snapshotClient = await createSnapshotClient({ config, logs, fetcher })
   const commsGatekeeperClient = await createCommsGatekeeperClient({ config, logs, fetcher })
+  const hotScenes = await createHotScenesComponent({ config, logs, fetcher })
 
   // storage (one adapter per bucket)
   const reportsStorage = await createStorageComponent(
@@ -114,7 +116,7 @@ export async function initComponents(): Promise<AppComponents> {
   // logic
   const categories = await createCategoriesComponent({ pg, categoriesRepository, logs })
   const schedules = await createSchedulesComponent({ pg, schedulesRepository, logs })
-  const places = await createPlacesComponent({ pg, placesRepository, logs })
+  const places = await createPlacesComponent({ pg, placesRepository, hotScenes, logs })
   const worlds = await createWorldsComponent({ pg, worldsRepository, logs })
   const interactions = await createInteractionsComponent({ pg, interactionsRepository, snapshotClient, logs })
   const profiles = await createProfilesComponent({ pg, profileSettingsRepository, config, logs })
@@ -174,6 +176,11 @@ export async function initComponents(): Promise<AppComponents> {
   const notifyEndedJob = backgroundJobsEnabled
     ? createJobComponent({ logs }, () => notifications.notifyEnded(), notificationsIntervalMs, { repeat: true })
     : undefined
+  const hotScenesRefreshJob = backgroundJobsEnabled
+    ? createJobComponent({ logs }, () => hotScenes.refresh(), (await config.getNumber('HOT_SCENES_TTL_MS')) ?? 60_000, {
+        repeat: true
+      })
+    : undefined
 
   const ingestion = await createIngestionComponent({ pg, placesRepository, logs })
 
@@ -214,6 +221,7 @@ export async function initComponents(): Promise<AppComponents> {
     snsPublisher,
     snapshotClient,
     commsGatekeeperClient,
+    hotScenes,
     reportsStorage,
     postersStorage,
     categories,
@@ -237,6 +245,7 @@ export async function initComponents(): Promise<AppComponents> {
     ...(notifyUpcomingJob ? { notifyUpcomingJob } : {}),
     ...(notifyStartedJob ? { notifyStartedJob } : {}),
     ...(notifyEndedJob ? { notifyEndedJob } : {}),
+    ...(hotScenesRefreshJob ? { hotScenesRefreshJob } : {}),
     ...(queueProcessor ? { queueProcessor } : {})
   }
 }
