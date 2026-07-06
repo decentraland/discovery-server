@@ -40,6 +40,7 @@ import {
   getSitemapIndexHandler,
   getStaticSitemapHandler
 } from './handlers/sitemap-handler'
+import { createPosterHandler, createVerticalPosterHandler } from './handlers/posters-handler'
 import { createAnyBearerMiddleware } from './middlewares/bearer-token'
 import {
   updatePlaceDisabledHandler,
@@ -106,6 +107,10 @@ export async function setupRouter(globalContext: GlobalContext): Promise<Router<
 
   // content-moderation report (signed → presigned S3 upload URL)
   router.post('/api/report', signedFetch(), createReportHandler)
+
+  // event posters (signed + multipart upload; parsed via the web Request's .formData())
+  router.post('/api/poster', signedFetch(), createPosterHandler)
+  router.post('/api/poster-vertical', signedFetch(), createVerticalPosterHandler)
 
   // events sitemaps (public XML)
   router.get('/events/sitemap.xml', getSitemapIndexHandler)

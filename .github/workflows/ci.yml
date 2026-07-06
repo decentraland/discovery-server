@@ -26,9 +26,15 @@ jobs:
         run: yarn test:unit
       - name: start integration dependencies
         run: docker compose -f docker-compose.test.yml up -d --wait
+      - name: create S3 buckets in localstack
+        run: |
+          docker compose -f docker-compose.test.yml exec -T localstack awslocal s3 mb s3://moderation-reports || true
+          docker compose -f docker-compose.test.yml exec -T localstack awslocal s3 mb s3://event-posters || true
       - name: integration tests
         run: yarn test:integration
         env:
           PG_COMPONENT_PSQL_CONNECTION_STRING: postgres://postgres:postgres@localhost:5432/discovery
           AWS_ENDPOINT: http://localhost:4566
           AWS_REGION: us-east-1
+          CONTENT_MODERATION_BUCKET_NAME: moderation-reports
+          POSTER_BUCKET_NAME: event-posters
