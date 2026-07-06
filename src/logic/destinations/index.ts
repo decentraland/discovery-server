@@ -20,10 +20,23 @@ export interface IDestinationsComponent {
 export async function createDestinationsComponent(
   components: Pick<
     AppComponents,
-    'pg' | 'destinationsRepository' | 'eventsRepository' | 'commsGatekeeperClient' | 'logs'
+    'pg' | 'destinationsRepository' | 'eventsRepository' | 'commsGatekeeperClient' | 'sceneStats' | 'logs'
   >
 ): Promise<IDestinationsComponent> {
-  const { pg, destinationsRepository, eventsRepository, commsGatekeeperClient } = components
+  const { pg, destinationsRepository, eventsRepository, commsGatekeeperClient, sceneStats } = components
+
+  async function decorateVisits(destinations: Destination[]): Promise<Destination[]> {
+    // Places carry 30-day visit counts; worlds have no scene-stats (0), matching legacy.
+    return Promise.all(
+      destinations.map(async (destination) => ({
+        ...destination,
+        user_visits:
+          destination.kind === 'place' && destination.base_position
+            ? await sceneStats.getVisits(destination.base_position)
+            : 0
+      }))
+    )
+  }
 
   async function decorateLiveEvents(destinations: Destination[]): Promise<Destination[]> {
     if (!destinations.length) return destinations
@@ -58,7 +71,7 @@ export async function createDestinationsComponent(
       destinationsRepository.findWithAggregates(pg, filters),
       destinationsRepository.count(pg, filters)
     ])
-    let data = rows
+    let data = await decorateVisits(rows)
     if (options.withLiveEvents) data = await decorateLiveEvents(data)
     if (options.withConnectedUsers) data = await decorateConnectedUsers(data)
     return { data, total }

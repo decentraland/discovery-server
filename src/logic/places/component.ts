@@ -15,12 +15,16 @@ const MAX_IDS = 100
  * result, never gates it.
  */
 export async function createPlacesComponent(
-  components: Pick<AppComponents, 'pg' | 'placesRepository' | 'hotScenes' | 'logs'>
+  components: Pick<AppComponents, 'pg' | 'placesRepository' | 'hotScenes' | 'sceneStats' | 'catalystClient' | 'logs'>
 ): Promise<IPlacesComponent> {
-  const { pg, placesRepository, hotScenes } = components
+  const { pg, placesRepository, hotScenes, sceneStats, catalystClient } = components
 
   async function decorate(place: AggregatePlace): Promise<AggregatePlace> {
-    return { ...place, user_count: await hotScenes.getUserCount(place.base_position) }
+    const [user_count, user_visits] = await Promise.all([
+      hotScenes.getUserCount(place.base_position),
+      sceneStats.getVisits(place.base_position)
+    ])
+    return { ...place, user_count, user_visits }
   }
 
   async function getPlace(id: string, user?: string): Promise<AggregatePlace> {
@@ -36,10 +40,18 @@ export async function createPlacesComponent(
   async function getPlaces(filters: PlaceListFilters): Promise<PlaceListResult> {
     // Legacy parity: favorites for a specific user only; anonymous → empty.
     if (filters.only_favorites && !filters.user) return { data: [], total: 0 }
-    const effectiveFilters =
+    let effectiveFilters =
       filters.order_by === 'most_active'
         ? { ...filters, mostActivePositions: await hotScenes.getActivePositions() }
         : filters
+    // Legacy `owner` semantics: match places the wallet owns OR operates (owned +
+    // estate + rented parcels), resolved via Catalyst. Empty → exact-owner match only.
+    if (filters.owner) {
+      effectiveFilters = {
+        ...effectiveFilters,
+        operatedPositions: await catalystClient.getOperatedPositions(filters.owner)
+      }
+    }
     const [rows, total] = await Promise.all([
       placesRepository.findWithAggregates(pg, effectiveFilters),
       placesRepository.count(pg, effectiveFilters)

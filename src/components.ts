@@ -26,8 +26,10 @@ import { createSnsPublisher } from './adapters/sns-publisher'
 import { createSnapshotClient } from './adapters/snapshot-client'
 import { createCommsGatekeeperClient } from './adapters/comms-gatekeeper-client'
 import { createHotScenesComponent } from './adapters/hot-scenes'
+import { createSceneStatsComponent } from './adapters/scene-stats'
 import { createWorldsLiveDataComponent } from './adapters/worlds-live-data'
 import { createDclListsClient } from './adapters/dcl-lists-client'
+import { createCatalystClient } from './adapters/catalyst-client'
 import { createCommunitiesClient } from './adapters/communities-client'
 import { createJobComponent } from '@dcl/job-component'
 import { createCategoriesComponent } from './logic/categories'
@@ -105,8 +107,10 @@ export async function initComponents(): Promise<AppComponents> {
   const snapshotClient = await createSnapshotClient({ config, logs, fetcher })
   const commsGatekeeperClient = await createCommsGatekeeperClient({ config, logs, fetcher })
   const hotScenes = await createHotScenesComponent({ config, logs, fetcher })
+  const sceneStats = await createSceneStatsComponent({ config, logs, fetcher })
   const worldsLiveData = await createWorldsLiveDataComponent({ config, logs, fetcher })
   const dclListsClient = await createDclListsClient({ config, logs, fetcher })
+  const catalystClient = await createCatalystClient({ config, logs, fetcher })
   const communitiesClient = await createCommunitiesClient({ config, logs, fetcher })
 
   // storage (one adapter per bucket)
@@ -122,7 +126,7 @@ export async function initComponents(): Promise<AppComponents> {
   // logic
   const categories = await createCategoriesComponent({ pg, categoriesRepository, dclListsClient, logs })
   const schedules = await createSchedulesComponent({ pg, schedulesRepository, logs })
-  const places = await createPlacesComponent({ pg, placesRepository, hotScenes, logs })
+  const places = await createPlacesComponent({ pg, placesRepository, hotScenes, sceneStats, catalystClient, logs })
   const worlds = await createWorldsComponent({ pg, worldsRepository, worldsLiveData, logs })
   const interactions = await createInteractionsComponent({ pg, interactionsRepository, snapshotClient, logs })
   const profiles = await createProfilesComponent({ pg, profileSettingsRepository, config, logs })
@@ -146,6 +150,7 @@ export async function initComponents(): Promise<AppComponents> {
     destinationsRepository,
     eventsRepository,
     commsGatekeeperClient,
+    sceneStats,
     logs
   })
   const moderation = await createModerationComponent({
@@ -310,8 +315,10 @@ export async function initComponents(): Promise<AppComponents> {
     snapshotClient,
     commsGatekeeperClient,
     dclListsClient,
+    catalystClient,
     communitiesClient,
     hotScenes,
+    sceneStats,
     worldsLiveData,
     reportsStorage,
     postersStorage,

@@ -42,7 +42,15 @@ export function createPlacesRepository(): IPlacesRepository {
       )`)
     }
     if (filters.owner) {
-      where.append(SQL` AND lower(p.owner) = ${filters.owner.toLowerCase()}`)
+      // Match the owner exactly, plus any scene whose parcels the wallet operates
+      // (owned/estate/rented positions resolved by the caller via Catalyst).
+      if (filters.operatedPositions?.length) {
+        where.append(SQL` AND (lower(p.owner) = ${filters.owner.toLowerCase()} OR p.base_position IN (
+          SELECT DISTINCT base_position FROM place_positions WHERE position = ANY(${filters.operatedPositions}::varchar[])
+        ))`)
+      } else {
+        where.append(SQL` AND lower(p.owner) = ${filters.owner.toLowerCase()}`)
+      }
     }
     if (filters.creator_address) {
       where.append(SQL` AND lower(p.creator_address) = ${filters.creator_address.toLowerCase()}`)

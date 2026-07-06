@@ -55,8 +55,7 @@ export async function getMapHandler(
       user_like: place.user_like,
       user_dislike: place.user_dislike,
       user_count: place.user_count ?? 0,
-      // Populated by the scene-stats adapter (30-day visits); 0 until it's wired.
-      user_visits: 0
+      user_visits: place.user_visits ?? 0
     }
   }
 

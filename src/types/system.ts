@@ -24,8 +24,10 @@ import type { ISnsPublisher } from '../adapters/sns-publisher'
 import type { ISnapshotClient } from '../adapters/snapshot-client'
 import type { ICommsGatekeeperClient } from '../adapters/comms-gatekeeper-client'
 import type { IHotScenesComponent } from '../adapters/hot-scenes'
+import type { ISceneStatsComponent } from '../adapters/scene-stats'
 import type { IWorldsLiveDataComponent } from '../adapters/worlds-live-data'
 import type { IDclListsClient } from '../adapters/dcl-lists-client'
+import type { ICatalystClient } from '../adapters/catalyst-client'
 import type { ICommunitiesClient } from '../adapters/communities-client'
 import type { IJobComponent } from '@dcl/job-component'
 import type { ICategoriesComponent } from '../logic/categories'
@@ -95,10 +97,12 @@ export type BaseComponents = {
   snapshotClient: ISnapshotClient
   commsGatekeeperClient: ICommsGatekeeperClient
   dclListsClient: IDclListsClient
+  catalystClient: ICatalystClient
   communitiesClient: ICommunitiesClient
 
   // cached live data
   hotScenes: IHotScenesComponent
+  sceneStats: ISceneStatsComponent
   worldsLiveData: IWorldsLiveDataComponent
 
   // logic

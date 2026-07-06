@@ -6,6 +6,8 @@ describe('when reading places', () => {
   let placesRepository: jest.Mocked<IPlacesRepository>
   let pg: any
   let hotScenes: any
+  let sceneStats: any
+  let catalystClient: any
   let logs: any
 
   beforeEach(() => {
@@ -24,6 +26,8 @@ describe('when reading places', () => {
       getActivePositions: jest.fn().mockResolvedValue([]),
       refresh: jest.fn()
     }
+    sceneStats = { getVisits: jest.fn().mockResolvedValue(0), refresh: jest.fn() }
+    catalystClient = { getOperatedPositions: jest.fn().mockResolvedValue([]) }
     logs = { getLogger: () => ({ info: jest.fn(), error: jest.fn(), warn: jest.fn(), debug: jest.fn() }) }
   })
 
@@ -37,7 +41,7 @@ describe('when reading places', () => {
     })
 
     it('should throw a PlaceNotFoundError', async () => {
-      const places = await createPlacesComponent({ pg, placesRepository, hotScenes, logs })
+      const places = await createPlacesComponent({ pg, placesRepository, hotScenes, sceneStats, catalystClient, logs })
 
       await expect(places.getPlace('missing')).rejects.toThrow(PlaceNotFoundError)
     })
@@ -52,21 +56,33 @@ describe('when reading places', () => {
       placesRepository.count.mockResolvedValueOnce(1)
     })
 
-    it('should return the matching places, a total count, and a decorated user_count', async () => {
-      const places = await createPlacesComponent({ pg, placesRepository, hotScenes, logs })
+    it('should return the matching places, a total count, and decorated user_count/user_visits', async () => {
+      const places = await createPlacesComponent({ pg, placesRepository, hotScenes, sceneStats, catalystClient, logs })
       const result = await places.getPlaces({ only_highlighted: true })
 
-      expect(result).toEqual({ data: [{ ...place, user_count: 0 }], total: 1 })
+      expect(result).toEqual({ data: [{ ...place, user_count: 0, user_visits: 0 }], total: 1 })
     })
 
     it('should resolve most_active positions from hot scenes when ordering by most_active', async () => {
       hotScenes.getActivePositions.mockResolvedValueOnce(['0,0', '1,1'])
-      const places = await createPlacesComponent({ pg, placesRepository, hotScenes, logs })
+      const places = await createPlacesComponent({ pg, placesRepository, hotScenes, sceneStats, catalystClient, logs })
       await places.getPlaces({ order_by: 'most_active' })
 
       expect(placesRepository.findWithAggregates).toHaveBeenCalledWith(
         pg,
         expect.objectContaining({ order_by: 'most_active', mostActivePositions: ['0,0', '1,1'] })
+      )
+    })
+
+    it('should expand an owner filter to the wallet operated parcels via Catalyst', async () => {
+      catalystClient.getOperatedPositions.mockResolvedValueOnce(['10,10', '11,11'])
+      const places = await createPlacesComponent({ pg, placesRepository, hotScenes, sceneStats, catalystClient, logs })
+      await places.getPlaces({ owner: '0xOWNER' })
+
+      expect(catalystClient.getOperatedPositions).toHaveBeenCalledWith('0xOWNER')
+      expect(placesRepository.findWithAggregates).toHaveBeenCalledWith(
+        pg,
+        expect.objectContaining({ owner: '0xOWNER', operatedPositions: ['10,10', '11,11'] })
       )
     })
   })
@@ -78,7 +94,7 @@ describe('when reading places', () => {
 
     it('should query the repository with the valid uuid ids filter', async () => {
       const ids = ['11111111-1111-1111-1111-111111111111', '22222222-2222-2222-2222-222222222222']
-      const places = await createPlacesComponent({ pg, placesRepository, hotScenes, logs })
+      const places = await createPlacesComponent({ pg, placesRepository, hotScenes, sceneStats, catalystClient, logs })
       await places.getPlacesByIds([...ids, 'not-a-uuid'], '0xUSER')
 
       expect(placesRepository.findWithAggregates).toHaveBeenCalledWith(
@@ -90,7 +106,7 @@ describe('when reading places', () => {
 
   describe('and requesting places by an empty id list', () => {
     it('should short-circuit without querying the repository', async () => {
-      const places = await createPlacesComponent({ pg, placesRepository, hotScenes, logs })
+      const places = await createPlacesComponent({ pg, placesRepository, hotScenes, sceneStats, catalystClient, logs })
       const result = await places.getPlacesByIds([])
 
       expect(result).toEqual([])

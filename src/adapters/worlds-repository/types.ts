@@ -1,7 +1,9 @@
 import type { Queryable } from '../pg'
 import type { AggregateWorld, World } from '../../types/entities'
 
-export type WorldListOrderBy = 'like_score' | 'updated_at' | 'created_at'
+// `most_active` is accepted for legacy parity (it was the legacy default) but, as in
+// the legacy service, it resolves to like_score ordering — worlds carry no activity sort key.
+export type WorldListOrderBy = 'like_score' | 'updated_at' | 'created_at' | 'most_active'
 export type OrderDirection = 'asc' | 'desc'
 
 export type WorldListFilters = {

@@ -42,6 +42,8 @@ export type AggregatePlace = Place & {
   user_favorite: boolean
   /** Realtime connected users, decorated from hot-scenes when available. */
   user_count?: number
+  /** 30-day unique visitors, decorated from scene-stats when available. */
+  user_visits?: number
 }
 
 /** Minimal status row returned by the by-ids status endpoint. */
@@ -109,6 +111,8 @@ export type Destination = {
   live_event?: boolean
   /** Realtime connected users, decorated from comms-gatekeeper when requested. */
   user_count?: number
+  /** 30-day unique visitors (places only; 0 for worlds), from scene-stats. */
+  user_visits?: number
 }
 
 export type Event = {

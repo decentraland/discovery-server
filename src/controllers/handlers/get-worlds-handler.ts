@@ -3,13 +3,14 @@ import type { AggregateWorld } from '../../types/entities'
 import type { OrderDirection, WorldListFilters, WorldListOrderBy } from '../../adapters/worlds-repository'
 import { multiParam as multi, intParam } from './query-params'
 
-const ORDER_BY_VALUES: WorldListOrderBy[] = ['like_score', 'updated_at', 'created_at']
+const ORDER_BY_VALUES: WorldListOrderBy[] = ['like_score', 'updated_at', 'created_at', 'most_active']
 
 function parseFilters(params: URLSearchParams, user?: string): WorldListFilters {
   const orderByParam = params.get('order_by') ?? undefined
+  // Legacy world-list default is `most_active` (which resolves to like_score ordering).
   const orderBy = ORDER_BY_VALUES.includes(orderByParam as WorldListOrderBy)
     ? (orderByParam as WorldListOrderBy)
-    : undefined
+    : 'most_active'
   return {
     search: params.get('search') ?? undefined,
     names: multi(params, 'names'),

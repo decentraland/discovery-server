@@ -7,7 +7,8 @@ const MAX_LIMIT = 100
 const ORDER_COLUMNS: Record<WorldListOrderBy, string> = {
   like_score: 'like_score',
   updated_at: 'updated_at',
-  created_at: 'created_at'
+  created_at: 'created_at',
+  most_active: 'like_score'
 }
 
 /**
