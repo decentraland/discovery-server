@@ -15,6 +15,7 @@
     "test:integration": "yarn test:integration:before && jest --forceExit --detectOpenHandles --verbose -c jest.integration.config.js --runInBand",
     "migrate": "node-pg-migrate --database-url-var PG_COMPONENT_PSQL_CONNECTION_STRING --envPath .env -j ts --tsconfig tsconfig.json -m ./src/migrations",
     "etl": "ts-node scripts/etl/index.ts",
+    "parity": "ts-node test/parity/run-parity.ts",
     "lint:check": "eslint '**/*.{js,ts}'",
     "lint:fix": "eslint '**/*.{js,ts}' --fix"
   },
