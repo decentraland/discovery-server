@@ -1,0 +1,15 @@
+name: Publish 'latest' image
+
+on:
+  release:
+    types:
+      - 'created'
+
+jobs:
+  discovery-server-deployment:
+    uses: decentraland/platform-actions/.github/workflows/apps-docker-release.yml@main
+    with:
+      service-name: discovery-server
+      image-name: discovery-server
+      deployment-environment: prd
+    secrets: inherit
