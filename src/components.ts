@@ -30,6 +30,7 @@ import { createSceneStatsComponent } from './adapters/scene-stats'
 import { createWorldsLiveDataComponent } from './adapters/worlds-live-data'
 import { createDclListsClient } from './adapters/dcl-lists-client'
 import { createCatalystClient } from './adapters/catalyst-client'
+import { createLandClient } from './adapters/land-client'
 import { createSubgraphsClient } from './adapters/subgraphs-client'
 import { createCommunitiesClient } from './adapters/communities-client'
 import { createJobComponent } from '@dcl/job-component'
@@ -113,6 +114,7 @@ export async function initComponents(): Promise<AppComponents> {
   const worldsLiveData = await createWorldsLiveDataComponent({ config, logs, fetcher })
   const dclListsClient = await createDclListsClient({ config, logs, fetcher })
   const catalystClient = await createCatalystClient({ config, logs, fetcher })
+  const landClient = await createLandClient({ config, logs, fetcher })
   const subgraphsClient = await createSubgraphsClient({ config, logs, fetcher })
   const communitiesClient = await createCommunitiesClient({ config, logs, fetcher })
 
@@ -145,6 +147,7 @@ export async function initComponents(): Promise<AppComponents> {
     recurrence,
     communitiesClient,
     slackNotifier,
+    landClient,
     config,
     logs
   })
@@ -348,6 +351,7 @@ export async function initComponents(): Promise<AppComponents> {
     commsGatekeeperClient,
     dclListsClient,
     catalystClient,
+    landClient,
     subgraphsClient,
     communitiesClient,
     hotScenes,

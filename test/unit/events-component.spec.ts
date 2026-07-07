@@ -25,6 +25,11 @@ describe('when creating an event', () => {
         getCommunityMembers: jest.fn().mockResolvedValue([])
       },
       slackNotifier: { notify: jest.fn() },
+      landClient: {
+        getTile: jest.fn().mockResolvedValue(null),
+        getEstateImage: jest.fn((id: string) => `https://land/estates/${id}.png`),
+        getParcelImage: jest.fn((x: number, y: number) => `https://land/parcels/${x}/${y}.png`)
+      },
       config: { getString: jest.fn().mockResolvedValue(undefined) },
       logs: { getLogger: () => ({ info: jest.fn(), error: jest.fn(), warn: jest.fn(), debug: jest.fn() }) }
     }
@@ -92,6 +97,57 @@ describe('when creating an event', () => {
       expect(components.eventsRepository.create).toHaveBeenCalledWith(
         components.pg,
         expect.objectContaining({ approved: true, approved_by: '0xuser' })
+      )
+    })
+  })
+
+  describe('and deriving image/estate from Land on create', () => {
+    beforeEach(() => {
+      components.eventsRepository.create.mockImplementation(async (_c: unknown, row: any) => ({ id: 'e1', ...row }))
+    })
+
+    it('should default a genesis event image to the parcel map when the client sends none', async () => {
+      const events = await createEventsComponent(components)
+      await events.createEvent(
+        { name: 'P', start_at: new Date(Date.now() + 3600_000).toISOString(), x: 5, y: 6 },
+        '0xU'
+      )
+
+      expect(components.eventsRepository.create).toHaveBeenCalledWith(
+        components.pg,
+        expect.objectContaining({ image: 'https://land/parcels/5/6.png' })
+      )
+    })
+
+    it('should pull estate metadata and the estate image from the Land tile', async () => {
+      components.landClient.getTile.mockResolvedValue({ estateId: '42', name: 'Big Estate' })
+      const events = await createEventsComponent(components)
+      await events.createEvent(
+        { name: 'P', start_at: new Date(Date.now() + 3600_000).toISOString(), x: 5, y: 6 },
+        '0xU'
+      )
+
+      expect(components.eventsRepository.create).toHaveBeenCalledWith(
+        components.pg,
+        expect.objectContaining({
+          image: 'https://land/estates/42.png',
+          estate_id: '42',
+          estate_name: 'Big Estate',
+          scene_name: 'Big Estate'
+        })
+      )
+    })
+
+    it('should keep a client-supplied image', async () => {
+      const events = await createEventsComponent(components)
+      await events.createEvent(
+        { name: 'P', start_at: new Date(Date.now() + 3600_000).toISOString(), x: 5, y: 6, image: 'https://custom.png' },
+        '0xU'
+      )
+
+      expect(components.eventsRepository.create).toHaveBeenCalledWith(
+        components.pg,
+        expect.objectContaining({ image: 'https://custom.png' })
       )
     })
   })

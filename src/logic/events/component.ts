@@ -46,6 +46,7 @@ export async function createEventsComponent(
     | 'recurrence'
     | 'communitiesClient'
     | 'slackNotifier'
+    | 'landClient'
     | 'config'
     | 'logs'
   >
@@ -60,14 +61,50 @@ export async function createEventsComponent(
     recurrence,
     communitiesClient,
     slackNotifier,
+    landClient,
     config
   } = components
 
   // Events lifecycle alerts channel (legacy events SLACK_WEBHOOK); a no-op when
   // Slack or the channel is unconfigured.
   const eventsChannel = (await config.getString('SLACK_EVENTS_CHANNEL')) ?? undefined
+  const eventsBaseUrl = ((await config.getString('EVENTS_BASE_URL')) ?? 'https://events.decentraland.org').replace(
+    /\/$/,
+    ''
+  )
   const alert = (text: string) => {
     void slackNotifier.notify(text, eventsChannel)
+  }
+
+  /**
+   * Derive the event's image + estate metadata (legacy parity). Genesis events pull
+   * the estate id/name and a default map image from the Land tile; world events fall
+   * back to the static default image. A client-supplied value always wins.
+   */
+  async function resolvePresentation(
+    payload: CreateEventPayload,
+    isWorld: boolean
+  ): Promise<{
+    image: string | null
+    estate_id: string | null
+    estate_name: string | null
+    scene_name: string | null
+  }> {
+    if (isWorld) {
+      return {
+        image: payload.image ?? `${eventsBaseUrl}/images/event-default.jpg`,
+        estate_id: payload.estate_id ?? null,
+        estate_name: payload.estate_name ?? null,
+        scene_name: payload.scene_name ?? null
+      }
+    }
+    const x = payload.x ?? 0
+    const y = payload.y ?? 0
+    const tile = await landClient.getTile(x, y)
+    const estate_id = payload.estate_id ?? tile?.estateId ?? null
+    const estate_name = payload.estate_name ?? tile?.name ?? null
+    const image = payload.image ?? (estate_id ? landClient.getEstateImage(estate_id) : landClient.getParcelImage(x, y))
+    return { image, estate_id, estate_name, scene_name: payload.scene_name ?? estate_name }
   }
 
   // Legacy contract: the `place_id` field carries the world id for world events.
@@ -210,10 +247,11 @@ export async function createEventsComponent(
     }
 
     const location = await resolveLocation(payload)
+    const presentation = await resolvePresentation(payload, location.world)
     const canApprove = await profiles.hasAnyPermission(user, [Permission.ApproveOwnEvent, Permission.ApproveAnyEvent])
     const row: CreateEventRow = {
       name: payload.name,
-      image: payload.image ?? null,
+      image: presentation.image,
       image_vertical: payload.image_vertical ?? null,
       description: payload.description ?? null,
       start_at: props.start_at,
@@ -236,9 +274,9 @@ export async function createEventsComponent(
       y: payload.y ?? 0,
       server: payload.server ?? null,
       world: location.world,
-      estate_id: payload.estate_id ?? null,
-      estate_name: payload.estate_name ?? null,
-      scene_name: payload.scene_name ?? null,
+      estate_id: presentation.estate_id,
+      estate_name: presentation.estate_name,
+      scene_name: presentation.scene_name,
       place_id: location.place_id,
       world_id: location.world_id,
       community_id: payload.community_id ?? null,
