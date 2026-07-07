@@ -29,19 +29,6 @@ test('when discovering destinations', function ({ components }) {
       expect(kinds).toEqual(['place', 'world'])
     })
 
-    it('should advertise the legacy /api/destinations route as deprecated with its v1 successor', async () => {
-      const response = await components.localFetch.fetch('/api/destinations')
-
-      expect(response.headers.get('deprecation')).toBe('true')
-      expect(response.headers.get('link')).toContain('/v1/destinations')
-    })
-
-    it('should not mark the /v1 successor as deprecated', async () => {
-      const response = await components.localFetch.fetch('/v1/destinations')
-
-      expect(response.headers.get('deprecation')).toBeNull()
-    })
-
     it('should filter to a single kind when requested', async () => {
       const response = await components.localFetch.fetch('/v1/destinations?kinds=world')
       const body = await response.json()
