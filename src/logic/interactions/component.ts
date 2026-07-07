@@ -6,7 +6,7 @@ import type { FavoriteCommand, IInteractionsComponent, LikeCommand } from './typ
  * Each command opens a transaction so the interaction row and the entity's
  * denormalized aggregates (Wilson like_score / favorites count) always move
  * together. Snapshot voting-power weighting is supplied by the caller via
- * `userActivity` (fetched through the snapshot adapter once it lands).
+ * `userActivity` (resolved through the snapshot adapter).
  */
 export async function createInteractionsComponent(
   components: Pick<AppComponents, 'pg' | 'interactionsRepository' | 'snapshotClient' | 'logs'>

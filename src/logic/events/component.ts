@@ -31,8 +31,8 @@ const RECURRENCE_KEYS: Array<keyof UpdateEventPayload> = [
  * logic (replacing the legacy HTTP Places-API client, null-tolerant on a miss);
  * approval is gated by profile permissions. Responses serve the legacy contract
  * of `place_id = COALESCE(place_id, world_id)` so world events keep a non-null
- * `place_id`. Community validation stays a follow-up (needs the communities
- * client — see the note in createEvent).
+ * `place_id`. Community ownership is validated against the communities client, and
+ * the image/estate metadata is derived from Land on create.
  */
 export async function createEventsComponent(
   components: Pick<
@@ -72,6 +72,13 @@ export async function createEventsComponent(
     /\/$/,
     ''
   )
+  // Foundation-authored events display "Decentraland Foundation" as the creator name.
+  const foundationAddresses = new Set(
+    ((await config.getString('FOUNDATION_ADDRESSES')) ?? '')
+      .split(',')
+      .map((address) => address.trim().toLowerCase())
+      .filter(Boolean)
+  )
   const alert = (text: string) => {
     void slackNotifier.notify(text, eventsChannel)
   }
@@ -107,9 +114,11 @@ export async function createEventsComponent(
     return { image, estate_id, estate_name, scene_name: payload.scene_name ?? estate_name }
   }
 
-  // Legacy contract: the `place_id` field carries the world id for world events.
+  // Legacy contract: `place_id` carries the world id for world events; foundation
+  // creators are shown as "Decentraland Foundation".
   function serialize(event: Event): Event {
-    return { ...event, place_id: event.place_id ?? event.world_id }
+    const user_name = foundationAddresses.has(event.user) ? 'Decentraland Foundation' : event.user_name
+    return { ...event, user_name, place_id: event.place_id ?? event.world_id }
   }
 
   async function resolveLocation(

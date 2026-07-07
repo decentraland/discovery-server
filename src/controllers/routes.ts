@@ -77,7 +77,8 @@ import {
 /**
  * Assembles the HTTP router. The central error handler is registered first so it
  * wraps every downstream handler. Reads that surface per-user state use optional
- * signed fetch; writes require it. The new `/v1/*` discovery layer lands later.
+ * signed fetch; writes require it. Legacy `/api/*` routes and the unified `/v1/*`
+ * discovery layer are both served here.
  */
 export async function setupRouter(globalContext: GlobalContext): Promise<Router<GlobalContext>> {
   const router = new Router<GlobalContext>()

@@ -4,8 +4,7 @@ import type { IProfilesComponent } from './types'
 
 /**
  * Profile settings + authorization. Admin is the union of the `ADMIN_ADDRESSES`
- * allow-list and per-wallet granted permissions. (The foundation-address display
- * allow-list, fed from feature flags, is layered in with that adapter.)
+ * allow-list and per-wallet granted permissions.
  */
 export async function createProfilesComponent(
   components: Pick<AppComponents, 'pg' | 'profileSettingsRepository' | 'config' | 'logs'>

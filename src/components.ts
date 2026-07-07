@@ -69,6 +69,10 @@ export async function initComponents(): Promise<AppComponents> {
     { config, logs },
     {
       cors: {
+        // These are public read/user-action APIs authenticated via signed-fetch headers
+        // (not cookies), so `origin: *` is safe and is a deliberate superset of both
+        // legacy services' origin whitelists — no third-party consumer can be shut out.
+        origin: '*',
         methods: ['GET', 'HEAD', 'OPTIONS', 'DELETE', 'POST', 'PUT', 'PATCH'],
         maxAge: 86400
       }

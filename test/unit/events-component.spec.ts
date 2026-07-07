@@ -152,6 +152,25 @@ describe('when creating an event', () => {
     })
   })
 
+  describe('and the creator is a foundation address', () => {
+    beforeEach(() => {
+      components.config.getString.mockImplementation(async (key: string) =>
+        key === 'FOUNDATION_ADDRESSES' ? '0xfoundation' : undefined
+      )
+      components.eventsRepository.create.mockImplementation(async (_c: unknown, row: any) => ({ id: 'e1', ...row }))
+    })
+
+    it('should display the creator name as "Decentraland Foundation"', async () => {
+      const events = await createEventsComponent(components)
+      const created = await events.createEvent(
+        { name: 'P', start_at: new Date(Date.now() + 3600_000).toISOString(), x: 0, y: 0, user_name: 'Someone' },
+        '0xFOUNDATION'
+      )
+
+      expect(created.user_name).toBe('Decentraland Foundation')
+    })
+  })
+
   describe('and an admin updates an event via the admin bearer', () => {
     beforeEach(() => {
       components.eventsRepository.findById.mockResolvedValue({
