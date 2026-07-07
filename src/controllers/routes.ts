@@ -27,6 +27,7 @@ import {
   createOptionalSignedOrAdminBearer,
   createRequirePermission
 } from './middlewares/authorization'
+import { createDeprecationMiddleware } from './middlewares/deprecation'
 import { ProfilePermission } from '../types/entities'
 import {
   getMyProfileSettingsHandler,
@@ -99,6 +100,9 @@ export async function setupRouter(globalContext: GlobalContext): Promise<Router<
   // Events read/moderation routes: optional-signed, with the admin bearer unlocking
   // the admin view (pending/rejected/deleted) and moderation.
   const eventsAuth = createOptionalSignedOrAdminBearer(components.fetcher, adminTokens)
+  // Legacy routes with a /v1 successor advertise Deprecation/Link (+ optional Sunset).
+  const sunsetDate = await components.config.getString('LEGACY_SUNSET_DATE')
+  const deprecated = (successor: string) => createDeprecationMiddleware(successor, sunsetDate)
   // Schema validation for v1 mutation bodies (validates a clone; the body stays readable).
   const validateFavorite = components.schemaValidator.withSchemaValidatorMiddleware({
     type: 'object',
@@ -119,8 +123,8 @@ export async function setupRouter(globalContext: GlobalContext): Promise<Router<
   router.get('/api/status', statusHandler)
 
   // categories (public reads) — legacy places + events surfaces
-  router.get('/api/categories', getCategoriesHandler)
-  router.get('/api/events/categories', getEventCategoriesHandler)
+  router.get('/api/categories', deprecated('/v1/categories?target=destinations'), getCategoriesHandler)
+  router.get('/api/events/categories', deprecated('/v1/categories?target=events'), getEventCategoriesHandler)
 
   // schedules (public reads; writes gated by EditAnySchedule)
   router.get('/api/schedules', getSchedulesHandler)
@@ -140,11 +144,11 @@ export async function setupRouter(globalContext: GlobalContext): Promise<Router<
 
   // events — static/collection routes registered before the :event_id matcher.
   // eventsAuth = optional-signed + admin bearer (unlocks the admin view/moderation).
-  router.get('/api/events', eventsAuth, getEventListHandler)
+  router.get('/api/events', deprecated('/v1/events'), eventsAuth, getEventListHandler)
   router.post('/api/events/search', eventsAuth, searchEventsHandler)
   router.post('/api/events', signedFetch(), createEventHandler)
   router.get('/api/events/attending', signedFetch(), getAttendingEventsHandler)
-  router.get('/api/events/:event_id', eventsAuth, getEventHandler)
+  router.get('/api/events/:event_id', deprecated('/v1/events/:event_id'), eventsAuth, getEventHandler)
   router.patch('/api/events/:event_id', eventsAuth, updateEventHandler)
   router.delete('/api/events/:event_id', eventsAuth, deleteEventHandler)
   router.get('/api/events/:event_id/attendees', getAttendeesHandler)
@@ -157,8 +161,18 @@ export async function setupRouter(globalContext: GlobalContext): Promise<Router<
   router.post('/api/places/status', getPlaceStatusListHandler)
   router.get('/api/places/:place_id', signedFetch({ optional: true }), getPlaceHandler)
   router.get('/api/places/:place_id/categories', getPlaceCategoriesHandler)
-  router.patch('/api/places/:entity_id/likes', signedFetch(), updateLikesHandler)
-  router.patch('/api/places/:entity_id/favorites', signedFetch(), updateFavoritesHandler)
+  router.patch(
+    '/api/places/:entity_id/likes',
+    deprecated('/v1/destinations/:id/like'),
+    signedFetch(),
+    updateLikesHandler
+  )
+  router.patch(
+    '/api/places/:entity_id/favorites',
+    deprecated('/v1/destinations/:id/favorite'),
+    signedFetch(),
+    updateFavoritesHandler
+  )
   // places moderation (signed admin or service admin bearer); ranking is data-team bearer
   router.put('/api/places/:place_id/rating', adminAuth, updatePlaceRatingHandler)
   router.put('/api/places/:place_id/highlight', adminAuth, updatePlaceHighlightHandler)
@@ -189,8 +203,18 @@ export async function setupRouter(globalContext: GlobalContext): Promise<Router<
   router.get('/events/sitemap.schedules.xml', getSchedulesSitemapHandler)
 
   // destinations — unified places+worlds discovery (legacy + new /v1 surface)
-  router.get('/api/destinations', signedFetch({ optional: true }), getDestinationsListHandler)
-  router.post('/api/destinations', signedFetch({ optional: true }), getDestinationsByIdHandler)
+  router.get(
+    '/api/destinations',
+    deprecated('/v1/destinations'),
+    signedFetch({ optional: true }),
+    getDestinationsListHandler
+  )
+  router.post(
+    '/api/destinations',
+    deprecated('/v1/destinations/batch'),
+    signedFetch({ optional: true }),
+    getDestinationsByIdHandler
+  )
   router.get('/v1/destinations', signedFetch({ optional: true }), getDestinationsListHandler)
   router.post('/v1/destinations/batch', signedFetch({ optional: true }), getDestinationsByIdHandler)
   // More specific v1 destination routes before the :id matcher.
@@ -208,8 +232,18 @@ export async function setupRouter(globalContext: GlobalContext): Promise<Router<
   router.get('/api/worlds', signedFetch({ optional: true }), getWorldListHandler)
   router.get('/api/world_names', getWorldNamesHandler)
   router.get('/api/worlds/:world_id', signedFetch({ optional: true }), getWorldHandler)
-  router.patch('/api/worlds/:world_id/likes', signedFetch(), updateLikesHandler)
-  router.patch('/api/worlds/:world_id/favorites', signedFetch(), updateFavoritesHandler)
+  router.patch(
+    '/api/worlds/:world_id/likes',
+    deprecated('/v1/destinations/:id/like'),
+    signedFetch(),
+    updateLikesHandler
+  )
+  router.patch(
+    '/api/worlds/:world_id/favorites',
+    deprecated('/v1/destinations/:id/favorite'),
+    signedFetch(),
+    updateFavoritesHandler
+  )
   // worlds moderation (signed admin or service admin bearer); ranking is data-team bearer
   router.put('/api/worlds/:world_id/rating', adminAuth, updateWorldRatingHandler)
   router.put('/api/worlds/:world_id/highlight', adminAuth, updateWorldHighlightHandler)
