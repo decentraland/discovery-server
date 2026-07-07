@@ -258,6 +258,42 @@ test('when managing events over the API', function ({ components }) {
     })
   })
 
+  describe('and filtering the events list', () => {
+    beforeEach(async () => {
+      await components.pg.query(SQL`DELETE FROM events`)
+      await components.pg.query(SQL`
+        INSERT INTO worlds (id, world_name, show_in_places) VALUES ('w.dcl.eth', 'w.dcl.eth', true)
+        ON CONFLICT (id) DO NOTHING`)
+      await components.pg.query(SQL`
+        INSERT INTO events (name, start_at, finish_at, duration, "user", approved, x, y, world, server, world_id,
+          next_start_at, next_finish_at)
+        VALUES ('Genesis', now() + interval '2 hours', now() + interval '3 hours', 3600000, '0xowner', true, 10, 20,
+                false, null, null, now() + interval '2 hours', now() + interval '3 hours'),
+               ('Worldy', now() + interval '1 hour', now() + interval '2 hours', 3600000, '0xowner', true, 0, 0,
+                true, 'w.dcl.eth', 'w.dcl.eth', now() + interval '1 hour', now() + interval '2 hours')`)
+    })
+
+    it('should filter by position', async () => {
+      const body = await (await components.localFetch.fetch('/api/events?positions=10,20')).json()
+      expect(body.data.map((e: any) => e.name)).toEqual(['Genesis'])
+    })
+
+    it('should filter to worlds only with world=true', async () => {
+      const body = await (await components.localFetch.fetch('/api/events?world=true')).json()
+      expect(body.data.map((e: any) => e.name)).toEqual(['Worldy'])
+    })
+
+    it('should order by next_start_at descending with order=desc', async () => {
+      const body = await (await components.localFetch.fetch('/api/events?order=desc')).json()
+      expect(body.data.map((e: any) => e.name)).toEqual(['Genesis', 'Worldy'])
+    })
+
+    it('should reject only_attendee without authentication', async () => {
+      const response = await components.localFetch.fetch('/api/events?only_attendee=true')
+      expect(response.status).toBe(401)
+    })
+  })
+
   describe('and searching events by community via POST /api/events/search', () => {
     beforeEach(async () => {
       await components.pg.query(SQL`DELETE FROM events`)

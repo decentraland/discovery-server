@@ -3,11 +3,20 @@ import type { Event } from '../../types/entities'
 import type { EventListFilters } from '../../adapters/events-repository'
 import type { EventWithAttendance } from '../../logic/events'
 import type { IProfilesComponent } from '../../logic/profiles'
+import type { ICommsGatekeeperClient } from '../../adapters/comms-gatekeeper-client'
 import { BadRequestError, UnauthorizedError } from '../../types/errors'
 import { API_ADMIN_IDENTITY } from '../middlewares/authorization'
-import { intParam } from './query-params'
+import { intParam, multiParam as multi } from './query-params'
 
 type ListContext = { viewer?: string; isAdmin?: boolean }
+
+/** Parse a tri-state boolean query param: 'true' -> true, 'false' -> false, else undefined. */
+function boolParam(params: URLSearchParams, key: string): boolean | undefined {
+  const raw = params.get(key)
+  if (raw === 'true') return true
+  if (raw === 'false') return false
+  return undefined
+}
 
 /**
  * Resolve the requester + whether they act as admin. The admin service bearer sets
@@ -25,8 +34,13 @@ function resolveViewer(
 }
 
 function parseFilters(params: URLSearchParams, ctx: ListContext = {}): EventListFilters {
-  const listParam = params.get('list')
-  // Legacy default is the "active" feed (events not yet finished); `all` is opt-in.
+  let listParam = params.get('list')
+  // Deprecated alias: list=highlight => active + highlighted.
+  let highlighted = params.get('highlighted') === 'true' ? true : undefined
+  if (listParam === 'highlight') {
+    listParam = 'active'
+    highlighted = true
+  }
   const list =
     listParam === 'live' || listParam === 'upcoming' || listParam === 'all' || listParam === 'active'
       ? listParam
@@ -34,28 +48,82 @@ function parseFilters(params: URLSearchParams, ctx: ListContext = {}): EventList
   // Admins may opt into pending/rejected/deleted events for moderation.
   const includeUnapproved = ctx.isAdmin ? params.get('allow_pending') === 'true' : false
   const includeDeleted = ctx.isAdmin ? params.get('allow_deleted') === 'true' : false
+
+  // Positions are "x,y" tokens — use getAll (not multiParam) so the comma isn't split.
+  const single = params.get('position')
+  const positionValues = params.getAll('positions').filter(Boolean)
+  const positions = single ? [single] : positionValues.length ? positionValues : undefined
+
   return {
     search: params.get('search') ?? undefined,
+    positions,
+    worldNames: multi(params, 'world_names'),
     communityId: params.get('community_id') ?? undefined,
     creator: params.get('creator') ?? undefined,
+    // only_attendee / owner require auth (enforced by the handler); scoped to the viewer.
+    attendee: params.get('only_attendee') === 'true' ? ctx.viewer : undefined,
+    ownedBy: params.get('owner') === 'true' ? ctx.viewer : undefined,
+    highlighted,
+    world: boolParam(params, 'world'),
+    schedule: params.get('schedule') ?? undefined,
+    estateId: params.get('estate_id') ?? undefined,
+    from: params.get('from') ?? undefined,
+    to: params.get('to') ?? undefined,
+    order: params.get('order') === 'desc' ? 'desc' : 'asc',
     list,
     viewer: ctx.viewer,
     includeUnapproved,
     includeDeleted,
+    // Admin-only precise moderation selectors.
+    approved: ctx.isAdmin ? boolParam(params, 'approved') : undefined,
+    rejected: ctx.isAdmin ? boolParam(params, 'rejected') : undefined,
+    deleted: ctx.isAdmin ? boolParam(params, 'deleted') : undefined,
     limit: intParam(params, 'limit'),
     offset: intParam(params, 'offset')
   }
 }
 
+/** Events that require the caller to be authenticated (own/attending views). */
+function assertAuthedFilters(params: URLSearchParams, viewer?: string): void {
+  if ((params.get('only_attendee') === 'true' || params.get('owner') === 'true') && !viewer) {
+    throw new UnauthorizedError('Authentication required')
+  }
+}
+
+/** Decorate each event with the realtime connected addresses at its scene/world. */
+async function decorateConnectedUsers(
+  commsGatekeeperClient: ICommsGatekeeperClient,
+  events: Event[]
+): Promise<Array<Event & { connected_addresses: string[] }>> {
+  return Promise.all(
+    events.map(async (event) => {
+      const connected_addresses =
+        event.world && event.server
+          ? await commsGatekeeperClient.getWorldParticipants(event.server)
+          : event.x !== null && event.y !== null
+            ? await commsGatekeeperClient.getSceneParticipants(`${event.x},${event.y}`)
+            : []
+      return { ...event, connected_addresses }
+    })
+  )
+}
+
 /** Legacy `GET /api/events` — filtered, paginated event list. */
 export async function getEventListHandler(
-  context: Pick<HandlerContextWithPath<'events' | 'profiles', '/api/events'>, 'components' | 'url' | 'verification'>
+  context: Pick<
+    HandlerContextWithPath<'events' | 'profiles' | 'commsGatekeeperClient', '/api/events'>,
+    'components' | 'url' | 'verification'
+  >
 ): Promise<HTTPResponse<Event[]>> {
   const { viewer, isAdmin } = resolveViewer(context.verification, context.components.profiles)
-  const { data, total } = await context.components.events.getEvents(
-    parseFilters(context.url.searchParams, { viewer, isAdmin })
-  )
-  return { status: 200, body: { ok: true, data, total } }
+  const params = context.url.searchParams
+  assertAuthedFilters(params, viewer)
+  const { data, total } = await context.components.events.getEvents(parseFilters(params, { viewer, isAdmin }))
+  const decorated =
+    params.get('with_connected_users') === 'true'
+      ? await decorateConnectedUsers(context.components.commsGatekeeperClient, data)
+      : data
+  return { status: 200, body: { ok: true, data: decorated, total } }
 }
 
 /**
@@ -64,12 +132,14 @@ export async function getEventListHandler(
  */
 export async function searchEventsHandler(
   context: Pick<
-    HandlerContextWithPath<'events' | 'profiles', '/api/events/search'>,
+    HandlerContextWithPath<'events' | 'profiles' | 'commsGatekeeperClient', '/api/events/search'>,
     'components' | 'url' | 'request' | 'verification'
   >
 ): Promise<HTTPResponse<Event[]>> {
   const { viewer, isAdmin } = resolveViewer(context.verification, context.components.profiles)
-  const filters = parseFilters(context.url.searchParams, { viewer, isAdmin })
+  const params = context.url.searchParams
+  assertAuthedFilters(params, viewer)
+  const filters = parseFilters(params, { viewer, isAdmin })
 
   let body: any = {}
   try {
@@ -84,7 +154,11 @@ export async function searchEventsHandler(
   if (typeof body.communityId === 'string') filters.communityId = body.communityId
 
   const { data, total } = await context.components.events.getEvents(filters)
-  return { status: 200, body: { ok: true, data, total } }
+  const decorated =
+    params.get('with_connected_users') === 'true'
+      ? await decorateConnectedUsers(context.components.commsGatekeeperClient, data)
+      : data
+  return { status: 200, body: { ok: true, data: decorated, total } }
 }
 
 /** Legacy `GET /api/events/attending` — events the authenticated user attends. */

@@ -9,14 +9,35 @@ export type EventListFilters = {
   includeDeleted?: boolean
   placeIds?: string[]
   worldNames?: string[]
+  /** `"x,y"` base positions; matches events by their (x, y) coordinate. */
+  positions?: string[]
   communityId?: string
   creator?: string
   /** Only events the given user is attending. */
   attendee?: string
+  /** All of a wallet's own events across every status (approved/pending/rejected). */
+  ownedBy?: string
   /** The requesting wallet: their own pending/rejected events remain visible to them. */
   viewer?: string
   /** live = happening now; upcoming = future; active = not yet finished; all = no time filter. */
   list?: 'live' | 'upcoming' | 'active' | 'all'
+  /** Only highlighted events. */
+  highlighted?: boolean
+  /** true = worlds only, false = non-worlds only, undefined = both. */
+  world?: boolean
+  /** Only events referencing this schedule (collection) id. */
+  schedule?: string
+  estateId?: string
+  /** next_start_at >= from (ISO). */
+  from?: string
+  /** next_start_at < to (ISO). */
+  to?: string
+  /** Sort direction on next_start_at (default asc). */
+  order?: 'asc' | 'desc'
+  /** Admin-only precise moderation selectors (tri-state). */
+  approved?: boolean
+  rejected?: boolean
+  deleted?: boolean
   limit?: number
   offset?: number
 }

@@ -63,10 +63,16 @@ const UPDATABLE_COLUMNS: Array<keyof UpdateEventRow> = [
 export function createEventsRepository(): IEventsRepository {
   function buildWhere(filters: EventListFilters): SQLStatement {
     const where = SQL`TRUE`
-    if (!filters.includeDeleted) {
+    // Deleted visibility: hide by default; `deleted` (admin) can select only-deleted / only-live.
+    if (filters.deleted === true) {
+      where.append(SQL` AND e.deleted_at IS NOT NULL`)
+    } else if (!filters.includeDeleted || filters.deleted === false) {
       where.append(SQL` AND e.deleted_at IS NULL`)
     }
-    if (!filters.includeUnapproved) {
+    if (filters.ownedBy) {
+      // A wallet's own events across every status (bypasses the approval visibility clause).
+      where.append(SQL` AND e."user" = ${filters.ownedBy.toLowerCase()}`)
+    } else if (!filters.includeUnapproved) {
       // Approved+non-rejected are public; a viewer also sees their own pending/rejected events.
       if (filters.viewer) {
         where.append(
@@ -76,6 +82,9 @@ export function createEventsRepository(): IEventsRepository {
         where.append(SQL` AND e.approved IS true AND e.rejected IS false`)
       }
     }
+    // Admin precise moderation selectors.
+    if (filters.approved !== undefined) where.append(SQL` AND e.approved IS ${filters.approved}`)
+    if (filters.rejected !== undefined) where.append(SQL` AND e.rejected IS ${filters.rejected}`)
     if (filters.search && filters.search.length >= MIN_SEARCH_LENGTH) {
       where.append(SQL` AND e.textsearch @@ websearch_to_tsquery('english', ${filters.search})`)
     }
@@ -84,6 +93,21 @@ export function createEventsRepository(): IEventsRepository {
     }
     if (filters.worldNames?.length) {
       where.append(SQL` AND e.world_id = ANY(${filters.worldNames.map((n) => n.toLowerCase())})`)
+    }
+    if (filters.positions?.length) {
+      // Match any (x, y) in the set. Coordinates are validated integers (safe to inline).
+      const pairs = filters.positions
+        .map((p) => p.split(',').map((n) => parseInt(n, 10)))
+        .filter(([x, y]) => Number.isInteger(x) && Number.isInteger(y))
+      if (pairs.length) {
+        const clause = SQL`(`
+        pairs.forEach(([x, y], i) => {
+          if (i > 0) clause.append(SQL` OR `)
+          clause.append(SQL`(e.x = ${x} AND e.y = ${y})`)
+        })
+        clause.append(SQL`)`)
+        where.append(SQL` AND `).append(clause)
+      }
     }
     if (filters.communityId) {
       where.append(SQL` AND e.community_id = ${filters.communityId}`)
@@ -96,6 +120,13 @@ export function createEventsRepository(): IEventsRepository {
         SELECT 1 FROM event_attendees a WHERE a.event_id = e.id AND a."user" = ${filters.attendee.toLowerCase()}
       )`)
     }
+    if (filters.highlighted === true) where.append(SQL` AND e.highlighted IS true`)
+    if (filters.world === true) where.append(SQL` AND e.world IS true`)
+    else if (filters.world === false) where.append(SQL` AND e.world IS false`)
+    if (filters.schedule) where.append(SQL` AND ${filters.schedule}::uuid = ANY(e.schedules)`)
+    if (filters.estateId) where.append(SQL` AND e.estate_id = ${filters.estateId}`)
+    if (filters.from) where.append(SQL` AND e.next_start_at >= ${filters.from}`)
+    if (filters.to) where.append(SQL` AND e.next_start_at < ${filters.to}`)
     if (filters.list === 'live') {
       where.append(SQL` AND e.next_start_at <= now() AND e.next_finish_at >= now()`)
     } else if (filters.list === 'upcoming') {
@@ -155,7 +186,11 @@ export function createEventsRepository(): IEventsRepository {
 
     const query = SQL`SELECT e.* FROM events e WHERE `
     query.append(buildWhere(filters))
-    query.append(SQL` ORDER BY e.next_start_at ASC NULLS LAST LIMIT ${limit} OFFSET ${offset}`)
+    const direction = filters.order === 'desc' ? SQL` DESC` : SQL` ASC`
+    query
+      .append(SQL` ORDER BY e.next_start_at`)
+      .append(direction)
+      .append(SQL` NULLS LAST LIMIT ${limit} OFFSET ${offset}`)
     const result = await client.query<Event>(query)
     return result.rows
   }
