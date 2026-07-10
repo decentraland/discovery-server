@@ -223,22 +223,18 @@ export function createEventsRepository(): IEventsRepository {
     return { placeIds, worldIds }
   }
 
-  async function getNextEventsForEntities(
-    client: Queryable,
-    placeIds: string[],
-    worldIds: string[]
+  async function getAllNextEvents(
+    client: Queryable
   ): Promise<Record<string, { id: string; name: string; next_start_at: string }>> {
-    if (!placeIds.length && !worldIds.length) return {}
-    // Earliest still-upcoming approved event per place/world (DISTINCT ON the entity).
+    // Earliest still-upcoming approved event per place/world across the whole table
+    // (DISTINCT ON the entity). Returned as a global map for the live-events cache to hold.
     const result = await client.query<{ entity_id: string; id: string; name: string; next_start_at: string }>(SQL`
       SELECT DISTINCT ON (entity_id) entity_id, id, name, next_start_at FROM (
         SELECT place_id::text AS entity_id, id, name, next_start_at FROM events
-          WHERE approved IS true AND deleted_at IS NULL AND next_start_at > now()
-            AND place_id = ANY(${placeIds}::uuid[])
+          WHERE approved IS true AND deleted_at IS NULL AND next_start_at > now() AND place_id IS NOT NULL
         UNION ALL
         SELECT world_id AS entity_id, id, name, next_start_at FROM events
-          WHERE approved IS true AND deleted_at IS NULL AND next_start_at > now()
-            AND world_id = ANY(${worldIds.map((w) => w.toLowerCase())})
+          WHERE approved IS true AND deleted_at IS NULL AND next_start_at > now() AND world_id IS NOT NULL
       ) upcoming
       ORDER BY entity_id, next_start_at ASC`)
     const byEntity: Record<string, { id: string; name: string; next_start_at: string }> = {}
@@ -288,7 +284,7 @@ export function createEventsRepository(): IEventsRepository {
     count,
     listAttending,
     getLiveEntityIds,
-    getNextEventsForEntities,
+    getAllNextEvents,
     findRecurrentNeedingUpdate,
     findInStartWindow,
     findInFinishWindow

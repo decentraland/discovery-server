@@ -43,6 +43,7 @@ import { createProfilesComponent } from './logic/profiles'
 import { createRecurrenceComponent } from './logic/recurrence'
 import { createEventsComponent } from './logic/events'
 import { createAttendeesComponent } from './logic/attendees'
+import { createLiveEventsComponent } from './logic/live-events'
 import { createDestinationsComponent } from './logic/destinations'
 import { createModerationComponent } from './logic/moderation'
 import { createReportsComponent } from './logic/reports'
@@ -156,11 +157,13 @@ export async function initComponents(): Promise<AppComponents> {
     logs
   })
   const attendees = await createAttendeesComponent({ pg, attendeesRepository, logs })
+  const liveEvents = await createLiveEventsComponent({ pg, eventsRepository, config, logs })
   const destinations = await createDestinationsComponent({
     pg,
     destinationsRepository,
-    eventsRepository,
-    commsGatekeeperClient,
+    liveEvents,
+    hotScenes,
+    worldsLiveData,
     sceneStats,
     logs
   })
@@ -373,6 +376,7 @@ export async function initComponents(): Promise<AppComponents> {
     recurrence,
     events,
     attendees,
+    liveEvents,
     destinations,
     moderation,
     reports,

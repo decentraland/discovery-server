@@ -27,6 +27,8 @@ test('when serving the v1 discovery layer', function ({ components }) {
         INSERT INTO events (name, start_at, finish_at, duration, "user", approved, place_id, next_start_at, next_finish_at)
         VALUES ('Upcoming', now() + interval '1 hour', now() + interval '2 hours', 3600000, '0xowner', true, ${placeId},
                 now() + interval '1 hour', now() + interval '2 hours')`)
+      // Refresh the live-events snapshot so next_event decoration sees the inserted event.
+      await components.liveEvents.refresh()
     })
 
     describe('and requesting GET /v1/destinations/:id', () => {

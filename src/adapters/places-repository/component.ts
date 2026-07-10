@@ -1,6 +1,7 @@
 import SQL, { SQLStatement } from 'sql-template-strings'
 import type { Queryable } from '../pg'
 import type { AggregatePlace, Place, PlaceStatus } from '../../types/entities'
+import { placesCategoriesClause, placesPositionsClause } from '../places-filters'
 import type { IPlacesRepository, PlaceListFilters, PlaceListOrderBy, UpsertPlaceInput } from './types'
 
 const MIN_SEARCH_LENGTH = 3
@@ -34,11 +35,10 @@ export function createPlacesRepository(): IPlacesRepository {
       where.append(SQL` AND p.textsearch @@ websearch_to_tsquery('english', ${filters.search})`)
     }
     if (filters.categories?.length) {
-      where.append(SQL` AND p.categories && ${filters.categories}::varchar[]`)
+      where.append(placesCategoriesClause(filters.categories))
     }
     if (filters.positions?.length && !filters.names?.length) {
-      // A place occupies every parcel in its `positions` array; overlap selects it (GIN-indexed).
-      where.append(SQL` AND p.positions && ${filters.positions}::varchar[]`)
+      where.append(placesPositionsClause(filters.positions))
     }
     if (filters.owner) {
       // Match the owner exactly, plus any scene whose parcels the wallet operates

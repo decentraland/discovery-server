@@ -41,6 +41,7 @@ import type { IProfilesComponent } from '../logic/profiles'
 import type { IRecurrenceComponent } from '../logic/recurrence'
 import type { IEventsComponent } from '../logic/events'
 import type { IAttendeesComponent } from '../logic/attendees'
+import type { ILiveEventsComponent } from '../logic/live-events'
 import type { IDestinationsComponent } from '../logic/destinations'
 import type { IModerationComponent } from '../logic/moderation'
 import type { IReportsComponent } from '../logic/reports'
@@ -120,6 +121,7 @@ export type BaseComponents = {
   profiles: IProfilesComponent
   recurrence: IRecurrenceComponent
   events: IEventsComponent
+  liveEvents: ILiveEventsComponent
   attendees: IAttendeesComponent
   destinations: IDestinationsComponent
   moderation: IModerationComponent

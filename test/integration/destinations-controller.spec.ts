@@ -17,6 +17,8 @@ test('when discovering destinations', function ({ components }) {
         title: 'My World',
         show_in_places: true
       })
+      // Reset the live-events snapshot to match the freshly-reset DB (no live/next events).
+      await components.liveEvents.refresh()
     })
 
     it('should return a unified list of places and worlds with their kind', async () => {
@@ -41,23 +43,28 @@ test('when discovering destinations', function ({ components }) {
       const response = await components.localFetch.fetch('/api/destinations?with_connected_users=true')
       const body = await response.json()
 
-      // comms-gatekeeper is unconfigured in tests, so counts resolve to 0 but the field is present.
+      // hotScenes/worldsLiveData are unconfigured in tests, so counts resolve to 0 but the field is present.
       expect(body.data.every((d: { user_count?: number }) => d.user_count === 0)).toBe(true)
     })
 
-    it('should decorate destinations with live-event flags when requested', async () => {
-      await components.pg.query(SQL`
-        INSERT INTO events (name, start_at, finish_at, duration, "user", approved, place_id, next_start_at, next_finish_at)
-        VALUES ('Live', now() - interval '10 minutes', now() + interval '1 hour', 3600000, '0xowner', true,
-                ${placeId}, now() - interval '10 minutes', now() + interval '1 hour')`)
+    describe('and a live event exists at the place', () => {
+      beforeEach(async () => {
+        await components.pg.query(SQL`
+          INSERT INTO events (name, start_at, finish_at, duration, "user", approved, place_id, next_start_at, next_finish_at)
+          VALUES ('Live', now() - interval '10 minutes', now() + interval '1 hour', 3600000, '0xowner', true,
+                  ${placeId}, now() - interval '10 minutes', now() + interval '1 hour')`)
+        await components.liveEvents.refresh()
+      })
 
-      const response = await components.localFetch.fetch('/api/destinations?with_live_events=true')
-      const body = await response.json()
+      it('should decorate destinations with live-event flags when requested', async () => {
+        const response = await components.localFetch.fetch('/api/destinations?with_live_events=true')
+        const body = await response.json()
 
-      const place = body.data.find((d: { id: string }) => d.id === placeId)
-      const world = body.data.find((d: { kind: string }) => d.kind === 'world')
-      expect(place.live_event).toBe(true)
-      expect(world.live_event).toBe(false)
+        const place = body.data.find((d: { id: string }) => d.id === placeId)
+        const world = body.data.find((d: { kind: string }) => d.kind === 'world')
+        expect(place.live_event).toBe(true)
+        expect(world.live_event).toBe(false)
+      })
     })
   })
 

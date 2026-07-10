@@ -19,70 +19,59 @@ export interface IDestinationsComponent {
 
 /**
  * Unified discovery reads. The places+worlds UNION comes from the destinations
- * repository; live-event flags are decorated in-process from the events domain
- * (replacing the legacy HTTP Events-API client) and realtime connected-user
- * counts from comms-gatekeeper. Both decorations are opt-in and best-effort.
+ * repository; realtime signals (live/next events, online counts, visits) are read
+ * from the cached snapshots (live-events index, hotScenes/worldsLiveData, scene-stats)
+ * rather than per-request queries or per-row HTTP. All decorations are opt-in and
+ * best-effort, and online counts use the same source as the legacy places/worlds reads.
  */
 export async function createDestinationsComponent(
   components: Pick<
     AppComponents,
-    'pg' | 'destinationsRepository' | 'eventsRepository' | 'commsGatekeeperClient' | 'sceneStats' | 'logs'
+    'pg' | 'destinationsRepository' | 'liveEvents' | 'hotScenes' | 'worldsLiveData' | 'sceneStats' | 'logs'
   >
 ): Promise<IDestinationsComponent> {
-  const { pg, destinationsRepository, eventsRepository, commsGatekeeperClient, sceneStats } = components
+  const { pg, destinationsRepository, liveEvents, hotScenes, worldsLiveData, sceneStats } = components
 
-  async function decorateVisits(destinations: Destination[]): Promise<Destination[]> {
-    // Places carry 30-day visit counts; worlds have no scene-stats (0), matching legacy.
+  /**
+   * Decorate a page of destinations in a single pass. Realtime signals come from the
+   * cached snapshots (live-events index, hotScenes/worldsLiveData online counts,
+   * scene-stats visits) — O(1) lookups, no per-request DB queries or per-row HTTP.
+   * Online counts use the same source as the legacy places/worlds endpoints.
+   */
+  async function decorate(rows: Destination[], options: GetDestinationsOptions): Promise<Destination[]> {
+    if (!rows.length) return rows
+
+    const liveIds = options.withLiveEvents ? await liveEvents.getLiveEntityIds() : null
+    const livePlaces = liveIds ? new Set(liveIds.placeIds) : null
+    const liveWorlds = liveIds ? new Set(liveIds.worldIds) : null
+    const nextEventMap = options.withNextEvent ? await liveEvents.getNextEventMap() : null
+
     return Promise.all(
-      destinations.map(async (destination) => ({
-        ...destination,
-        user_visits:
-          destination.kind === 'place' && destination.base_position
-            ? await sceneStats.getVisits(destination.base_position)
-            : 0
-      }))
-    )
-  }
-
-  async function decorateLiveEvents(destinations: Destination[]): Promise<Destination[]> {
-    if (!destinations.length) return destinations
-    const { placeIds, worldIds } = await eventsRepository.getLiveEntityIds(pg)
-    const livePlaces = new Set(placeIds)
-    const liveWorlds = new Set(worldIds)
-    return destinations.map((destination) => ({
-      ...destination,
-      live_event: destination.kind === 'place' ? livePlaces.has(destination.id) : liveWorlds.has(destination.id)
-    }))
-  }
-
-  async function decorateNextEvent(destinations: Destination[]): Promise<Destination[]> {
-    if (!destinations.length) return destinations
-    const placeIds = destinations.filter((d) => d.kind === 'place').map((d) => d.id)
-    const worldIds = destinations.filter((d) => d.kind === 'world').map((d) => d.id)
-    const byEntity = await eventsRepository.getNextEventsForEntities(pg, placeIds, worldIds)
-    return destinations.map((destination) => ({ ...destination, next_event: byEntity[destination.id] ?? null }))
-  }
-
-  async function decorateConnectedUsers(destinations: Destination[]): Promise<Destination[]> {
-    return Promise.all(
-      destinations.map(async (destination) => {
-        const participants =
-          destination.kind === 'world'
-            ? await commsGatekeeperClient.getWorldParticipants(destination.world_name ?? destination.id)
-            : destination.base_position
-              ? await commsGatekeeperClient.getSceneParticipants(destination.base_position)
-              : []
-        return { ...destination, user_count: participants.length }
+      rows.map(async (destination) => {
+        // Places carry 30-day visit counts; worlds have no scene-stats (0), matching legacy.
+        const decorated: Destination = {
+          ...destination,
+          user_visits:
+            destination.kind === 'place' && destination.base_position
+              ? await sceneStats.getVisits(destination.base_position)
+              : 0
+        }
+        if (livePlaces && liveWorlds) {
+          decorated.live_event =
+            destination.kind === 'place' ? livePlaces.has(destination.id) : liveWorlds.has(destination.id)
+        }
+        if (nextEventMap) decorated.next_event = nextEventMap[destination.id] ?? null
+        if (options.withConnectedUsers) {
+          decorated.user_count =
+            destination.kind === 'world'
+              ? await worldsLiveData.getUserCount(destination.world_name ?? destination.id)
+              : destination.base_position
+                ? await hotScenes.getUserCount(destination.base_position)
+                : 0
+        }
+        return decorated
       })
     )
-  }
-
-  async function decorate(rows: Destination[], options: GetDestinationsOptions): Promise<Destination[]> {
-    let data = await decorateVisits(rows)
-    if (options.withLiveEvents) data = await decorateLiveEvents(data)
-    if (options.withNextEvent) data = await decorateNextEvent(data)
-    if (options.withConnectedUsers) data = await decorateConnectedUsers(data)
-    return data
   }
 
   async function getDestinations(
