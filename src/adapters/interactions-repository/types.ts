@@ -20,6 +20,12 @@ export type SetFavoriteInput = {
 }
 
 export interface IInteractionsRepository {
+  /**
+   * Row-lock the entity (place/world) for the current transaction so a concurrent
+   * like/favorite can't recompute the counters from a stale snapshot and lose a write.
+   * No-op for entity types without counter columns (events).
+   */
+  lockEntity(client: Queryable, entityType: EntityType, entityId: string): Promise<void>
   setLike(client: Queryable, input: SetLikeInput): Promise<void>
   setFavorite(client: Queryable, input: SetFavoriteInput): Promise<void>
   /** Recompute likes/dislikes/like_rate/like_score on the entity's own table (Wilson score, VP-weighted). */

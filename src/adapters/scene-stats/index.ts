@@ -33,9 +33,9 @@ export async function createSceneStatsComponent(
 
   let visitsByPosition: SceneStatsMap = {}
   let lastRefresh = 0
+  let inFlight: Promise<void> | null = null
 
-  async function refresh(): Promise<void> {
-    if (!baseUrl) return
+  async function doRefresh(): Promise<void> {
     try {
       const response = await fetcher.fetch(`${baseUrl}/scenes/scene-stats.json`)
       if (!response.ok) throw new Error(`unexpected status ${response.status}`)
@@ -46,6 +46,13 @@ export async function createSceneStatsComponent(
       lastRefresh = Date.now()
       logger.warn(`Failed to refresh scene stats: ${error?.message ?? String(error)}`)
     }
+  }
+
+  async function refresh(): Promise<void> {
+    if (!baseUrl) return
+    // Single-flight: a burst of stale reads shares one CDN fetch instead of stampeding it.
+    if (!inFlight) inFlight = doRefresh().finally(() => (inFlight = null))
+    return inFlight
   }
 
   async function getVisits(basePosition: string): Promise<number> {

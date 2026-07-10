@@ -4,7 +4,8 @@ import type { EventListFilters } from '../../adapters/events-repository'
 import { NotFoundError, UnauthorizedError } from '../../types/errors'
 import { resolveEntityType, isPlaceId } from '../../logic/entity-id'
 import { refreshedSummary, type InteractionSummary } from './update-interactions-handler'
-import { multiParam as multi } from './query-params'
+import { resolveViewer } from './events-handler'
+import { parseWithOptions } from './query-params'
 
 /** `GET /v1/destinations/:id` — a single destination, optionally decorated. */
 export async function getV1DestinationHandler(
@@ -15,12 +16,11 @@ export async function getV1DestinationHandler(
 ): Promise<HTTPResponse<Destination>> {
   const { destinations } = context.components
   const user = context.verification?.auth?.toLowerCase()
-  const withList = multi(context.url.searchParams, 'with') ?? []
-  const destination = await destinations.getDestinationById(context.params.id, user, {
-    withLiveEvents: withList.includes('live_events'),
-    withNextEvent: withList.includes('next_event'),
-    withConnectedUsers: withList.includes('connected_users')
-  })
+  const destination = await destinations.getDestinationById(
+    context.params.id,
+    user,
+    parseWithOptions(context.url.searchParams)
+  )
   if (!destination) throw new NotFoundError(`Destination not found: ${context.params.id}`)
   return { status: 200, body: { ok: true, data: destination } }
 }
@@ -38,7 +38,7 @@ export async function getV1DestinationEventsHandler(
   const filters: EventListFilters = isPlaceId(id)
     ? { placeIds: [id], list: 'active', viewer }
     : { worldNames: [id], list: 'active', viewer }
-  const { data } = await events.getEvents(filters)
+  const data = await events.listEvents(filters)
   // Live occurrences first, then upcoming, both by soonest start.
   const now = Date.now()
   const isLive = (event: Event) =>
@@ -61,11 +61,12 @@ export async function getV1EventHandler(
   >
 ): Promise<HTTPResponse<Event & { destination_id: string | null; destination: Destination | null }>> {
   const { events, destinations, profiles } = context.components
-  const user = context.verification?.auth?.toLowerCase()
-  const isAdmin = user ? profiles.isAdmin(user) : false
-  const event = await events.getEvent(context.params.event_id, user, isAdmin)
+  // Reuse the admin-bearer-aware resolver so the service bearer (API_ADMIN_IDENTITY)
+  // can view pending/rejected/deleted events, matching legacy GET /api/events/:id.
+  const { viewer, isAdmin } = resolveViewer(context.verification, profiles)
+  const event = await events.getEvent(context.params.event_id, viewer, isAdmin)
   const destinationId = event.world_id ?? event.place_id ?? null
-  const destination = destinationId ? await destinations.getDestinationById(destinationId, user) : null
+  const destination = destinationId ? await destinations.getDestinationById(destinationId, viewer) : null
   return { status: 200, body: { ok: true, data: { ...event, destination_id: destinationId, destination } } }
 }
 

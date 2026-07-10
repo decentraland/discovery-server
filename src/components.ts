@@ -279,6 +279,15 @@ export async function initComponents(): Promise<AppComponents> {
         { repeat: true }
       )
     : undefined
+  const ingestion = await createIngestionComponent({
+    pg,
+    placesRepository,
+    worldsRepository,
+    subgraphsClient,
+    logs
+  })
+  const manifest = await createManifestComponent({ pg, placesRepository, manifestStorage, config, logs })
+
   // Periodic (not per-deploy) so a burst of deployments doesn't trigger repeated
   // full-grid recomputes; a no-op unless PUBLIC_BUCKET is configured.
   const manifestRefreshJob = backgroundJobsEnabled
@@ -289,15 +298,6 @@ export async function initComponents(): Promise<AppComponents> {
         { repeat: true }
       )
     : undefined
-
-  const ingestion = await createIngestionComponent({
-    pg,
-    placesRepository,
-    worldsRepository,
-    subgraphsClient,
-    logs
-  })
-  const manifest = await createManifestComponent({ pg, placesRepository, manifestStorage, config, logs })
 
   // SQS deployment consumer: only when a queue is configured and jobs are enabled.
   const sqsQueueUrl = await config.getString('AWS_SQS_QUEUE_URL')

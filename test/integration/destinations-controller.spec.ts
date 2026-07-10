@@ -65,12 +65,14 @@ test('when discovering destinations', function ({ components }) {
     let placeId: string
 
     beforeEach(async () => {
-      await components.pg.query(SQL`DELETE FROM place_positions`)
       await components.pg.query(SQL`DELETE FROM places`)
       await components.pg.query(SQL`DELETE FROM worlds`)
-      const place = await components.placesRepository.insert(components.pg, { title: 'Plaza', base_position: '3,3' })
+      const place = await components.placesRepository.insert(components.pg, {
+        title: 'Plaza',
+        base_position: '3,3',
+        positions: ['3,3']
+      })
       placeId = place.id
-      await components.pg.query(SQL`INSERT INTO place_positions (position, base_position) VALUES ('3,3', '3,3')`)
       await components.worldsRepository.upsert(components.pg, {
         id: 'w.dcl.eth',
         world_name: 'w.dcl.eth',

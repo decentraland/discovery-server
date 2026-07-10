@@ -1,10 +1,10 @@
-import { timingSafeEqual } from 'crypto'
 import type { IFetchComponent, IHttpServerComponent } from '@dcl/core-commons'
 import type { DecentralandSignatureContext } from '@dcl/crypto-middleware'
 import type { ProfilePermission } from '../../types/entities'
 import type { IProfilesComponent } from '../../logic/profiles'
 import { ForbiddenError, UnauthorizedError } from '../../types/errors'
 import { createSignedFetchMiddleware } from './signed-fetch'
+import { matchesBearer, toSecrets } from './bearer-token'
 
 type AuthedContext = IHttpServerComponent.DefaultContext & DecentralandSignatureContext
 
@@ -50,7 +50,7 @@ export function createAdminAuth(
   profiles: IProfilesComponent,
   adminTokens: Array<string | undefined>
 ) {
-  const secrets = adminTokens.filter((token): token is string => !!token).map((token) => Buffer.from(token))
+  const secrets = toSecrets(adminTokens)
   const signed = createSignedFetchMiddleware(fetcher)()
   const requireAdmin = createRequirePermission(profiles)()
 
@@ -60,9 +60,7 @@ export function createAdminAuth(
   ): Promise<IHttpServerComponent.IResponse> => {
     const header = ctx.request.headers.get('authorization')
     if (header?.startsWith('Bearer ')) {
-      const value = Buffer.from(header.slice('Bearer '.length))
-      const ok = secrets.some((secret) => secret.length === value.length && timingSafeEqual(value, secret))
-      if (!ok) {
+      if (!matchesBearer(header, secrets)) {
         throw new UnauthorizedError('Invalid authorization header')
       }
       ctx.verification = { auth: API_ADMIN_IDENTITY, authMetadata: {} }
@@ -82,7 +80,7 @@ export function createAdminAuth(
  * invalid signature or an unmatched bearer is rejected.
  */
 export function createOptionalSignedOrAdminBearer(fetcher: IFetchComponent, adminTokens: Array<string | undefined>) {
-  const secrets = adminTokens.filter((token): token is string => !!token).map((token) => Buffer.from(token))
+  const secrets = toSecrets(adminTokens)
   const signedOptional = createSignedFetchMiddleware(fetcher)({ optional: true })
 
   return async (
@@ -93,9 +91,7 @@ export function createOptionalSignedOrAdminBearer(fetcher: IFetchComponent, admi
       if (!ctx.verification?.auth) {
         const header = ctx.request.headers.get('authorization')
         if (header?.startsWith('Bearer ')) {
-          const value = Buffer.from(header.slice('Bearer '.length))
-          const ok = secrets.some((secret) => secret.length === value.length && timingSafeEqual(value, secret))
-          if (!ok) {
+          if (!matchesBearer(header, secrets)) {
             throw new UnauthorizedError('Invalid authorization header')
           }
           ctx.verification = { auth: API_ADMIN_IDENTITY, authMetadata: {} }

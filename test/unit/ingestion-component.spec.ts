@@ -60,12 +60,44 @@ describe('when ingesting world events', () => {
       const input = components.worldsRepository.upsert.mock.calls[0][1]
       expect(input.content_rating).toBeUndefined()
     })
+  })
 
-    it('should not re-resolve the owner for a world that already has one', async () => {
+  describe('and a settings-changed event arrives for an existing world', () => {
+    beforeEach(() => {
+      components.worldsRepository.findByIdWithAggregates.mockResolvedValue({
+        id: 'my-world.dcl.eth',
+        content_rating: 'RP',
+        owner: '0xowner'
+      })
+    })
+
+    it('should re-resolve the on-chain owner so ownership transfers are reflected', async () => {
       const ingestion = await createIngestionComponent(components)
       await ingestion.processWorldSettingsChanged({ metadata: { worldName: 'my-world.dcl.eth' } })
 
-      expect(components.subgraphsClient.getNameOwner).not.toHaveBeenCalled()
+      expect(components.subgraphsClient.getNameOwner).toHaveBeenCalledWith('my-world.dcl.eth')
+    })
+
+    it('should leave the stored owner untouched when the lookup does not resolve', async () => {
+      const ingestion = await createIngestionComponent(components)
+      await ingestion.processWorldSettingsChanged({ metadata: { worldName: 'my-world.dcl.eth' } })
+
+      const input = components.worldsRepository.upsert.mock.calls[0][1]
+      expect(input.owner).toBeUndefined()
+    })
+
+    describe('and the lookup resolves a different owner', () => {
+      beforeEach(() => {
+        components.subgraphsClient.getNameOwner.mockResolvedValue('0xnewowner')
+      })
+
+      it('should upsert the world with the newly resolved owner', async () => {
+        const ingestion = await createIngestionComponent(components)
+        await ingestion.processWorldSettingsChanged({ metadata: { worldName: 'my-world.dcl.eth' } })
+
+        const input = components.worldsRepository.upsert.mock.calls[0][1]
+        expect(input.owner).toBe('0xnewowner')
+      })
     })
   })
 

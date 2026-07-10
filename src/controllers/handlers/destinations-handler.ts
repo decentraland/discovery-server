@@ -5,7 +5,7 @@ import type {
   DestinationListFilters,
   DestinationOrderBy
 } from '../../adapters/destinations-repository'
-import { multiParam as multi, intParam } from './query-params'
+import { multiParam as multi, intParam, parseWithOptions } from './query-params'
 
 const ORDER_BY_VALUES: DestinationOrderBy[] = ['like_score', 'updated_at', 'created_at']
 const KIND_VALUES: DestinationKind[] = ['place', 'world']
@@ -43,16 +43,8 @@ export async function getDestinationsListHandler(
   const { destinations } = context.components
   const params = context.url.searchParams
   const user = context.verification?.auth?.toLowerCase()
-  const withList = multi(params, 'with') ?? []
-  const withLiveEvents = params.get('with_live_events') === 'true' || withList.includes('live_events')
-  const withConnectedUsers = params.get('with_connected_users') === 'true' || withList.includes('connected_users')
-  const withNextEvent = withList.includes('next_event')
 
-  const { data, total } = await destinations.getDestinations(parseFilters(params, user), {
-    withLiveEvents,
-    withConnectedUsers,
-    withNextEvent
-  })
+  const { data, total } = await destinations.getDestinations(parseFilters(params, user), parseWithOptions(params))
 
   return { status: 200, body: { ok: true, data, total } }
 }
@@ -76,15 +68,10 @@ export async function getDestinationsByIdHandler(
   const ids = Array.isArray(body.ids) ? (body.ids as string[]) : undefined
   const positions = Array.isArray(body.positions) ? (body.positions as string[]) : undefined
   const worldNames = Array.isArray(body.world_names) ? (body.world_names as string[]) : undefined
-  const withList = multi(context.url.searchParams, 'with') ?? []
 
   const { data, total } = await destinations.getDestinations(
     { ids, positions, worldNames, user, limit: 100 },
-    {
-      withLiveEvents: withList.includes('live_events'),
-      withConnectedUsers: withList.includes('connected_users'),
-      withNextEvent: withList.includes('next_event')
-    }
+    parseWithOptions(context.url.searchParams)
   )
 
   return { status: 200, body: { ok: true, data, total } }

@@ -77,6 +77,14 @@ export async function createDestinationsComponent(
     )
   }
 
+  async function decorate(rows: Destination[], options: GetDestinationsOptions): Promise<Destination[]> {
+    let data = await decorateVisits(rows)
+    if (options.withLiveEvents) data = await decorateLiveEvents(data)
+    if (options.withNextEvent) data = await decorateNextEvent(data)
+    if (options.withConnectedUsers) data = await decorateConnectedUsers(data)
+    return data
+  }
+
   async function getDestinations(
     filters: DestinationListFilters,
     options: GetDestinationsOptions = {}
@@ -87,11 +95,7 @@ export async function createDestinationsComponent(
       destinationsRepository.findWithAggregates(pg, filters),
       destinationsRepository.count(pg, filters)
     ])
-    let data = await decorateVisits(rows)
-    if (options.withLiveEvents) data = await decorateLiveEvents(data)
-    if (options.withNextEvent) data = await decorateNextEvent(data)
-    if (options.withConnectedUsers) data = await decorateConnectedUsers(data)
-    return { data, total }
+    return { data: await decorate(rows, options), total }
   }
 
   async function getDestinationById(
@@ -99,8 +103,11 @@ export async function createDestinationsComponent(
     user?: string,
     options: GetDestinationsOptions = {}
   ): Promise<Destination | null> {
-    const { data } = await getDestinations({ ids: [id], user, limit: 1 }, options)
-    return data[0] ?? null
+    // Single-entity read: skip the UNION COUNT(*) that getDestinations runs for `total`.
+    const rows = await destinationsRepository.findWithAggregates(pg, { ids: [id], user, limit: 1 })
+    if (!rows.length) return null
+    const [decorated] = await decorate(rows, options)
+    return decorated ?? null
   }
 
   return { getDestinations, getDestinationById }

@@ -1,7 +1,7 @@
 import type { HandlerContextWithPath, HTTPResponse } from '../../types'
 import type { Event } from '../../types/entities'
 import type { EventListFilters } from '../../adapters/events-repository'
-import type { EventWithAttendance } from '../../logic/events'
+import type { EventWithAttendance, IEventsComponent } from '../../logic/events'
 import type { IProfilesComponent } from '../../logic/profiles'
 import type { ICommsGatekeeperClient } from '../../adapters/comms-gatekeeper-client'
 import { BadRequestError, UnauthorizedError } from '../../types/errors'
@@ -23,7 +23,7 @@ function boolParam(params: URLSearchParams, key: string): boolean | undefined {
  * a synthetic `API_ADMIN_IDENTITY` verification; a signed wallet is admin when it
  * is in `ADMIN_ADDRESSES`.
  */
-function resolveViewer(
+export function resolveViewer(
   verification: { auth?: string } | undefined,
   profiles: IProfilesComponent
 ): { viewer?: string; isAdmin: boolean } {
@@ -36,7 +36,7 @@ function resolveViewer(
 function parseFilters(params: URLSearchParams, ctx: ListContext = {}): EventListFilters {
   let listParam = params.get('list')
   // Deprecated alias: list=highlight => active + highlighted.
-  let highlighted = params.get('highlighted') === 'true' ? true : undefined
+  let highlighted = boolParam(params, 'highlighted')
   if (listParam === 'highlight') {
     listParam = 'active'
     highlighted = true
@@ -97,15 +97,28 @@ async function decorateConnectedUsers(
 ): Promise<Array<Event & { connected_addresses: string[] }>> {
   return Promise.all(
     events.map(async (event) => {
+      // x/y are non-nullable (default 0); world events carry a `server`.
       const connected_addresses =
         event.world && event.server
           ? await commsGatekeeperClient.getWorldParticipants(event.server)
-          : event.x !== null && event.y !== null
-            ? await commsGatekeeperClient.getSceneParticipants(`${event.x},${event.y}`)
-            : []
+          : await commsGatekeeperClient.getSceneParticipants(`${event.x},${event.y}`)
       return { ...event, connected_addresses }
     })
   )
+}
+
+/** Run an event list query and apply the opt-in connected-users decoration. */
+async function listAndDecorate(
+  components: { events: IEventsComponent; commsGatekeeperClient: ICommsGatekeeperClient },
+  params: URLSearchParams,
+  filters: EventListFilters
+): Promise<HTTPResponse<Event[]>> {
+  const { data, total } = await components.events.getEvents(filters)
+  const decorated =
+    params.get('with_connected_users') === 'true'
+      ? await decorateConnectedUsers(components.commsGatekeeperClient, data)
+      : data
+  return { status: 200, body: { ok: true, data: decorated, total } }
 }
 
 /** Legacy `GET /api/events` — filtered, paginated event list. */
@@ -118,12 +131,7 @@ export async function getEventListHandler(
   const { viewer, isAdmin } = resolveViewer(context.verification, context.components.profiles)
   const params = context.url.searchParams
   assertAuthedFilters(params, viewer)
-  const { data, total } = await context.components.events.getEvents(parseFilters(params, { viewer, isAdmin }))
-  const decorated =
-    params.get('with_connected_users') === 'true'
-      ? await decorateConnectedUsers(context.components.commsGatekeeperClient, data)
-      : data
-  return { status: 200, body: { ok: true, data: decorated, total } }
+  return listAndDecorate(context.components, params, parseFilters(params, { viewer, isAdmin }))
 }
 
 /**
@@ -153,12 +161,7 @@ export async function searchEventsHandler(
   }
   if (typeof body.communityId === 'string') filters.communityId = body.communityId
 
-  const { data, total } = await context.components.events.getEvents(filters)
-  const decorated =
-    params.get('with_connected_users') === 'true'
-      ? await decorateConnectedUsers(context.components.commsGatekeeperClient, data)
-      : data
-  return { status: 200, body: { ok: true, data: decorated, total } }
+  return listAndDecorate(context.components, params, filters)
 }
 
 /** Legacy `GET /api/events/attending` — events the authenticated user attends. */

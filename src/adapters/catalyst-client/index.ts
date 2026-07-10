@@ -2,6 +2,9 @@ import type { IConfigComponent, ILoggerComponent } from '@well-known-components/
 import type { IFetchComponent } from '@dcl/core-commons'
 
 const PAGE_SIZE = 100
+// Genesis City is ~90k parcels total, so no wallet operates more than this; the cap only
+// bounds a misbehaving lambda that never returns a short page.
+const MAX_PAGES = 1000
 
 type LandPermission = { x: string; y: string }
 type LandsPermissionsResponse = { elements?: LandPermission[] }
@@ -38,8 +41,9 @@ export async function createCatalystClient(
     try {
       let page = 0
       let received = PAGE_SIZE
-      // The lambda paginates; a short page (or an empty one) ends the walk.
-      while (received === PAGE_SIZE) {
+      // The lambda paginates; a short page (or an empty one) ends the walk. MAX_PAGES
+      // is a safety bound so a lambda that always returns a full page can't loop forever.
+      while (received === PAGE_SIZE && page < MAX_PAGES) {
         const url = `${baseUrl}/lambdas/users/${address.toLowerCase()}/lands-permissions?pageNum=${page}&pageSize=${PAGE_SIZE}`
         const response = await fetcher.fetch(url)
         if (!response.ok) throw new Error(`unexpected status ${response.status}`)
@@ -51,6 +55,7 @@ export async function createCatalystClient(
         received = elements.length
         page += 1
       }
+      if (page >= MAX_PAGES) logger.warn(`operated-lands paging hit the ${MAX_PAGES}-page cap for ${address}`)
       return positions
     } catch (error: any) {
       logger.warn(`Failed to fetch operated lands for ${address}: ${error?.message ?? String(error)}`)

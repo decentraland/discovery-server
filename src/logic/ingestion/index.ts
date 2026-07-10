@@ -29,7 +29,7 @@ type WorldEvent<M> = { metadata: M; timestamp?: number }
 export interface IIngestionComponent {
   /** Process a Catalyst scene deployment: upsert the corresponding genesis place. */
   processCatalystDeployment(event: CatalystDeploymentEvent): Promise<IngestionResult>
-  /** Process a world settings-changed event: upsert the world (owner resolved on first sight). */
+  /** Process a world settings-changed event: upsert the world (owner refreshed from the subgraphs). */
   processWorldSettingsChanged(event: WorldEvent<WorldSettingsChangedMetadata>): Promise<IngestionResult>
   /** Process a world scenes-undeployment event: disable the world's undeployed places. */
   processWorldScenesUndeployment(event: WorldEvent<WorldScenesUndeploymentMetadata>): Promise<IngestionResult>
@@ -97,19 +97,26 @@ export async function createIngestionComponent(
 
     const existing = await worldsRepository.findByIdWithAggregates(pg, id)
 
-    // Only accept the incoming rating if it is not a downgrade of the stored one.
-    let contentRating = metadata.contentRating
+    // Normalize + validate the incoming rating, then only accept a known rating that is
+    // not a downgrade of the stored one (moderators lower ratings explicitly, not automation).
+    let contentRating = metadata.contentRating?.toUpperCase()
+    if (contentRating && !(contentRating in RATING_RANK)) {
+      logger.warn(`Ignoring unknown content-rating for ${id}: ${metadata.contentRating}`)
+      contentRating = undefined
+    }
     if (contentRating && existing?.content_rating) {
       const incoming = RATING_RANK[contentRating] ?? 0
-      const current = RATING_RANK[existing.content_rating] ?? 0
+      const current = RATING_RANK[existing.content_rating.toUpperCase()] ?? 0
       if (incoming < current) {
         logger.warn(`Ignoring content-rating downgrade for ${id}: ${existing.content_rating} -> ${contentRating}`)
         contentRating = undefined
       }
     }
 
-    // Resolve the on-chain owner the first time we see a world without one.
-    const owner = existing?.owner ? undefined : await subgraphsClient.getNameOwner(worldName)
+    // Resolve the on-chain owner on every settings change so ownership transfers are
+    // reflected; the lookup degrades to undefined (leaving the stored owner untouched)
+    // when the subgraph is unconfigured or unavailable.
+    const owner = await subgraphsClient.getNameOwner(worldName)
 
     const input: UpsertWorldInput = {
       id,

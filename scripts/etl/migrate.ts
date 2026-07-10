@@ -240,6 +240,9 @@ export async function migrateEvents(pools: EtlPools, options: EtlOptions = {}): 
   const scheduleIds = new Set(
     (await pools.target.query<{ id: string }>(`SELECT id::text AS id FROM schedules`)).rows.map((r) => r.id)
   )
+  // Legacy world events store the world's places-table UUID in place_id; this maps that
+  // uuid -> discovery world_id (same mechanism used to re-point world interactions).
+  const worldPlaceMap = await loadWorldPlaceMap(pools)
 
   let loaded = 0
   let nulledRefs = 0
@@ -251,8 +254,17 @@ export async function migrateEvents(pools: EtlPools, options: EtlOptions = {}): 
         let placeId: string | null = null
         let worldId: string | null = null
         if (e.world) {
-          worldId = legacyRef && worldIds.has(legacyRef.toLowerCase()) ? legacyRef.toLowerCase() : null
-          if (legacyRef && !worldId) nulledRefs++
+          // Resolve the world id from the world NAME (in `server`) first, then fall back to
+          // the legacy world place-uuid (in place_id) via the world place map.
+          const serverName = e.server ? String(e.server).trim().toLowerCase() : null
+          if (serverName && worldIds.has(serverName)) {
+            worldId = serverName
+          } else if (legacyRef && UUID_RE.test(legacyRef)) {
+            worldId = worldPlaceMap.get(legacyRef.toLowerCase()) ?? null
+          } else if (legacyRef && worldIds.has(legacyRef.toLowerCase())) {
+            worldId = legacyRef.toLowerCase()
+          }
+          if (!worldId && (serverName || legacyRef)) nulledRefs++
         } else if (legacyRef && UUID_RE.test(legacyRef)) {
           // placeIds holds canonical lowercase uuid::text — match case-insensitively.
           const lower = legacyRef.toLowerCase()
@@ -265,9 +277,10 @@ export async function migrateEvents(pools: EtlPools, options: EtlOptions = {}): 
           .map((s: string) => String(s).trim().toLowerCase())
           .filter((s: string) => UUID_RE.test(s) && scheduleIds.has(s))
 
-        // duration is int4 ms in the target; cap pathological legacy values instead of overflowing.
-        let duration = e.duration
-        if (typeof duration === 'number' && duration > INT4_MAX) {
+        // Legacy duration is BIGINT (node-pg returns it as a string); the target column is
+        // int4 ms, so coerce and cap pathological values instead of overflowing.
+        let duration: number | null = e.duration === null || e.duration === undefined ? null : Number(e.duration)
+        if (duration !== null && duration > INT4_MAX) {
           duration = INT4_MAX
           cappedDurations++
         }
@@ -550,9 +563,34 @@ export async function verify(pools: EtlPools): Promise<Array<{ check: string; ok
   )
   results.push({ check: 'attendee-counter-drift', ok: drift === 0, detail: `${drift} events with drifted counters` })
 
-  for (const table of ['worlds', 'places', 'events', 'event_attendees', 'user_likes', 'user_favorites',
-    'content_ratings', 'schedules', 'profile_settings', 'notification_cursors', 'place_categories']) {
-    results.push({ check: `${table}-count`, ok: true, detail: `${await targetCount(table)} rows` })
+  // Source of truth per target table (renamed/derived noted). place_categories is derived from
+  // places.categories[] and profile_settings is filtered to non-empty permissions, so their
+  // counts are informational — no source comparison.
+  const sourceOf: Record<string, { pool: Pool; table: string } | null> = {
+    worlds: { pool: pools.placesSource, table: 'worlds' },
+    places: { pool: pools.placesSource, table: 'places' },
+    events: { pool: pools.eventsSource, table: 'events' },
+    event_attendees: { pool: pools.eventsSource, table: 'event_attendees' },
+    user_likes: { pool: pools.placesSource, table: 'user_likes' },
+    user_favorites: { pool: pools.placesSource, table: 'user_favorites' },
+    content_ratings: { pool: pools.placesSource, table: 'content_ratings' },
+    schedules: { pool: pools.eventsSource, table: 'schedule' },
+    notification_cursors: { pool: pools.eventsSource, table: 'notification_cursors' },
+    profile_settings: null,
+    place_categories: null
+  }
+  const sourceCount = async (pool: Pool, table: string) =>
+    Number((await pool.query<{ c: string }>(`SELECT count(*) AS c FROM ${table}`)).rows[0]?.c ?? 0)
+
+  for (const [table, src] of Object.entries(sourceOf)) {
+    const target = await targetCount(table)
+    if (!src) {
+      results.push({ check: `${table}-count`, ok: true, detail: `${target} rows (derived/filtered)` })
+      continue
+    }
+    const source = await sourceCount(src.pool, src.table)
+    // Flag only a total load failure: nulled refs / dedup make target <= source expected.
+    results.push({ check: `${table}-count`, ok: source === 0 || target > 0, detail: `source=${source} target=${target}` })
   }
   return results
 }

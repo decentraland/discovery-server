@@ -147,7 +147,8 @@ export function createWorldsRepository(): IWorldsRepository {
               ${input.is_private ?? false}, ${input.highlighted ?? false}, ${input.highlighted_image ?? null})
       ON CONFLICT (id) DO UPDATE SET updated_at = now()`
     for (const column of UPSERT_UPDATABLE_COLUMNS) {
-      if (column in input && input[column] !== undefined) {
+      // An absent key reads as undefined too, so the undefined check alone is sufficient.
+      if (input[column] !== undefined) {
         query.append(`, "${column}" = `).append(SQL`${input[column] as unknown}`)
       }
     }

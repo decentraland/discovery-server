@@ -107,7 +107,9 @@ export async function createEventsComponent(
     }
     const x = payload.x ?? 0
     const y = payload.y ?? 0
-    const tile = await landClient.getTile(x, y)
+    // Only hit Land for the metadata the caller didn't already supply.
+    const needsTile = !payload.image || !payload.estate_id || !payload.estate_name
+    const tile = needsTile ? await landClient.getTile(x, y) : null
     const estate_id = payload.estate_id ?? tile?.estateId ?? null
     const estate_name = payload.estate_name ?? tile?.name ?? null
     const image = payload.image ?? (estate_id ? landClient.getEstateImage(estate_id) : landClient.getParcelImage(x, y))
@@ -212,6 +214,12 @@ export async function createEventsComponent(
   async function getEvents(filters: EventListFilters): Promise<{ data: Event[]; total: number }> {
     const [data, total] = await Promise.all([eventsRepository.list(pg, filters), eventsRepository.count(pg, filters)])
     return { data: data.map(serialize), total }
+  }
+
+  // List-only variant for callers that don't need the total (skips the count query).
+  async function listEvents(filters: EventListFilters): Promise<Event[]> {
+    const data = await eventsRepository.list(pg, filters)
+    return data.map(serialize)
   }
 
   async function getAttendingEvents(user: string): Promise<Event[]> {
@@ -488,5 +496,14 @@ export async function createEventsComponent(
     return updated
   }
 
-  return { getEvent, getEvents, getAttendingEvents, createEvent, updateEvent, deleteEvent, updateNextStartAt }
+  return {
+    getEvent,
+    getEvents,
+    listEvents,
+    getAttendingEvents,
+    createEvent,
+    updateEvent,
+    deleteEvent,
+    updateNextStartAt
+  }
 }

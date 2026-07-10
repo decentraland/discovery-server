@@ -73,18 +73,24 @@ export function createEventsRepository(): IEventsRepository {
       // A wallet's own events across every status (bypasses the approval visibility clause).
       where.append(SQL` AND e."user" = ${filters.ownedBy.toLowerCase()}`)
     } else if (!filters.includeUnapproved) {
-      // Approved+non-rejected are public; a viewer also sees their own pending/rejected events.
-      if (filters.viewer) {
-        where.append(
-          SQL` AND ((e.approved IS true AND e.rejected IS false) OR e."user" = ${filters.viewer.toLowerCase()})`
-        )
-      } else {
-        where.append(SQL` AND e.approved IS true AND e.rejected IS false`)
+      // An explicit admin approved/rejected selector replaces the default visibility clause;
+      // otherwise `?rejected=true` would AND with "approved-or-mine" and match nothing.
+      const hasModerationSelector = filters.approved !== undefined || filters.rejected !== undefined
+      if (!hasModerationSelector) {
+        // Approved+non-rejected are public; a viewer also sees their own pending/rejected events.
+        if (filters.viewer) {
+          where.append(
+            SQL` AND ((e.approved IS true AND e.rejected IS false) OR e."user" = ${filters.viewer.toLowerCase()})`
+          )
+        } else {
+          where.append(SQL` AND e.approved IS true AND e.rejected IS false`)
+        }
       }
     }
-    // Admin precise moderation selectors.
-    if (filters.approved !== undefined) where.append(SQL` AND e.approved IS ${filters.approved}`)
-    if (filters.rejected !== undefined) where.append(SQL` AND e.rejected IS ${filters.rejected}`)
+    // Admin precise moderation selectors. `approved`/`rejected` are NOT NULL booleans, so `=`
+    // is correct; `col IS $param` is invalid SQL (the IS predicate needs a literal true/false).
+    if (filters.approved !== undefined) where.append(SQL` AND e.approved = ${filters.approved}`)
+    if (filters.rejected !== undefined) where.append(SQL` AND e.rejected = ${filters.rejected}`)
     if (filters.search && filters.search.length >= MIN_SEARCH_LENGTH) {
       where.append(SQL` AND e.textsearch @@ websearch_to_tsquery('english', ${filters.search})`)
     }

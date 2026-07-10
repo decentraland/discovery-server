@@ -68,12 +68,10 @@ export function createDestinationsRepository(): IDestinationsRepository {
       query.append(SQL` AND p.textsearch @@ websearch_to_tsquery('english', ${filters.search})`)
     }
     if (filters.categories?.length) query.append(SQL` AND p.categories && ${filters.categories}::varchar[]`)
-    if (filters.ids?.length) query.append(SQL` AND p.id::text = ANY(${filters.ids})`)
-    if (filters.positions?.length) {
-      query.append(SQL` AND p.base_position IN (
-        SELECT DISTINCT base_position FROM place_positions WHERE position = ANY(${filters.positions}::varchar[])
-      )`)
-    }
+    if (filters.ids?.length) query.append(SQL` AND p.id::text = ANY(${filters.ids.map((id) => id.toLowerCase())})`)
+    // A place occupies every parcel in its `positions` array, so an overlap with the
+    // queried parcels selects the owning scene directly (GIN-indexed).
+    if (filters.positions?.length) query.append(SQL` AND p.positions && ${filters.positions}::varchar[]`)
     if (filters.owner) query.append(SQL` AND lower(p.owner) = ${filters.owner.toLowerCase()}`)
     // only_favorites reuses the favorites LEFT JOIN (present only when a user is set).
     if (filters.only_favorites && filters.user) query.append(SQL` AND uf_p."user" IS NOT NULL`)
@@ -94,7 +92,7 @@ export function createDestinationsRepository(): IDestinationsRepository {
       query.append(SQL` AND w.world_name ILIKE ${'%' + filters.search.toLowerCase() + '%'}`)
     }
     if (filters.categories?.length) query.append(SQL` AND w.categories && ${filters.categories}::varchar[]`)
-    if (filters.ids?.length) query.append(SQL` AND w.id = ANY(${filters.ids})`)
+    if (filters.ids?.length) query.append(SQL` AND w.id = ANY(${filters.ids.map((id) => id.toLowerCase())})`)
     if (filters.worldNames?.length)
       query.append(SQL` AND w.id = ANY(${filters.worldNames.map((n) => n.toLowerCase())})`)
     if (filters.owner) query.append(SQL` AND lower(w.owner) = ${filters.owner.toLowerCase()}`)

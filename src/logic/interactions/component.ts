@@ -24,6 +24,9 @@ export async function createInteractionsComponent(
     const userActivity = await resolveActivity(command)
     const entityId = command.entityId.toLowerCase()
     await pg.withTransaction(async (tx) => {
+      // Lock the entity first so a concurrent like/favorite can't recompute the
+      // aggregates from a stale snapshot and lose this write.
+      await interactionsRepository.lockEntity(tx, command.entityType, entityId)
       await interactionsRepository.setLike(tx, {
         entityId,
         entityType: command.entityType,
@@ -39,6 +42,7 @@ export async function createInteractionsComponent(
     const userActivity = await resolveActivity(command)
     const entityId = command.entityId.toLowerCase()
     await pg.withTransaction(async (tx) => {
+      await interactionsRepository.lockEntity(tx, command.entityType, entityId)
       await interactionsRepository.setFavorite(tx, {
         entityId,
         entityType: command.entityType,

@@ -37,17 +37,16 @@ export function createPlacesRepository(): IPlacesRepository {
       where.append(SQL` AND p.categories && ${filters.categories}::varchar[]`)
     }
     if (filters.positions?.length && !filters.names?.length) {
-      where.append(SQL` AND p.base_position IN (
-        SELECT DISTINCT base_position FROM place_positions WHERE position = ANY(${filters.positions}::varchar[])
-      )`)
+      // A place occupies every parcel in its `positions` array; overlap selects it (GIN-indexed).
+      where.append(SQL` AND p.positions && ${filters.positions}::varchar[]`)
     }
     if (filters.owner) {
       // Match the owner exactly, plus any scene whose parcels the wallet operates
       // (owned/estate/rented positions resolved by the caller via Catalyst).
       if (filters.operatedPositions?.length) {
-        where.append(SQL` AND (lower(p.owner) = ${filters.owner.toLowerCase()} OR p.base_position IN (
-          SELECT DISTINCT base_position FROM place_positions WHERE position = ANY(${filters.operatedPositions}::varchar[])
-        ))`)
+        where.append(
+          SQL` AND (lower(p.owner) = ${filters.owner.toLowerCase()} OR p.positions && ${filters.operatedPositions}::varchar[])`
+        )
       } else {
         where.append(SQL` AND lower(p.owner) = ${filters.owner.toLowerCase()}`)
       }
@@ -233,7 +232,11 @@ export function createPlacesRepository(): IPlacesRepository {
   }
 
   async function listOccupiedPositions(client: Queryable): Promise<string[]> {
-    const result = await client.query<{ position: string }>(SQL`SELECT DISTINCT position FROM place_positions`)
+    // Occupied = every parcel of every enabled genesis place (excludes disabled/undeployed
+    // scenes and legacy world rows), derived from the denormalized positions array.
+    const result = await client.query<{ position: string }>(
+      SQL`SELECT DISTINCT unnest(positions) AS position FROM places WHERE disabled IS false AND world IS false`
+    )
     return result.rows.map((row) => row.position)
   }
 

@@ -119,12 +119,14 @@ test('when managing events over the API', function ({ components }) {
     beforeEach(async () => {
       await components.pg.query(SQL`DELETE FROM event_attendees`)
       await components.pg.query(SQL`DELETE FROM events`)
-      await components.pg.query(SQL`DELETE FROM place_positions`)
       await components.pg.query(SQL`DELETE FROM places`)
       await components.pg.query(SQL`DELETE FROM profile_settings`)
-      const place = await components.placesRepository.insert(components.pg, { title: 'Plaza', base_position: '0,0' })
+      const place = await components.placesRepository.insert(components.pg, {
+        title: 'Plaza',
+        base_position: '0,0',
+        positions: ['0,0']
+      })
       placeId = place.id
-      await components.pg.query(SQL`INSERT INTO place_positions (position, base_position) VALUES ('0,0', '0,0')`)
       identity = await getIdentity()
     })
 

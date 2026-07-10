@@ -23,6 +23,18 @@ export function createInteractionsRepository(): IInteractionsRepository {
     return entityType === 'place' ? SQL`id = ${entityId}::uuid` : SQL`id = ${entityId}`
   }
 
+  async function lockEntity(client: Queryable, entityType: EntityType, entityId: string): Promise<void> {
+    const targetTable = COUNTER_TABLE[entityType]
+    if (!targetTable) return
+    const query = SQL`SELECT 1 FROM `
+    query.append(targetTable)
+    query
+      .append(SQL` WHERE `)
+      .append(entityIdMatch(entityType, entityId))
+      .append(SQL` FOR UPDATE`)
+    await client.query(query)
+  }
+
   async function setLike(client: Queryable, input: SetLikeInput): Promise<void> {
     const user = input.user.toLowerCase()
     if (input.like === null) {
@@ -101,5 +113,5 @@ export function createInteractionsRepository(): IInteractionsRepository {
     await client.query(query)
   }
 
-  return { setLike, setFavorite, recomputeLikes, recomputeFavorites }
+  return { lockEntity, setLike, setFavorite, recomputeLikes, recomputeFavorites }
 }

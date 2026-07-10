@@ -23,3 +23,19 @@ export function intParam(params: URLSearchParams, key: string): number | undefin
   const value = Number(raw)
   return Number.isInteger(value) && value >= 0 ? value : undefined
 }
+
+export type WithOptions = { withLiveEvents: boolean; withConnectedUsers: boolean; withNextEvent: boolean }
+
+/**
+ * Parse the destination decoration flags. Supports the `with=` multi-value form
+ * (`with=live_events,connected_users,next_event`) plus the legacy boolean aliases
+ * `with_live_events` / `with_connected_users`.
+ */
+export function parseWithOptions(params: URLSearchParams): WithOptions {
+  const withList = multiParam(params, 'with') ?? []
+  return {
+    withLiveEvents: params.get('with_live_events') === 'true' || withList.includes('live_events'),
+    withConnectedUsers: params.get('with_connected_users') === 'true' || withList.includes('connected_users'),
+    withNextEvent: withList.includes('next_event')
+  }
+}

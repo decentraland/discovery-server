@@ -12,6 +12,7 @@ describe('when recording interactions', () => {
     tx = { query: jest.fn() }
     pg = { withTransaction: jest.fn((cb: (client: any) => Promise<unknown>) => cb(tx)) }
     interactionsRepository = {
+      lockEntity: jest.fn(),
       setLike: jest.fn(),
       setFavorite: jest.fn(),
       recomputeLikes: jest.fn(),
@@ -41,6 +42,10 @@ describe('when recording interactions', () => {
     it('should recompute the like aggregates on the same transaction client', () => {
       expect(interactionsRepository.recomputeLikes).toHaveBeenCalledWith(tx, 'place', 'p1')
     })
+
+    it('should lock the entity on the transaction before recomputing', () => {
+      expect(interactionsRepository.lockEntity).toHaveBeenCalledWith(tx, 'place', 'p1')
+    })
   })
 
   describe('and favoriting a place without a supplied activity', () => {
@@ -55,6 +60,10 @@ describe('when recording interactions', () => {
 
     it('should recompute the favorites count', () => {
       expect(interactionsRepository.recomputeFavorites).toHaveBeenCalledWith(tx, 'place', 'p1')
+    })
+
+    it('should lock the entity on the transaction before recomputing', () => {
+      expect(interactionsRepository.lockEntity).toHaveBeenCalledWith(tx, 'place', 'p1')
     })
   })
 })
