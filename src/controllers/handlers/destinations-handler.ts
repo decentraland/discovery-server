@@ -5,7 +5,15 @@ import type {
   DestinationListFilters,
   DestinationOrderBy
 } from '../../adapters/destinations-repository'
-import { multiParam as multi, intParam, parseWithOptions } from './query-params'
+import { BadRequestError } from '../../types/errors'
+import { multiParam as multi, intParam, parseWithOptions, MAX_BATCH_ITEMS } from './query-params'
+
+/** A body array of strings, capped to guard against giant `ANY(...)` scans; undefined if absent. */
+function boundedList(value: unknown): string[] | undefined {
+  if (!Array.isArray(value)) return undefined
+  if (value.length > MAX_BATCH_ITEMS) throw new BadRequestError(`Too many items (max ${MAX_BATCH_ITEMS})`)
+  return value.filter((item): item is string => typeof item === 'string')
+}
 
 const ORDER_BY_VALUES: DestinationOrderBy[] = ['like_score', 'updated_at', 'created_at']
 const KIND_VALUES: DestinationKind[] = ['place', 'world']
@@ -65,9 +73,9 @@ export async function getDestinationsByIdHandler(
   } catch {
     // tolerate an empty body
   }
-  const ids = Array.isArray(body.ids) ? (body.ids as string[]) : undefined
-  const positions = Array.isArray(body.positions) ? (body.positions as string[]) : undefined
-  const worldNames = Array.isArray(body.world_names) ? (body.world_names as string[]) : undefined
+  const ids = boundedList(body.ids)
+  const positions = boundedList(body.positions)
+  const worldNames = boundedList(body.world_names)
 
   const { data, total } = await destinations.getDestinations(
     { ids, positions, worldNames, user, limit: 100 },

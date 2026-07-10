@@ -9,6 +9,12 @@ import type { CreateEventPayload, EventWithAttendance, IEventsComponent, UpdateE
 
 const MAX_EVENT_DURATION_MS = 24 * 60 * 60 * 1000
 
+/** Coerce an untrusted payload coordinate to a safe integer (defaults to 0 for junk/NaN). */
+function toCoordinate(value: unknown): number {
+  const n = Math.trunc(Number(value))
+  return Number.isFinite(n) ? n : 0
+}
+
 // Fields whose change requires re-materializing recurrence + the next window.
 const RECURRENCE_KEYS: Array<keyof UpdateEventPayload> = [
   'start_at',
@@ -105,8 +111,8 @@ export async function createEventsComponent(
         scene_name: payload.scene_name ?? null
       }
     }
-    const x = payload.x ?? 0
-    const y = payload.y ?? 0
+    const x = toCoordinate(payload.x)
+    const y = toCoordinate(payload.y)
     // Only hit Land for the metadata the caller didn't already supply.
     const needsTile = !payload.image || !payload.estate_id || !payload.estate_name
     const tile = needsTile ? await landClient.getTile(x, y) : null
@@ -132,7 +138,7 @@ export async function createEventsComponent(
       const { data } = await worlds.getWorlds({ names: [payload.server], limit: 1 })
       return { place_id: null, world_id: data[0]?.id ?? null, world: true }
     }
-    const position = `${payload.x ?? 0},${payload.y ?? 0}`
+    const position = `${toCoordinate(payload.x)},${toCoordinate(payload.y)}`
     const { data } = await places.getPlaces({ positions: [position], limit: 1 })
     return { place_id: data[0]?.id ?? null, world_id: null, world: false }
   }
@@ -287,8 +293,8 @@ export async function createEventsComponent(
       recurrent_count: props.recurrent_count,
       recurrent_until: props.recurrent_until,
       recurrent_dates: props.recurrent_dates,
-      x: payload.x ?? 0,
-      y: payload.y ?? 0,
+      x: toCoordinate(payload.x),
+      y: toCoordinate(payload.y),
       server: payload.server ?? null,
       world: location.world,
       estate_id: presentation.estate_id,

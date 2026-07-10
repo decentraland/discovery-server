@@ -36,7 +36,10 @@ export async function createCommunitiesClient(
   async function getManagedCommunities(address: string): Promise<Community[]> {
     if (!baseUrl) return []
     try {
-      const response = await fetcher.fetch(`${baseUrl}/v1/communities/${address.toLowerCase()}/managed`, { headers })
+      const response = await fetcher.fetch(
+        `${baseUrl}/v1/communities/${encodeURIComponent(address.toLowerCase())}/managed`,
+        { headers }
+      )
       if (!response.ok) throw new Error(`unexpected status ${response.status}`)
       const body = (await response.json()) as { data?: Community[] | { results?: Community[] } }
       const data = Array.isArray(body?.data) ? body.data : (body?.data?.results ?? [])
@@ -58,7 +61,9 @@ export async function createCommunitiesClient(
       let totalPages = 1
       do {
         const offset = (page - 1) * MEMBERS_PAGE_SIZE
-        const url = `${baseUrl}/v1/communities/${communityId}/members?limit=${MEMBERS_PAGE_SIZE}&offset=${offset}`
+        // communityId is stored from event input; encode it so it can't inject into the
+        // path/query of this admin-bearer-authenticated request.
+        const url = `${baseUrl}/v1/communities/${encodeURIComponent(communityId)}/members?limit=${MEMBERS_PAGE_SIZE}&offset=${offset}`
         const response = await fetcher.fetch(url, { headers })
         if (!response.ok) throw new Error(`unexpected status ${response.status}`)
         const body = (await response.json()) as {

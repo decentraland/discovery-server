@@ -54,7 +54,6 @@ export async function up(pgm: MigrationBuilder): Promise<void> {
     CREATE INDEX places_world_id_deployed_at_idx ON places (world_id, deployed_at DESC)
       WHERE disabled IS FALSE AND world_id IS NOT NULL;
     CREATE INDEX places_categories_gin_idx ON places USING gin (categories);
-    CREATE INDEX places_positions_gin_idx  ON places USING gin (positions);
     CREATE INDEX places_textsearch_idx    ON places USING gin (textsearch);
   `)
 }

@@ -1,4 +1,4 @@
-import { Router } from '@dcl/http-server'
+import { Router, createBodySizeLimitMiddleware } from '@dcl/http-server'
 import type { GlobalContext } from '../types'
 import { errorHandler } from './middlewares/error-handler'
 import { createSignedFetchMiddleware } from './middlewares/signed-fetch'
@@ -111,6 +111,11 @@ export async function setupRouter(globalContext: GlobalContext): Promise<Router<
   })
 
   router.use(errorHandler)
+  // Reject oversized request bodies at the transport layer (before buffering) so an
+  // unauthenticated caller can't OOM the process with a giant body. The limit sits above
+  // the 500KB poster upload; JSON list/search bodies are far smaller.
+  const maxBodySize = (await components.config.getNumber('HTTP_MAX_BODY_SIZE')) ?? 1024 * 1024
+  router.use(createBodySizeLimitMiddleware(maxBodySize))
 
   router.get('/ping', pingHandler)
   router.get('/api/status', statusHandler)

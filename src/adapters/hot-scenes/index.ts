@@ -41,13 +41,13 @@ export async function createHotScenesComponent(
 
   let countByPosition = new Map<string, number>()
   let lastRefresh = 0
+  let inFlight: Promise<void> | null = null
 
   function position(scene: HotScene): string {
     return `${scene.baseCoords[0]},${scene.baseCoords[1]}`
   }
 
-  async function refresh(): Promise<void> {
-    if (!baseUrl) return
+  async function doRefresh(): Promise<void> {
     try {
       const response = await fetcher.fetch(`${baseUrl}/hot-scenes`)
       // Don't overwrite the good snapshot with an error response, and don't parse
@@ -66,6 +66,13 @@ export async function createHotScenesComponent(
       lastRefresh = Date.now()
       logger.warn(`Failed to refresh hot scenes: ${error?.message ?? String(error)}`)
     }
+  }
+
+  async function refresh(): Promise<void> {
+    if (!baseUrl) return
+    // Single-flight: per-row reads over a stale cache share one upstream fetch.
+    if (!inFlight) inFlight = doRefresh().finally(() => (inFlight = null))
+    return inFlight
   }
 
   async function ensureFresh(): Promise<void> {

@@ -24,6 +24,9 @@ export function intParam(params: URLSearchParams, key: string): number | undefin
   return Number.isInteger(value) && value >= 0 ? value : undefined
 }
 
+/** Max items accepted in a batch id/position/name list — a DoS guard against giant `ANY(...)` scans. */
+export const MAX_BATCH_ITEMS = 1000
+
 export type WithOptions = { withLiveEvents: boolean; withConnectedUsers: boolean; withNextEvent: boolean }
 
 /**

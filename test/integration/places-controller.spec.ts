@@ -119,6 +119,18 @@ test('when reading places from a real server', function ({ components }) {
     })
   })
 
+  describe('and requesting status for more ids than the batch limit', () => {
+    it('should reject the request with a 400', async () => {
+      const response = await components.localFetch.fetch('/api/places/status', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ ids: Array.from({ length: 1001 }, (_, i) => `id-${i}`) })
+      })
+
+      expect(response.status).toBe(400)
+    })
+  })
+
   describe('and requesting only_favorites without authentication', () => {
     beforeEach(async () => {
       await components.pg.query(SQL`DELETE FROM places`)

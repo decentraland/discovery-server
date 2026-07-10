@@ -32,11 +32,11 @@ export async function createWorldsLiveDataComponent(
 
   let usersByWorld = new Map<string, number>()
   let lastRefresh = 0
+  let inFlight: Promise<void> | null = null
 
-  async function refresh(): Promise<void> {
-    if (!url) return
+  async function doRefresh(): Promise<void> {
     try {
-      const response = await fetcher.fetch(url)
+      const response = await fetcher.fetch(url as string)
       // Don't overwrite the good snapshot with an error response.
       if (!response.ok) throw new Error(`unexpected status ${response.status}`)
       const body = (await response.json()) as WorldLiveDataResponse
@@ -51,6 +51,13 @@ export async function createWorldsLiveDataComponent(
       lastRefresh = Date.now()
       logger.warn(`Failed to refresh worlds live data: ${error?.message ?? String(error)}`)
     }
+  }
+
+  async function refresh(): Promise<void> {
+    if (!url) return
+    // Single-flight: per-row reads over a stale cache share one upstream fetch.
+    if (!inFlight) inFlight = doRefresh().finally(() => (inFlight = null))
+    return inFlight
   }
 
   async function getUserCount(worldName: string): Promise<number> {

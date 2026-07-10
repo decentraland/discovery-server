@@ -37,6 +37,10 @@ export async function createCatalystClient(
 
   async function getOperatedPositions(address: string): Promise<string[]> {
     if (!baseUrl) return []
+    // `owner=` is unauthenticated user input; reject anything that isn't a plain eth address
+    // so it can't be used for path/query injection into the Catalyst host.
+    const wallet = address.toLowerCase()
+    if (!/^0x[a-f0-9]{40}$/.test(wallet)) return []
     const positions: string[] = []
     try {
       let page = 0
@@ -44,7 +48,7 @@ export async function createCatalystClient(
       // The lambda paginates; a short page (or an empty one) ends the walk. MAX_PAGES
       // is a safety bound so a lambda that always returns a full page can't loop forever.
       while (received === PAGE_SIZE && page < MAX_PAGES) {
-        const url = `${baseUrl}/lambdas/users/${address.toLowerCase()}/lands-permissions?pageNum=${page}&pageSize=${PAGE_SIZE}`
+        const url = `${baseUrl}/lambdas/users/${encodeURIComponent(wallet)}/lands-permissions?pageNum=${page}&pageSize=${PAGE_SIZE}`
         const response = await fetcher.fetch(url)
         if (!response.ok) throw new Error(`unexpected status ${response.status}`)
         const body = (await response.json()) as LandsPermissionsResponse

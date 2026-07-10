@@ -2,7 +2,7 @@ import type { HandlerContextWithPath, HTTPResponse } from '../../types'
 import type { AggregatePlace, PlaceStatus } from '../../types/entities'
 import type { OrderDirection, PlaceListFilters, PlaceListOrderBy } from '../../adapters/places-repository'
 import { BadRequestError } from '../../types/errors'
-import { multiParam as multi, intParam } from './query-params'
+import { multiParam as multi, intParam, MAX_BATCH_ITEMS } from './query-params'
 
 const ORDER_BY_VALUES: PlaceListOrderBy[] = ['like_score', 'updated_at', 'created_at', 'most_active']
 
@@ -74,6 +74,9 @@ async function readIds(context: { request: { json: () => Promise<unknown> } }): 
   const ids = Array.isArray(body) ? body : (body as { ids?: unknown })?.ids
   if (!Array.isArray(ids) || ids.some((id) => typeof id !== 'string')) {
     throw new BadRequestError('Body must be an array of ids or { ids: string[] }')
+  }
+  if (ids.length > MAX_BATCH_ITEMS) {
+    throw new BadRequestError(`Too many ids (max ${MAX_BATCH_ITEMS})`)
   }
   return ids as string[]
 }

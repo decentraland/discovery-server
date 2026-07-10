@@ -6,7 +6,8 @@ import type { IProfilesComponent } from '../../logic/profiles'
 import type { ICommsGatekeeperClient } from '../../adapters/comms-gatekeeper-client'
 import { BadRequestError, UnauthorizedError } from '../../types/errors'
 import { API_ADMIN_IDENTITY } from '../middlewares/authorization'
-import { intParam, multiParam as multi } from './query-params'
+import { isPlaceId } from '../../logic/entity-id'
+import { intParam, multiParam as multi, MAX_BATCH_ITEMS } from './query-params'
 
 type ListContext = { viewer?: string; isAdmin?: boolean }
 
@@ -97,11 +98,13 @@ async function decorateConnectedUsers(
 ): Promise<Array<Event & { connected_addresses: string[] }>> {
   return Promise.all(
     events.map(async (event) => {
-      // x/y are non-nullable (default 0); world events carry a `server`.
-      const connected_addresses =
-        event.world && event.server
+      // A world event's participants come from its server; a genesis event's from its parcel.
+      // A world event without a server has no scene to query, so it decorates empty.
+      const connected_addresses = event.world
+        ? event.server
           ? await commsGatekeeperClient.getWorldParticipants(event.server)
-          : await commsGatekeeperClient.getSceneParticipants(`${event.x},${event.y}`)
+          : []
+        : await commsGatekeeperClient.getSceneParticipants(`${event.x},${event.y}`)
       return { ...event, connected_addresses }
     })
   )
@@ -157,7 +160,9 @@ export async function searchEventsHandler(
     body = {}
   }
   if (Array.isArray(body.placeIds) && body.placeIds.length) {
-    filters.placeIds = body.placeIds.filter((id: unknown) => typeof id === 'string')
+    if (body.placeIds.length > MAX_BATCH_ITEMS) throw new BadRequestError(`Too many placeIds (max ${MAX_BATCH_ITEMS})`)
+    // Keep only well-formed uuids so a bad id can't 500 the `::uuid[]` cast.
+    filters.placeIds = body.placeIds.filter((id: unknown): id is string => typeof id === 'string' && isPlaceId(id))
   }
   if (typeof body.communityId === 'string') filters.communityId = body.communityId
 
