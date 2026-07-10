@@ -69,50 +69,58 @@ export async function getV1EventHandler(
   return { status: 200, body: { ok: true, data: { ...event, destination_id: destinationId, destination } } }
 }
 
-async function setDestinationInteraction(
-  context: Pick<
-    HandlerContextWithPath<'interactions' | 'places' | 'worlds'>,
-    'components' | 'params' | 'request' | 'verification'
-  >,
-  kind: 'favorite' | 'like'
-): Promise<HTTPResponse<InteractionSummary>> {
-  const { interactions } = context.components
+type InteractionContext = Pick<
+  HandlerContextWithPath<'interactions' | 'places' | 'worlds'>,
+  'components' | 'params' | 'request' | 'verification'
+>
+
+/** Resolve the authenticated caller + the destination entity, or throw 401. */
+function interactionActor(context: InteractionContext): {
+  user: string
+  entityId: string
+  entityType: ReturnType<typeof resolveEntityType>
+} {
   const user = context.verification?.auth?.toLowerCase()
   if (!user) throw new UnauthorizedError('Authentication required')
   const entityId = (context.params as Record<string, string>).id
-  const entityType = resolveEntityType(entityId)
+  return { user, entityId, entityType: resolveEntityType(entityId) }
+}
 
-  const body = (await context.request.json()) as { favorite?: unknown; like?: unknown }
-  if (kind === 'favorite') {
-    await interactions.setFavorite({ entityId, entityType, user, favorite: body.favorite === true })
-  } else {
-    const like = body.like === null || typeof body.like === 'boolean' ? (body.like as boolean | null) : false
-    await interactions.setLike({ entityId, entityType, user, like })
-  }
+async function summaryResponse(context: InteractionContext): Promise<HTTPResponse<InteractionSummary>> {
+  const { user, entityId, entityType } = interactionActor(context)
   return {
     status: 200,
     body: { ok: true, data: await refreshedSummary(context.components, entityId, entityType, user) }
   }
 }
 
-/** `PATCH /v1/destinations/:id/favorite` — `{ favorite: boolean }`. */
-export async function updateV1FavoriteHandler(
-  context: Pick<
-    HandlerContextWithPath<'interactions' | 'places' | 'worlds', '/v1/destinations/:id/favorite'>,
-    'components' | 'params' | 'request' | 'verification'
-  >
-): Promise<HTTPResponse<InteractionSummary>> {
-  return setDestinationInteraction(context, 'favorite')
+/** `PUT /v1/destinations/:id/favorites` — favorite the destination for the caller. */
+export async function addFavoriteHandler(context: InteractionContext): Promise<HTTPResponse<InteractionSummary>> {
+  const { user, entityId, entityType } = interactionActor(context)
+  await context.components.interactions.setFavorite({ entityId, entityType, user, favorite: true })
+  return summaryResponse(context)
 }
 
-/** `PATCH /v1/destinations/:id/like` — `{ like: boolean | null }`. */
-export async function updateV1LikeHandler(
-  context: Pick<
-    HandlerContextWithPath<'interactions' | 'places' | 'worlds', '/v1/destinations/:id/like'>,
-    'components' | 'params' | 'request' | 'verification'
-  >
-): Promise<HTTPResponse<InteractionSummary>> {
-  return setDestinationInteraction(context, 'like')
+/** `DELETE /v1/destinations/:id/favorites` — remove the caller's favorite. */
+export async function removeFavoriteHandler(context: InteractionContext): Promise<HTTPResponse<InteractionSummary>> {
+  const { user, entityId, entityType } = interactionActor(context)
+  await context.components.interactions.setFavorite({ entityId, entityType, user, favorite: false })
+  return summaryResponse(context)
+}
+
+/** `PUT /v1/destinations/:id/likes` — `{ like: boolean }` (true = like, false = dislike). */
+export async function putLikeHandler(context: InteractionContext): Promise<HTTPResponse<InteractionSummary>> {
+  const { user, entityId, entityType } = interactionActor(context)
+  const body = (await context.request.json()) as { like?: unknown }
+  await context.components.interactions.setLike({ entityId, entityType, user, like: body.like === true })
+  return summaryResponse(context)
+}
+
+/** `DELETE /v1/destinations/:id/likes` — clear the caller's like/dislike. */
+export async function removeLikeHandler(context: InteractionContext): Promise<HTTPResponse<InteractionSummary>> {
+  const { user, entityId, entityType } = interactionActor(context)
+  await context.components.interactions.setLike({ entityId, entityType, user, like: null })
+  return summaryResponse(context)
 }
 
 /** `GET /v1/categories?target=destinations|events` — unified category listing. */

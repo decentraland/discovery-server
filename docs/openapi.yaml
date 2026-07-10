@@ -1069,6 +1069,16 @@ paths:
         - $ref: '#/components/parameters/Positions'
         - $ref: '#/components/parameters/WorldNames'
         - $ref: '#/components/parameters/Names'
+        - name: ids
+          in: query
+          description: Fetch specific destinations by id (place uuid or world id); repeated or comma-separated.
+          required: false
+          schema:
+            type: array
+            items:
+              type: string
+          style: form
+          explode: true
         - $ref: '#/components/parameters/OnlyHighlighted'
         - $ref: '#/components/parameters/OnlyFavorites'
         - $ref: '#/components/parameters/Owner'
@@ -1125,6 +1135,16 @@ paths:
         - $ref: '#/components/parameters/Positions'
         - $ref: '#/components/parameters/WorldNames'
         - $ref: '#/components/parameters/Names'
+        - name: ids
+          in: query
+          description: Fetch specific destinations by id (place uuid or world id); repeated or comma-separated.
+          required: false
+          schema:
+            type: array
+            items:
+              type: string
+          style: form
+          explode: true
         - $ref: '#/components/parameters/OnlyHighlighted'
         - $ref: '#/components/parameters/OnlyFavorites'
         - $ref: '#/components/parameters/Owner'
@@ -1136,30 +1156,6 @@ paths:
         - $ref: '#/components/parameters/WithConnectedUsers'
         - $ref: '#/components/parameters/Limit'
         - $ref: '#/components/parameters/Offset'
-      responses:
-        '200':
-          description: Matching destinations.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/DestinationListResponse'
-
-  /v1/destinations/batch:
-    post:
-      tags: [destinations, v1]
-      summary: Get destinations by ids/positions/world_names
-      description: Optional-signed. Capped at 100 results.
-      security:
-        - {}
-        - signedFetch: []
-      parameters:
-        - $ref: '#/components/parameters/With'
-      requestBody:
-        required: false
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/DestinationBatchBody'
       responses:
         '200':
           description: Matching destinations.
@@ -1186,25 +1182,15 @@ paths:
               schema:
                 $ref: '#/components/schemas/EventListResponse'
 
-  /v1/destinations/{id}/favorite:
+  /v1/destinations/{id}/favorites:
     parameters:
       - $ref: '#/components/parameters/DestinationId'
-    patch:
+    put:
       tags: [destinations, v1]
-      summary: Favorite/unfavorite a destination
+      summary: Favorite a destination
+      description: Favorites the destination for the authenticated caller (idempotent).
       security:
         - signedFetch: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [favorite]
-              additionalProperties: false
-              properties:
-                favorite:
-                  type: boolean
       responses:
         '200':
           description: Refreshed interaction summary.
@@ -1212,18 +1198,31 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/InteractionSummaryResponse'
-        '400':
-          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    delete:
+      tags: [destinations, v1]
+      summary: Remove a destination favorite
+      description: Removes the authenticated caller's favorite (idempotent).
+      security:
+        - signedFetch: []
+      responses:
+        '200':
+          description: Refreshed interaction summary.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InteractionSummaryResponse'
         '401':
           $ref: '#/components/responses/Unauthorized'
 
-  /v1/destinations/{id}/like:
+  /v1/destinations/{id}/likes:
     parameters:
       - $ref: '#/components/parameters/DestinationId'
-    patch:
+    put:
       tags: [destinations, v1]
-      summary: Like/dislike a destination
-      description: '`like: true` = like, `false` = dislike, `null` = clear.'
+      summary: Like or dislike a destination
+      description: '`like: true` = like, `false` = dislike. Clearing the vote is a DELETE.'
       security:
         - signedFetch: []
       requestBody:
@@ -1236,7 +1235,7 @@ paths:
               additionalProperties: false
               properties:
                 like:
-                  type: [boolean, 'null']
+                  type: boolean
       responses:
         '200':
           description: Refreshed interaction summary.
@@ -1246,6 +1245,21 @@ paths:
                 $ref: '#/components/schemas/InteractionSummaryResponse'
         '400':
           $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    delete:
+      tags: [destinations, v1]
+      summary: Clear a destination like/dislike
+      description: Removes the authenticated caller's like/dislike (idempotent).
+      security:
+        - signedFetch: []
+      responses:
+        '200':
+          description: Refreshed interaction summary.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InteractionSummaryResponse'
         '401':
           $ref: '#/components/responses/Unauthorized'
 

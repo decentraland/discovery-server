@@ -47,12 +47,14 @@ import {
 import { createAttendeeHandler, deleteAttendeeHandler, getAttendeesHandler } from './handlers/attendees-handler'
 import { getDestinationsByIdHandler, getDestinationsListHandler } from './handlers/destinations-handler'
 import {
+  addFavoriteHandler,
   getV1CategoriesHandler,
   getV1DestinationEventsHandler,
   getV1DestinationHandler,
   getV1EventHandler,
-  updateV1FavoriteHandler,
-  updateV1LikeHandler
+  putLikeHandler,
+  removeFavoriteHandler,
+  removeLikeHandler
 } from './handlers/v1-handlers'
 import { createReportHandler } from './handlers/report-handler'
 import {
@@ -99,16 +101,11 @@ export async function setupRouter(globalContext: GlobalContext): Promise<Router<
   // Events read/moderation routes: optional-signed, with the admin bearer unlocking
   // the admin view (pending/rejected/deleted) and moderation.
   const eventsAuth = createOptionalSignedOrAdminBearer(components.fetcher, adminTokens)
-  // Schema validation for v1 mutation bodies (validates a clone; the body stays readable).
-  const validateFavorite = components.schemaValidator.withSchemaValidatorMiddleware({
-    type: 'object',
-    properties: { favorite: { type: 'boolean' } },
-    required: ['favorite'],
-    additionalProperties: false
-  })
+  // Schema validation for the like body (validates a clone; the body stays readable).
+  // true = like, false = dislike; clearing is a DELETE, so null is not accepted here.
   const validateLike = components.schemaValidator.withSchemaValidatorMiddleware({
     type: 'object',
-    properties: { like: { type: ['boolean', 'null'] } },
+    properties: { like: { type: 'boolean' } },
     required: ['like'],
     additionalProperties: false
   })
@@ -197,14 +194,17 @@ export async function setupRouter(globalContext: GlobalContext): Promise<Router<
   // destinations — unified places+worlds discovery (legacy + new /v1 surface)
   // @deprecated — superseded by GET /v1/destinations
   router.get('/api/destinations', signedFetch({ optional: true }), getDestinationsListHandler)
-  // @deprecated — superseded by POST /v1/destinations/batch
+  // @deprecated — superseded by GET /v1/destinations?ids=
   router.post('/api/destinations', signedFetch({ optional: true }), getDestinationsByIdHandler)
+  // by-ids lookup is folded into the collection via ?ids=/?positions=/?world_names=
   router.get('/v1/destinations', signedFetch({ optional: true }), getDestinationsListHandler)
-  router.post('/v1/destinations/batch', signedFetch({ optional: true }), getDestinationsByIdHandler)
   // More specific v1 destination routes before the :id matcher.
   router.get('/v1/destinations/:id/events', signedFetch({ optional: true }), getV1DestinationEventsHandler)
-  router.patch('/v1/destinations/:id/favorite', signedFetch(), validateFavorite, updateV1FavoriteHandler)
-  router.patch('/v1/destinations/:id/like', signedFetch(), validateLike, updateV1LikeHandler)
+  // favorites / likes are sub-resources: PUT to set, DELETE to clear.
+  router.put('/v1/destinations/:id/favorites', signedFetch(), addFavoriteHandler)
+  router.delete('/v1/destinations/:id/favorites', signedFetch(), removeFavoriteHandler)
+  router.put('/v1/destinations/:id/likes', signedFetch(), validateLike, putLikeHandler)
+  router.delete('/v1/destinations/:id/likes', signedFetch(), removeLikeHandler)
   router.get('/v1/destinations/:id', signedFetch({ optional: true }), getV1DestinationHandler)
 
   // v1 events + categories (events reuse the admin-bearer-aware auth)

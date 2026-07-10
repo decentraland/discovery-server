@@ -13,11 +13,15 @@ const KIND_VALUES: DestinationKind[] = ['place', 'world']
 function parseFilters(params: URLSearchParams, user?: string): DestinationListFilters {
   const orderByParam = params.get('order_by') ?? undefined
   const kinds = multi(params, 'kinds')?.filter((k): k is DestinationKind => KIND_VALUES.includes(k as DestinationKind))
+  // positions are "x,y" tokens — use getAll so the comma isn't split.
+  const positions = params.getAll('positions').filter(Boolean)
   return {
     search: params.get('search') ?? undefined,
     categories: multi(params, 'categories'),
-    positions: multi(params, 'positions'),
+    positions: positions.length ? positions : undefined,
     worldNames: multi(params, 'world_names') ?? multi(params, 'names'),
+    // by-ids lookup (folded in from the old POST batch endpoint)
+    ids: multi(params, 'ids'),
     only_highlighted: params.get('only_highlighted') === 'true',
     only_favorites: params.get('only_favorites') === 'true',
     owner: params.get('owner') ?? undefined,

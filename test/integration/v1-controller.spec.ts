@@ -78,7 +78,17 @@ test('when serving the v1 discovery layer', function ({ components }) {
       })
     })
 
-    describe('and favoriting a destination via PATCH /v1/destinations/:id/favorite', () => {
+    describe('and requesting destinations by ids on the collection', () => {
+      it('should return only the requested destination (batch folded into the list)', async () => {
+        const response = await components.localFetch.fetch(`/v1/destinations?ids=${placeId}`)
+        const body = await response.json()
+
+        expect(response.status).toBe(200)
+        expect(body.data.map((d: any) => d.id)).toEqual([placeId])
+      })
+    })
+
+    describe('and managing the favorites sub-resource', () => {
       let identity: Awaited<ReturnType<typeof getIdentity>>
 
       beforeEach(async () => {
@@ -86,13 +96,11 @@ test('when serving the v1 discovery layer', function ({ components }) {
         identity = await getIdentity()
       })
 
-      it('should record the favorite and echo the refreshed summary', async () => {
-        const path = `/v1/destinations/${placeId}/favorite`
-        const headers = getSignedAuthHeaders('PATCH', path, {}, identity)
+      it('should favorite the destination on PUT', async () => {
+        const path = `/v1/destinations/${placeId}/favorites`
         const response = await components.localFetch.fetch(path, {
-          method: 'PATCH',
-          headers,
-          body: JSON.stringify({ favorite: true })
+          method: 'PUT',
+          headers: getSignedAuthHeaders('PUT', path, {}, identity)
         })
         const body = await response.json()
 
@@ -101,13 +109,51 @@ test('when serving the v1 discovery layer', function ({ components }) {
         expect(body.data.favorites).toBe(1)
       })
 
-      it('should reject a body that fails schema validation with a 400', async () => {
-        const path = `/v1/destinations/${placeId}/favorite`
-        const headers = getSignedAuthHeaders('PATCH', path, {}, identity)
+      it('should remove the favorite on DELETE', async () => {
+        const path = `/v1/destinations/${placeId}/favorites`
+        await components.localFetch.fetch(path, {
+          method: 'PUT',
+          headers: getSignedAuthHeaders('PUT', path, {}, identity)
+        })
         const response = await components.localFetch.fetch(path, {
-          method: 'PATCH',
-          headers,
-          body: JSON.stringify({ favorite: 'yes' })
+          method: 'DELETE',
+          headers: getSignedAuthHeaders('DELETE', path, {}, identity)
+        })
+        const body = await response.json()
+
+        expect(response.status).toBe(200)
+        expect(body.data.user_favorite).toBe(false)
+        expect(body.data.favorites).toBe(0)
+      })
+    })
+
+    describe('and managing the likes sub-resource', () => {
+      let identity: Awaited<ReturnType<typeof getIdentity>>
+
+      beforeEach(async () => {
+        await components.pg.query(SQL`DELETE FROM user_likes`)
+        identity = await getIdentity()
+      })
+
+      it('should record a like on PUT { like: true }', async () => {
+        const path = `/v1/destinations/${placeId}/likes`
+        const response = await components.localFetch.fetch(path, {
+          method: 'PUT',
+          headers: getSignedAuthHeaders('PUT', path, {}, identity),
+          body: JSON.stringify({ like: true })
+        })
+        const body = await response.json()
+
+        expect(response.status).toBe(200)
+        expect(body.data.user_like).toBe(true)
+      })
+
+      it('should reject a like body that fails schema validation with a 400', async () => {
+        const path = `/v1/destinations/${placeId}/likes`
+        const response = await components.localFetch.fetch(path, {
+          method: 'PUT',
+          headers: getSignedAuthHeaders('PUT', path, {}, identity),
+          body: JSON.stringify({ like: 'yes' })
         })
 
         expect(response.status).toBe(400)
