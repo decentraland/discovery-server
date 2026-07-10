@@ -73,8 +73,12 @@ export interface IEventsRepository {
   getLiveEntityIds(client: Queryable): Promise<{ placeIds: string[]; worldIds: string[] }>
   /** The earliest upcoming approved event per place/world id, as a global map (for the live-events cache). */
   getAllNextEvents(client: Queryable): Promise<Record<string, { id: string; name: string; next_start_at: string }>>
-  /** Recurrent, non-deleted events whose tracked next occurrence has passed but whose rule still has future dates. */
-  findRecurrentNeedingUpdate(client: Queryable, limit: number): Promise<Event[]>
+  /**
+   * Recurrent, non-deleted events whose tracked next occurrence has passed but whose rule still
+   * has future dates. `graceMs` delays picking up a just-finished occurrence so the notification
+   * crons can capture it first.
+   */
+  findRecurrentNeedingUpdate(client: Queryable, limit: number, graceMs?: number): Promise<Event[]>
   /** Approved, non-deleted events whose next_start_at falls in (since, until] (epoch ms). */
   findInStartWindow(client: Queryable, sinceMs: number, untilMs: number): Promise<Event[]>
   /** Approved, non-deleted events whose next_finish_at falls in (since, until] (epoch ms). */

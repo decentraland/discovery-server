@@ -90,6 +90,28 @@ test('when serving the v1 discovery layer', function ({ components }) {
       })
     })
 
+    describe('and the caching of per-user reads', () => {
+      let identity: Awaited<ReturnType<typeof getIdentity>>
+
+      beforeEach(async () => {
+        identity = await getIdentity()
+      })
+
+      it('should mark a signed read as private and uncacheable', async () => {
+        const response = await components.localFetch.fetch('/api/destinations', {
+          headers: getSignedAuthHeaders('GET', '/api/destinations', {}, identity)
+        })
+
+        expect(response.headers.get('cache-control')).toBe('private, no-store')
+      })
+
+      it('should not force no-store on an anonymous read', async () => {
+        const response = await components.localFetch.fetch('/api/destinations')
+
+        expect(response.headers.get('cache-control')).toBeNull()
+      })
+    })
+
     describe('and managing the favorites sub-resource', () => {
       let identity: Awaited<ReturnType<typeof getIdentity>>
 

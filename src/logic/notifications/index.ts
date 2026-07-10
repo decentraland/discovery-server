@@ -7,6 +7,15 @@ const UPCOMING_WINDOW_MS = 60 * 60 * 1000
 const CURSOR_STARTS_SOON = 'events_starts_soon'
 const CURSOR_STARTED = 'events_started'
 const CURSOR_ENDED = 'events_ended'
+// Cap how far back a cron catches up. During normal operation the window is one interval;
+// after downtime (or a stalled cursor) this bounds the query/fan-out and skips stale events
+// nobody wants a "starts soon"/"started" notification for anymore.
+const MAX_LOOKBACK_MS = 24 * 60 * 60 * 1000
+// Bound the description embedded in each SNS message so one event with a huge description
+// can't blow the 256KB PublishBatch limit and stall the cursor. Full text stays in the DB/API.
+const NOTIFICATION_DESCRIPTION_MAX = 1000
+
+const truncate = (text: string, max: number): string => (text.length > max ? text.slice(0, max) : text)
 
 export interface INotificationsComponent {
   /** Notify attendees of events entering the "starts within 1h" window. Returns count published. */
@@ -60,7 +69,9 @@ export async function createNotificationsComponent(
 
   async function lastRun(cursorId: string, now: number): Promise<number> {
     const cursor = await notificationCursorsRepository.get(pg, cursorId)
-    return cursor?.last_successful_run_at ?? now
+    // Never look back further than MAX_LOOKBACK_MS, so a stalled/old cursor can't make the
+    // window (and the per-event/per-community fan-out) grow without bound.
+    return Math.max(cursor?.last_successful_run_at ?? now, now - MAX_LOOKBACK_MS)
   }
 
   /**
@@ -93,7 +104,7 @@ export async function createNotificationsComponent(
             startsAt: (event.next_start_at ?? event.start_at).toISOString(),
             endsAt: (event.next_finish_at ?? event.finish_at).toISOString(),
             title: event.name,
-            description: event.description ?? '',
+            description: truncate(event.description ?? '', NOTIFICATION_DESCRIPTION_MAX),
             attendee: attendee.user
           }
         } as never)
@@ -135,7 +146,7 @@ export async function createNotificationsComponent(
             image: event.image ?? '',
             link: link(event),
             title: event.name,
-            description: event.description ?? '',
+            description: truncate(event.description ?? '', NOTIFICATION_DESCRIPTION_MAX),
             attendee: recipient,
             ...(event.community_id ? { communityId: event.community_id } : {})
           }

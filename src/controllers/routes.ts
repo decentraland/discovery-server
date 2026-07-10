@@ -1,6 +1,7 @@
 import { Router, createBodySizeLimitMiddleware } from '@dcl/http-server'
 import type { GlobalContext } from '../types'
 import { errorHandler } from './middlewares/error-handler'
+import { cacheControlForAuthenticated } from './middlewares/cache-control'
 import { createSignedFetchMiddleware } from './middlewares/signed-fetch'
 import { pingHandler } from './handlers/ping-handler'
 import { statusHandler } from './handlers/status-handler'
@@ -116,6 +117,8 @@ export async function setupRouter(globalContext: GlobalContext): Promise<Router<
   // the 500KB poster upload; JSON list/search bodies are far smaller.
   const maxBodySize = (await components.config.getNumber('HTTP_MAX_BODY_SIZE')) ?? 1024 * 1024
   router.use(createBodySizeLimitMiddleware(maxBodySize))
+  // Signed (per-user) responses must never be served from a shared cache to another user.
+  router.use(cacheControlForAuthenticated)
 
   router.get('/ping', pingHandler)
   router.get('/api/status', statusHandler)

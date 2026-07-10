@@ -122,5 +122,17 @@ test('when discovering destinations', function ({ components }) {
       expect(body.data).toHaveLength(1)
       expect(body.data[0].id).toBe(placeId)
     })
+
+    it('should return an empty set when every requested id is invalid, not the full list', async () => {
+      const response = await components.localFetch.fetch('/api/destinations', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ ids: ['not-a-uuid'] })
+      })
+      const body = await response.json()
+
+      expect(response.status).toBe(200)
+      expect(body.data).toEqual([])
+    })
   })
 })

@@ -53,6 +53,7 @@ function parseFilters(params: URLSearchParams, ctx: ListContext = {}): EventList
   // Positions are "x,y" tokens — use getAll (not multiParam) so the comma isn't split.
   const single = params.get('position')
   const positionValues = params.getAll('positions').filter(Boolean)
+  if (positionValues.length > MAX_BATCH_ITEMS) throw new BadRequestError(`Too many positions (max ${MAX_BATCH_ITEMS})`)
   const positions = single ? [single] : positionValues.length ? positionValues : undefined
 
   return {
@@ -162,7 +163,10 @@ export async function searchEventsHandler(
   if (Array.isArray(body.placeIds) && body.placeIds.length) {
     if (body.placeIds.length > MAX_BATCH_ITEMS) throw new BadRequestError(`Too many placeIds (max ${MAX_BATCH_ITEMS})`)
     // Keep only well-formed uuids so a bad id can't 500 the `::uuid[]` cast.
-    filters.placeIds = body.placeIds.filter((id: unknown): id is string => typeof id === 'string' && isPlaceId(id))
+    const valid = body.placeIds.filter((id: unknown): id is string => typeof id === 'string' && isPlaceId(id))
+    // The caller filtered by specific places; if none are valid ids, nothing matches.
+    if (!valid.length) return { status: 200, body: { ok: true, data: [], total: 0 } }
+    filters.placeIds = valid
   }
   if (typeof body.communityId === 'string') filters.communityId = body.communityId
 

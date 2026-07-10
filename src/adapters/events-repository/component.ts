@@ -244,13 +244,15 @@ export function createEventsRepository(): IEventsRepository {
     return byEntity
   }
 
-  async function findRecurrentNeedingUpdate(client: Queryable, limit: number): Promise<Event[]> {
+  async function findRecurrentNeedingUpdate(client: Queryable, limit: number, graceMs = 0): Promise<Event[]> {
+    // The grace delays advancing a just-finished occurrence so the per-minute notify crons
+    // (started/ended) get a cycle to capture it before next_start_at/next_finish_at move on.
     const result = await client.query<Event>(SQL`
       SELECT * FROM events
       WHERE recurrent IS true
         AND deleted_at IS NULL
         AND finish_at > now()
-        AND (next_finish_at IS NULL OR next_finish_at <= now())
+        AND (next_finish_at IS NULL OR next_finish_at <= now() - ${graceMs} * interval '1 millisecond')
       ORDER BY next_finish_at ASC NULLS FIRST
       LIMIT ${limit}`)
     return result.rows

@@ -8,6 +8,9 @@ export type IngestionResult = { processed: boolean; placeId?: string; reason?: s
 // not accepted from an automated deployment (moderators lower ratings explicitly).
 const RATING_RANK: Record<string, number> = { RP: 0, E: 1, T: 2, A: 3, R: 4 }
 
+// Collapse newlines/control chars so an untrusted SQS field can't forge extra log lines.
+const oneLine = (value: string): string => value.replace(/[\r\n\t]+/g, ' ')
+
 type WorldSettingsChangedMetadata = {
   worldName: string
   title?: string
@@ -67,6 +70,13 @@ export async function createIngestionComponent(
 
     const owner = event.authChain?.[0]?.payload?.toLowerCase() ?? null
 
+    // Guard the untrusted timestamp: a bad value would throw a RangeError from toISOString()
+    // and the (idempotent) message would be dropped by the consumer. Skip cleanly instead.
+    const deployedAt = new Date(entity.timestamp)
+    if (Number.isNaN(deployedAt.getTime())) {
+      return { processed: false, reason: `scene deployment with an invalid timestamp: ${entity.timestamp}` }
+    }
+
     const place = await placesRepository.upsertScene(pg, {
       base_position: base,
       positions: metadata.scene?.parcels?.length ? metadata.scene.parcels : [base],
@@ -78,10 +88,10 @@ export async function createIngestionComponent(
       contact_email: metadata.contact?.email ?? null,
       categories: metadata.tags ?? [],
       sdk: null,
-      deployed_at: new Date(entity.timestamp).toISOString()
+      deployed_at: deployedAt.toISOString()
     })
 
-    logger.info(`Ingested scene deployment at ${base} -> place ${place.id}`)
+    logger.info(`Ingested scene deployment at ${oneLine(base)} -> place ${place.id}`)
     return { processed: true, placeId: place.id }
   }
 
@@ -101,7 +111,7 @@ export async function createIngestionComponent(
     // not a downgrade of the stored one (moderators lower ratings explicitly, not automation).
     let contentRating = metadata.contentRating?.toUpperCase()
     if (contentRating && !(contentRating in RATING_RANK)) {
-      logger.warn(`Ignoring unknown content-rating for ${id}: ${metadata.contentRating}`)
+      logger.warn(`Ignoring unknown content-rating for ${oneLine(id)}: ${oneLine(metadata.contentRating ?? '')}`)
       contentRating = undefined
     }
     if (contentRating && existing?.content_rating) {
@@ -134,7 +144,7 @@ export async function createIngestionComponent(
     }
     await worldsRepository.upsert(pg, input)
 
-    logger.info(`Ingested world settings for ${id}`)
+    logger.info(`Ingested world settings for ${oneLine(id)}`)
     return { processed: true }
   }
 
@@ -151,7 +161,7 @@ export async function createIngestionComponent(
     const positions = scenes.map((scene) => scene.baseParcel).filter(Boolean)
     const disabled = await placesRepository.disableByWorldIdAndPositions(pg, worldName.toLowerCase(), positions, before)
 
-    logger.info(`Undeployed ${disabled} places for world ${worldName.toLowerCase()}`)
+    logger.info(`Undeployed ${disabled} places for world ${oneLine(worldName.toLowerCase())}`)
     return { processed: true }
   }
 

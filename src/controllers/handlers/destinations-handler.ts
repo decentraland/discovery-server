@@ -23,6 +23,7 @@ function parseFilters(params: URLSearchParams, user?: string): DestinationListFi
   const kinds = multi(params, 'kinds')?.filter((k): k is DestinationKind => KIND_VALUES.includes(k as DestinationKind))
   // positions are "x,y" tokens — use getAll so the comma isn't split.
   const positions = params.getAll('positions').filter(Boolean)
+  if (positions.length > MAX_BATCH_ITEMS) throw new BadRequestError(`Too many positions (max ${MAX_BATCH_ITEMS})`)
   return {
     search: params.get('search') ?? undefined,
     categories: multi(params, 'categories'),
@@ -76,6 +77,13 @@ export async function getDestinationsByIdHandler(
   const ids = boundedList(body.ids)
   const positions = boundedList(body.positions)
   const worldNames = boundedList(body.world_names)
+
+  // This is a by-id lookup: if the caller provided selectors but none survived validation,
+  // the answer is "nothing matches" — don't fall through to the full unfiltered list.
+  const provided = Array.isArray(body.ids) || Array.isArray(body.positions) || Array.isArray(body.world_names)
+  if (provided && !ids?.length && !positions?.length && !worldNames?.length) {
+    return { status: 200, body: { ok: true, data: [], total: 0 } }
+  }
 
   const { data, total } = await destinations.getDestinations(
     { ids, positions, worldNames, user, limit: 100 },

@@ -30,7 +30,7 @@ describe('when creating an event', () => {
         getEstateImage: jest.fn((id: string) => `https://land/estates/${id}.png`),
         getParcelImage: jest.fn((x: number, y: number) => `https://land/parcels/${x}/${y}.png`)
       },
-      config: { getString: jest.fn().mockResolvedValue(undefined) },
+      config: { getString: jest.fn().mockResolvedValue(undefined), getNumber: jest.fn().mockResolvedValue(undefined) },
       logs: { getLogger: () => ({ info: jest.fn(), error: jest.fn(), warn: jest.fn(), debug: jest.fn() }) }
     }
   })
@@ -46,6 +46,19 @@ describe('when creating an event', () => {
       await expect(events.createEvent({ start_at: new Date().toISOString() } as any, '0xUSER')).rejects.toThrow(
         EventValidationError
       )
+    })
+  })
+
+  describe('and the payload has an invalid finish_at', () => {
+    it('should throw an EventValidationError', async () => {
+      const events = await createEventsComponent(components)
+
+      await expect(
+        events.createEvent(
+          { name: 'Bad', start_at: new Date().toISOString(), finish_at: 'not-a-date' } as any,
+          '0xUSER'
+        )
+      ).rejects.toThrow(EventValidationError)
     })
   })
 

@@ -85,6 +85,9 @@ export async function createEventsComponent(
       .map((address) => address.trim().toLowerCase())
       .filter(Boolean)
   )
+  // Delay advancing a just-finished recurrent occurrence so the per-minute notify crons can
+  // fire first. Should exceed the notification interval; defaults to two minutes.
+  const recurrenceUpdateGraceMs = (await config.getNumber('RECURRENCE_UPDATE_GRACE_MS')) ?? 120_000
   const alert = (text: string) => {
     void slackNotifier.notify(text, eventsChannel)
   }
@@ -242,6 +245,7 @@ export async function createEventsComponent(
 
     const duration =
       payload.duration ?? (payload.finish_at ? new Date(payload.finish_at).getTime() - start_at.getTime() : 0)
+    if (Number.isNaN(duration)) throw new EventValidationError('duration or finish_at is invalid')
     if (duration < 0) throw new EventValidationError('duration must be non-negative')
     if (duration > MAX_EVENT_DURATION_MS) throw new EventValidationError('duration exceeds the maximum of one day')
 
@@ -372,8 +376,10 @@ export async function createEventsComponent(
     // Timing / recurrence: recompute the materialized window from the merged rule.
     if (RECURRENCE_KEYS.some((key) => key in patch)) {
       const start_at = patch.start_at ? new Date(patch.start_at) : event.start_at
+      if (Number.isNaN(start_at.getTime())) throw new EventValidationError('start_at is invalid')
       const duration =
         patch.duration ?? (patch.finish_at ? new Date(patch.finish_at).getTime() - start_at.getTime() : event.duration)
+      if (Number.isNaN(duration)) throw new EventValidationError('duration or finish_at is invalid')
       if (duration < 0) throw new EventValidationError('duration must be non-negative')
       if (duration > MAX_EVENT_DURATION_MS) throw new EventValidationError('duration exceeds the maximum of one day')
 
@@ -466,7 +472,7 @@ export async function createEventsComponent(
   }
 
   async function updateNextStartAt(batchSize = 100): Promise<number> {
-    const events = await eventsRepository.findRecurrentNeedingUpdate(pg, batchSize)
+    const events = await eventsRepository.findRecurrentNeedingUpdate(pg, batchSize, recurrenceUpdateGraceMs)
     let updated = 0
     for (const event of events) {
       if (recurrence.estimateRecurrentPastIterations(event as never) > MAX_RECURRENT_PAST_ITERATIONS) continue

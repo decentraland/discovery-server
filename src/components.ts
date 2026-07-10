@@ -308,9 +308,28 @@ export async function initComponents(): Promise<AppComponents> {
   if (backgroundJobsEnabled && sqsQueueUrl) {
     const sqs = await createSqsComponent(config)
     queueProcessor = createQueueConsumerComponent({ sqs, logs })
+    // The consumer deletes each message whether the handler succeeds or throws (no requeue),
+    // so absorb transient failures (DB blips, subgraph hiccups) in-process with a few quick
+    // retries before giving up. Ingestion is idempotent, so a retry (or an SQS redelivery) is
+    // safe. A handled skip returns `{ processed: false }` and does not throw, so it never retries.
+    const retryAttempts = (await config.getNumber('SQS_HANDLER_RETRY_ATTEMPTS')) ?? 3
+    const withRetry =
+      (handler: (message: unknown) => Promise<unknown>) =>
+      async (message: unknown): Promise<unknown> => {
+        let lastError: unknown
+        for (let attempt = 1; attempt <= retryAttempts; attempt++) {
+          try {
+            return await handler(message)
+          } catch (error) {
+            lastError = error
+            if (attempt < retryAttempts) await new Promise((resolve) => setTimeout(resolve, 200 * attempt))
+          }
+        }
+        throw lastError
+      }
     const withMetrics = (handler: (message: unknown) => Promise<unknown>) => async (message: unknown) => {
       try {
-        await handler(message)
+        await withRetry(handler)(message)
         metrics.increment('sqs_messages_processed_total', { result: 'success' })
       } catch (error) {
         metrics.increment('sqs_messages_processed_total', { result: 'error' })
