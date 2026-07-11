@@ -294,7 +294,6 @@ export async function createEventsComponent(
 
     const location = await resolveLocation(payload)
     const presentation = await resolvePresentation(payload, location.world)
-    const canApprove = await profiles.hasAnyPermission(user, [Permission.ApproveOwnEvent, Permission.ApproveAnyEvent])
     const row: CreateEventRow = {
       name: payload.name,
       image: presentation.image,
@@ -331,9 +330,11 @@ export async function createEventsComponent(
       user_name: payload.user_name ?? null,
       contact: payload.contact ?? null,
       details: payload.details ?? null,
-      approved: canApprove,
+      // Every event is created unapproved and requires an explicit moderator approval —
+      // no creator (even one who can approve events) self-approves on create (legacy parity).
+      approved: false,
       rejected: false,
-      approved_by: canApprove ? user.toLowerCase() : null,
+      approved_by: null,
       rejected_by: null,
       rejection_reason: null,
       highlighted: false,

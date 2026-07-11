@@ -64,11 +64,7 @@ test('when moderating and viewing events', function ({ components }) {
         show_in_places: true
       })
       const owner = await getIdentity()
-      // Grant self-approval so the event is public and anonymously fetchable.
-      await components.profileSettingsRepository.upsertPermissions(components.pg, owner.realAccount.address, [
-        ProfilePermission.ApproveOwnEvent
-      ])
-      await components.events.createEvent(
+      const created = await components.events.createEvent(
         {
           name: 'World event',
           start_at: new Date(Date.now() + HOUR_MS).toISOString(),
@@ -78,6 +74,8 @@ test('when moderating and viewing events', function ({ components }) {
         },
         owner.realAccount.address
       )
+      // Events are created unapproved; approve it so it is publicly (anonymously) fetchable.
+      await components.events.updateEvent(created.id, { approved: true }, '0xadmin', { isAdmin: true })
     })
 
     it('should serve place_id as the world id (legacy contract)', async () => {
@@ -222,7 +220,7 @@ test('when managing events over the API', function ({ components }) {
       expect(body.data.recurrent_dates.length).toBeGreaterThan(1)
     })
 
-    it('should create an approved event when the creator can approve their own events', async () => {
+    it('should create the event unapproved even when the creator can approve their own events', async () => {
       await components.profileSettingsRepository.upsertPermissions(components.pg, identity.realAccount.address, [
         ProfilePermission.ApproveOwnEvent
       ])
@@ -233,7 +231,7 @@ test('when managing events over the API', function ({ components }) {
         method: 'POST',
         headers: { ...headers, 'content-type': 'application/json' },
         body: JSON.stringify({
-          name: 'Approved',
+          name: 'Pending',
           start_at: new Date(Date.now() + HOUR_MS).toISOString(),
           duration: HOUR_MS,
           x: 0,
@@ -241,8 +239,10 @@ test('when managing events over the API', function ({ components }) {
         })
       })
 
+      // Every event requires an explicit moderator approval — it is not auto-approved on
+      // create, so it does not appear in the public (approved-only) list.
       const publicList = await (await components.localFetch.fetch('/api/events')).json()
-      expect(publicList.total).toBe(1)
+      expect(publicList.total).toBe(0)
     })
   })
 

@@ -132,7 +132,7 @@ describe('when creating an event', () => {
       components.eventsRepository.create.mockImplementation(async (_c: unknown, row: any) => ({ id: 'e1', ...row }))
     })
 
-    it('should create the event already approved and stamped by the creator', async () => {
+    it('should still create the event unapproved (every event requires moderator approval)', async () => {
       const events = await createEventsComponent(components)
       await events.createEvent(
         { name: 'Party', start_at: new Date(Date.now() + 3600_000).toISOString(), x: 0, y: 0 },
@@ -141,7 +141,7 @@ describe('when creating an event', () => {
 
       expect(components.eventsRepository.create).toHaveBeenCalledWith(
         components.pg,
-        expect.objectContaining({ approved: true, approved_by: '0xuser' })
+        expect.objectContaining({ approved: false, approved_by: null })
       )
     })
   })
