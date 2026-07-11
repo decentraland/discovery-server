@@ -31,6 +31,16 @@ function toRRuleWeekdays(mask: number): Weekday[] {
   ].filter(Boolean) as Weekday[]
 }
 
+/**
+ * Coerce the interval to a positive integer. A negative or non-numeric interval makes
+ * `rrule.between()` loop forever (blocking the single-threaded event loop), which the
+ * past-iterations guard doesn't catch, so clamp it defensively at the engine boundary.
+ */
+function sanitizeInterval(value: number | null | undefined): number {
+  const n = Math.trunc(Number(value))
+  return Number.isFinite(n) && n >= 1 ? n : 1
+}
+
 function toRRule(options: RecurrentEventInput): RRule | null {
   if (
     !options.start_at ||
@@ -44,7 +54,7 @@ function toRRule(options: RecurrentEventInput): RRule | null {
   return new RRule({
     dtstart: options.start_at,
     freq: RRule[options.recurrent_frequency],
-    interval: options.recurrent_interval || 1,
+    interval: sanitizeInterval(options.recurrent_interval),
     until: options.recurrent_until ?? undefined,
     count: options.recurrent_count ?? undefined,
     byweekday: options.recurrent_weekday_mask ? toRRuleWeekdays(options.recurrent_weekday_mask) : undefined,
@@ -124,13 +134,15 @@ export function createRecurrenceComponent(): IRecurrenceComponent {
 
     if (event.recurrent && event.recurrent_frequency && (event.recurrent_count || event.recurrent_until)) {
       recurrent.recurrent = event.recurrent
-      recurrent.recurrent_interval = event.recurrent_interval || 1
+      recurrent.recurrent_interval = sanitizeInterval(event.recurrent_interval)
       recurrent.recurrent_frequency = event.recurrent_frequency
-      recurrent.recurrent_setpos = event.recurrent_setpos ?? null
-      recurrent.recurrent_monthday = event.recurrent_monthday ?? null
+      // `|| null` (not `?? null`) so a 0 means "unset" — 0 is not a valid rrule
+      // setpos/monthday (it throws / yields no dates) and 0 count means "no limit".
+      recurrent.recurrent_setpos = event.recurrent_setpos || null
+      recurrent.recurrent_monthday = event.recurrent_monthday || null
       recurrent.recurrent_weekday_mask = event.recurrent_weekday_mask || 0
       recurrent.recurrent_month_mask = event.recurrent_month_mask || 0
-      recurrent.recurrent_count = event.recurrent_count ?? null
+      recurrent.recurrent_count = event.recurrent_count || null
       recurrent.recurrent_until = event.recurrent_until ? new Date(event.recurrent_until) : null
 
       const recurrent_dates = futureRecurrentDates(recurrent)

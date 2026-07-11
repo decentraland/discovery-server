@@ -167,6 +167,22 @@ export async function createEventsComponent(
     if (input.recurrent && input.recurrent_frequency && !AllowedInputFrequencies.includes(input.recurrent_frequency)) {
       throw new EventValidationError(`unsupported recurrent_frequency: ${input.recurrent_frequency}`)
     }
+    // Bound the numeric recurrence inputs (legacy schema: interval 1..1000, count 0..1000).
+    // A negative/non-integer interval would otherwise hang rrule; the engine also clamps.
+    if (input.recurrent) {
+      if (input.recurrent_interval !== undefined && input.recurrent_interval !== null) {
+        const interval = Number(input.recurrent_interval)
+        if (!Number.isInteger(interval) || interval < 1 || interval > 1000) {
+          throw new EventValidationError('recurrent_interval must be an integer between 1 and 1000')
+        }
+      }
+      if (input.recurrent_count !== undefined && input.recurrent_count !== null) {
+        const count = Number(input.recurrent_count)
+        if (!Number.isInteger(count) || count < 0 || count > 1000) {
+          throw new EventValidationError('recurrent_count must be an integer between 0 and 1000')
+        }
+      }
+    }
     const guardInput = {
       recurrent: input.recurrent ?? false,
       recurrent_frequency: input.recurrent_frequency ?? null,

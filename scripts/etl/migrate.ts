@@ -9,10 +9,13 @@ import type { Pool, PoolClient } from 'pg'
  *
  * Transforms mirror the DB plan:
  * - gatsby CHAR columns are btrimmed and cast to native uuid/text;
- * - the places/worlds tables use gatsby `Type.TimeStampTZ` which is actually
- *   `timestamp WITHOUT time zone` (naive), so their timestamps are read
- *   `AT TIME ZONE 'UTC'`. The events table was migrated to real `timestamptz`
- *   long ago, so its timestamps are copied verbatim;
+ * - timezone handling is per-column, not per-DB: the places/worlds tables, the
+ *   events `profile_settings` (gatsby `Type.TimeStampTZ`, which is misleadingly a naive
+ *   `timestamp WITHOUT time zone`), and the two never-converted naive columns
+ *   `events.deleted_at` + `event_attendees.created_at` are all read `AT TIME ZONE 'UTC'`;
+ *   the events table's own timestamps (start_at, finish_at, next_start_at, next_finish_at,
+ *   recurrent_until, recurrent_dates, created_at, updated_at) and the `schedule` table were
+ *   migrated to real `timestamptz` and are copied verbatim;
  * - the polymorphic events.place_id is split into place_id (uuid) / world_id (text);
  * - likes/favorites/content-ratings gain an explicit entity_type and legacy world
  *   interactions keyed by a world's place-uuid are re-pointed to the world id;
@@ -104,7 +107,12 @@ export async function migrateWorlds(pools: EtlPools, options: EtlOptions = {}): 
              like_score, highlighted, highlighted_image, ranking, created_at, updated_at)
            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22)
            ON CONFLICT (id) DO UPDATE SET world_name = EXCLUDED.world_name, title = EXCLUDED.title,
-             description = EXCLUDED.description, image = EXCLUDED.image, updated_at = EXCLUDED.updated_at`,
+             description = EXCLUDED.description, image = EXCLUDED.image, content_rating = EXCLUDED.content_rating,
+             categories = EXCLUDED.categories, owner = EXCLUDED.owner, show_in_places = EXCLUDED.show_in_places,
+             single_player = EXCLUDED.single_player, skybox_time = EXCLUDED.skybox_time,
+             is_private = EXCLUDED.is_private, highlighted = EXCLUDED.highlighted,
+             highlighted_image = EXCLUDED.highlighted_image, ranking = EXCLUDED.ranking,
+             updated_at = EXCLUDED.updated_at`,
           [
             String(w.id).toLowerCase(), w.world_name, w.title, w.description, w.image, w.content_rating, w.categories,
             w.owner, w.show_in_places, w.single_player, w.skybox_time, w.is_private, w.likes, w.dislikes, w.favorites,
@@ -147,8 +155,14 @@ export async function migratePlaces(pools: EtlPools, options: EtlOptions = {}): 
              deployed_at, categories, sdk, textsearch, created_at, updated_at)
            VALUES ($1::uuid,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31)
            ON CONFLICT (id) DO UPDATE SET title = EXCLUDED.title, description = EXCLUDED.description,
-             image = EXCLUDED.image, positions = EXCLUDED.positions, categories = EXCLUDED.categories,
-             disabled = EXCLUDED.disabled, deployed_at = EXCLUDED.deployed_at, textsearch = EXCLUDED.textsearch,
+             image = EXCLUDED.image, owner = EXCLUDED.owner, creator_address = EXCLUDED.creator_address,
+             positions = EXCLUDED.positions, base_position = EXCLUDED.base_position,
+             contact_name = EXCLUDED.contact_name, contact_email = EXCLUDED.contact_email,
+             content_rating = EXCLUDED.content_rating, ranking = EXCLUDED.ranking, highlighted = EXCLUDED.highlighted,
+             highlighted_image = EXCLUDED.highlighted_image, disabled = EXCLUDED.disabled,
+             disabled_at = EXCLUDED.disabled_at, disabled_reason = EXCLUDED.disabled_reason,
+             world_name = EXCLUDED.world_name, world_id = EXCLUDED.world_id, deployed_at = EXCLUDED.deployed_at,
+             categories = EXCLUDED.categories, sdk = EXCLUDED.sdk, textsearch = EXCLUDED.textsearch,
              updated_at = EXCLUDED.updated_at`,
           [
             p.id, p.title, p.description, p.image, p.owner, p.creator_address, p.positions, p.base_position,
@@ -228,7 +242,8 @@ export async function migrateEvents(pools: EtlPools, options: EtlOptions = {}): 
             recurrent_dates, x, y, server, world, estate_id, estate_name, scene_name, place_id, community_id, url,
             "user", user_name, contact, details, approved, rejected, approved_by, rejected_by, rejection_reason,
             highlighted, total_attendees, latest_attendees, categories, schedules, textsearch, deleted_by_user,
-            deleted_by_admin, deleted_by, deleted_at, deleted_reason, created_at, updated_at
+            deleted_by_admin, deleted_by, deleted_at AT TIME ZONE 'UTC' AS deleted_at, deleted_reason,
+            created_at, updated_at
      FROM events${where}`,
     params
   )
@@ -279,8 +294,11 @@ export async function migrateEvents(pools: EtlPools, options: EtlOptions = {}): 
 
         // Legacy duration is BIGINT (node-pg returns it as a string); the target column is
         // int4 ms, so coerce and cap pathological values instead of overflowing.
-        let duration: number | null = e.duration === null || e.duration === undefined ? null : Number(e.duration)
-        if (duration !== null && duration > INT4_MAX) {
+        // Target column is `integer NOT NULL`; coalesce a null/non-numeric legacy duration to 0
+        // (a null would otherwise abort the whole events transaction) and cap int4 overflow.
+        let duration = e.duration === null || e.duration === undefined ? 0 : Number(e.duration)
+        if (!Number.isFinite(duration)) duration = 0
+        if (duration > INT4_MAX) {
           duration = INT4_MAX
           cappedDurations++
         }
@@ -296,9 +314,26 @@ export async function migrateEvents(pools: EtlPools, options: EtlOptions = {}): 
            VALUES ($1::uuid,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,
              $26,$27,$28,$29::uuid,$30,$31,$32,$33,$34,$35,$36,$37,$38,$39,$40,$41,$42,$43,$44,$45,$46,$47,$48,$49,
              $50,$51,$52,$53,$54)
-           ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, next_start_at = EXCLUDED.next_start_at,
-             next_finish_at = EXCLUDED.next_finish_at, place_id = EXCLUDED.place_id, world_id = EXCLUDED.world_id,
-             updated_at = EXCLUDED.updated_at`,
+           ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, image = EXCLUDED.image,
+             image_vertical = EXCLUDED.image_vertical, description = EXCLUDED.description,
+             start_at = EXCLUDED.start_at, finish_at = EXCLUDED.finish_at, duration = EXCLUDED.duration,
+             all_day = EXCLUDED.all_day, next_start_at = EXCLUDED.next_start_at,
+             next_finish_at = EXCLUDED.next_finish_at, recurrent = EXCLUDED.recurrent,
+             recurrent_frequency = EXCLUDED.recurrent_frequency, recurrent_setpos = EXCLUDED.recurrent_setpos,
+             recurrent_monthday = EXCLUDED.recurrent_monthday, recurrent_weekday_mask = EXCLUDED.recurrent_weekday_mask,
+             recurrent_month_mask = EXCLUDED.recurrent_month_mask, recurrent_interval = EXCLUDED.recurrent_interval,
+             recurrent_count = EXCLUDED.recurrent_count, recurrent_until = EXCLUDED.recurrent_until,
+             recurrent_dates = EXCLUDED.recurrent_dates, x = EXCLUDED.x, y = EXCLUDED.y, server = EXCLUDED.server,
+             world = EXCLUDED.world, estate_id = EXCLUDED.estate_id, estate_name = EXCLUDED.estate_name,
+             scene_name = EXCLUDED.scene_name, place_id = EXCLUDED.place_id, world_id = EXCLUDED.world_id,
+             community_id = EXCLUDED.community_id, url = EXCLUDED.url, user_name = EXCLUDED.user_name,
+             contact = EXCLUDED.contact, details = EXCLUDED.details, approved = EXCLUDED.approved,
+             rejected = EXCLUDED.rejected, approved_by = EXCLUDED.approved_by, rejected_by = EXCLUDED.rejected_by,
+             rejection_reason = EXCLUDED.rejection_reason, highlighted = EXCLUDED.highlighted,
+             categories = EXCLUDED.categories, schedules = EXCLUDED.schedules, textsearch = EXCLUDED.textsearch,
+             deleted_by_user = EXCLUDED.deleted_by_user, deleted_by_admin = EXCLUDED.deleted_by_admin,
+             deleted_by = EXCLUDED.deleted_by, deleted_at = EXCLUDED.deleted_at,
+             deleted_reason = EXCLUDED.deleted_reason, updated_at = EXCLUDED.updated_at`,
           [
             e.id, e.name, e.image, e.image_vertical, e.description, e.start_at, e.finish_at, duration, e.all_day,
             e.next_start_at, e.next_finish_at, e.recurrent, e.recurrent_frequency, e.recurrent_setpos,
@@ -322,7 +357,8 @@ export async function migrateEvents(pools: EtlPools, options: EtlOptions = {}): 
 /** Event attendees (native uuid event_id, tz created_at). Recompute the event counters after. */
 export async function migrateEventAttendees(pools: EtlPools, options: EtlOptions = {}): Promise<TableReport> {
   const { rows } = await pools.eventsSource.query(
-    `SELECT event_id, "user", user_name, created_at FROM event_attendees`
+    // event_attendees.created_at is a naive `timestamp` (never converted); read it as UTC.
+    `SELECT event_id, "user", user_name, created_at AT TIME ZONE 'UTC' AS created_at FROM event_attendees`
   )
   // Only attach attendees whose event survived the events load.
   const eventIds = new Set((await pools.target.query<{ id: string }>(`SELECT id::text AS id FROM events`)).rows.map((r) => r.id))
@@ -513,7 +549,7 @@ export async function recomputeEntityAggregates(pools: EtlPools, options: EtlOpt
                        ELSE lk.active_likes::float / lk.active_total END,
       like_score = CASE WHEN coalesce(lk.active_likes, 0) + coalesce(lk.active_dislikes, 0) > 0 THEN
         ((lk.active_likes + 1.9208) / (lk.active_likes + lk.active_dislikes)
-          - 1.96 * SQRT((lk.active_likes * lk.active_dislikes)::float / (lk.active_likes + lk.active_dislikes) + 0.9604)
+          - 1.96 * SQRT((lk.active_likes * lk.active_dislikes) / (lk.active_likes + lk.active_dislikes) + 0.9604)
           / (lk.active_likes + lk.active_dislikes))
         / (1 + 3.8416 / (lk.active_likes + lk.active_dislikes))
         ELSE NULL END

@@ -72,6 +72,27 @@ describe('when creating an event', () => {
     })
   })
 
+  describe('and the payload has an out-of-range recurrent_interval', () => {
+    it('should throw an EventValidationError', async () => {
+      const events = await createEventsComponent(components)
+
+      await expect(
+        events.createEvent(
+          {
+            name: 'Bad',
+            start_at: new Date().toISOString(),
+            duration: 3600000,
+            recurrent: true,
+            recurrent_frequency: 'DAILY',
+            recurrent_interval: -2,
+            recurrent_count: 3
+          } as any,
+          '0xUSER'
+        )
+      ).rejects.toThrow(EventValidationError)
+    })
+  })
+
   describe('and the creator has no approval permission', () => {
     beforeEach(() => {
       components.eventsRepository.create.mockImplementation(async (_c: unknown, row: any) => ({ id: 'e1', ...row }))

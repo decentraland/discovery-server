@@ -60,6 +60,49 @@ describe('when calculating recurrent properties', () => {
     })
   })
 
+  describe('and the interval is negative', () => {
+    let input: RecurrentEventInput
+
+    beforeEach(() => {
+      // A negative interval would make rrule.between() loop forever without the clamp;
+      // this test hangs (jest timeout) if the sanitizer regresses.
+      input = baseInput({
+        recurrent: true,
+        recurrent_frequency: Frequency.DAILY,
+        recurrent_count: 5,
+        recurrent_interval: -2
+      })
+    })
+
+    it('should clamp the interval and still materialize occurrences', () => {
+      const result = recurrence.calculateRecurrentProperties(input)
+
+      expect(result.recurrent_dates.length).toBeGreaterThan(1)
+    })
+  })
+
+  describe('and a count of 0 is combined with an until bound', () => {
+    let input: RecurrentEventInput
+
+    beforeEach(() => {
+      const start_at = new Date(Date.now() + DAY_MS)
+      input = baseInput({
+        start_at,
+        finish_at: new Date(start_at.getTime() + 60 * 60 * 1000),
+        recurrent: true,
+        recurrent_frequency: Frequency.DAILY,
+        recurrent_count: 0,
+        recurrent_until: new Date(start_at.getTime() + 10 * DAY_MS)
+      })
+    })
+
+    it('should treat the 0 count as unset and let the until bound drive the series', () => {
+      const result = recurrence.calculateRecurrentProperties(input)
+
+      expect(result.recurrent_dates.length).toBeGreaterThan(1)
+    })
+  })
+
   describe('and the recurrence has already ended', () => {
     let input: RecurrentEventInput
 
