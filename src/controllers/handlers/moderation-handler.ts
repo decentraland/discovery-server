@@ -40,11 +40,9 @@ export async function updatePlaceHighlightHandler(
     'components' | 'params' | 'request'
   >
 ): Promise<HTTPResponse<Place>> {
-  const body = await readBody<{ highlighted?: boolean }>(context)
-  const data = await context.components.moderation.setPlaceHighlight(
-    context.params.place_id,
-    body.highlighted !== false
-  )
+  const body = await readBody<{ highlighted?: unknown }>(context)
+  if (typeof body.highlighted !== 'boolean') throw new BadRequestError('highlighted must be a boolean')
+  const data = await context.components.moderation.setPlaceHighlight(context.params.place_id, body.highlighted)
   return { status: 200, body: { ok: true, data } }
 }
 
@@ -55,8 +53,10 @@ export async function updatePlaceDisabledHandler(
     'components' | 'params' | 'request'
   >
 ): Promise<HTTPResponse<Place>> {
-  const body = await readBody<{ disabled?: boolean }>(context)
-  const data = await context.components.moderation.setPlaceDisabled(context.params.place_id, body.disabled !== false)
+  const body = await readBody<{ disabled?: unknown; reason?: unknown }>(context)
+  if (typeof body.disabled !== 'boolean') throw new BadRequestError('disabled must be a boolean')
+  const reason = typeof body.reason === 'string' ? body.reason : undefined
+  const data = await context.components.moderation.setPlaceDisabled(context.params.place_id, body.disabled, reason)
   return { status: 200, body: { ok: true, data } }
 }
 
@@ -67,8 +67,10 @@ export async function updatePlaceRankingHandler(
     'components' | 'params' | 'request'
   >
 ): Promise<HTTPResponse<Place>> {
-  const body = await readBody<{ ranking?: number }>(context)
-  if (typeof body.ranking !== 'number') throw new BadRequestError('ranking must be a number')
+  const body = await readBody<{ ranking?: number | null }>(context)
+  if (body.ranking !== null && typeof body.ranking !== 'number') {
+    throw new BadRequestError('ranking must be a number or null')
+  }
   const data = await context.components.moderation.setPlaceRanking(context.params.place_id, body.ranking)
   return { status: 200, body: { ok: true, data } }
 }
@@ -101,11 +103,9 @@ export async function updateWorldHighlightHandler(
     'components' | 'params' | 'request'
   >
 ): Promise<HTTPResponse<World>> {
-  const body = await readBody<{ highlighted?: boolean }>(context)
-  const data = await context.components.moderation.setWorldHighlight(
-    context.params.world_id,
-    body.highlighted !== false
-  )
+  const body = await readBody<{ highlighted?: unknown }>(context)
+  if (typeof body.highlighted !== 'boolean') throw new BadRequestError('highlighted must be a boolean')
+  const data = await context.components.moderation.setWorldHighlight(context.params.world_id, body.highlighted)
   return { status: 200, body: { ok: true, data } }
 }
 
@@ -116,8 +116,10 @@ export async function updateWorldRankingHandler(
     'components' | 'params' | 'request'
   >
 ): Promise<HTTPResponse<World>> {
-  const body = await readBody<{ ranking?: number }>(context)
-  if (typeof body.ranking !== 'number') throw new BadRequestError('ranking must be a number')
+  const body = await readBody<{ ranking?: number | null }>(context)
+  if (body.ranking !== null && typeof body.ranking !== 'number') {
+    throw new BadRequestError('ranking must be a number or null')
+  }
   const data = await context.components.moderation.setWorldRanking(context.params.world_id, body.ranking)
   return { status: 200, body: { ok: true, data } }
 }

@@ -55,14 +55,14 @@ export const updateEventSchema = {
   additionalProperties: true,
   properties: {
     ...EVENT_FIELDS,
-    // Moderation + admin fields the update path also accepts.
+    // Moderation + admin fields the update path also accepts (lengths match legacy caps).
     approved: { type: 'boolean' },
     rejected: { type: 'boolean' },
-    rejection_reason: { type: ['string', 'null'] },
+    rejection_reason: { type: ['string', 'null'], maxLength: 500 },
     highlighted: { type: 'boolean' },
     deleted_by_user: { type: 'boolean' },
     deleted_by_admin: { type: 'boolean' },
-    deleted_reason: { type: ['string', 'null'] },
-    actor: { type: 'string' }
+    deleted_reason: { type: ['string', 'null'], maxLength: 500 },
+    actor: { type: 'string', maxLength: 42 }
   }
 }

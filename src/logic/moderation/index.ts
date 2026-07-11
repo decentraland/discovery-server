@@ -1,17 +1,23 @@
 import type { AppComponents } from '../../types'
 import type { Place, World } from '../../types/entities'
+import { BadRequestError } from '../../types/errors'
 import { isPlaceId } from '../entity-id'
 import { PlaceNotFoundError } from '../places'
 import { WorldNotFoundError } from '../worlds'
+
+// Allowed content ratings (legacy enum + the 'RP' pending code discovery worlds use). Any other
+// value would poison the ingestion RATING_RANK guard and, for the varchar(4) places column,
+// overflow into a DB 500. Enforced in the logic so every caller is covered, not just the handler.
+const VALID_RATINGS = ['PR', 'RP', 'E', 'T', 'A', 'R']
 
 export interface IModerationComponent {
   setPlaceRating(placeId: string, rating: string, moderator: string, comment?: string): Promise<Place>
   setPlaceHighlight(placeId: string, highlighted: boolean): Promise<Place>
   setPlaceDisabled(placeId: string, disabled: boolean, reason?: string): Promise<Place>
-  setPlaceRanking(placeId: string, ranking: number): Promise<Place>
+  setPlaceRanking(placeId: string, ranking: number | null): Promise<Place>
   setWorldRating(worldId: string, rating: string, moderator: string, comment?: string): Promise<World>
   setWorldHighlight(worldId: string, highlighted: boolean): Promise<World>
-  setWorldRanking(worldId: string, ranking: number): Promise<World>
+  setWorldRanking(worldId: string, ranking: number | null): Promise<World>
 }
 
 /**
@@ -40,8 +46,15 @@ export async function createModerationComponent(
     if (!isPlaceId(placeId)) throw new PlaceNotFoundError(placeId)
   }
 
+  function assertValidRating(rating: string): void {
+    if (!VALID_RATINGS.includes(rating)) {
+      throw new BadRequestError(`rating must be one of ${VALID_RATINGS.join(', ')}`)
+    }
+  }
+
   async function setPlaceRating(placeId: string, rating: string, moderator: string, comment?: string): Promise<Place> {
     assertPlaceId(placeId)
+    assertValidRating(rating)
     return pg.withTransaction(async (tx) => {
       // Lock the row first so a concurrent rating change can't make the audit record a stale
       // "original" rating (the read-then-write must be serialized per place).
@@ -82,7 +95,7 @@ export async function createModerationComponent(
     return updated
   }
 
-  async function setPlaceRanking(placeId: string, ranking: number): Promise<Place> {
+  async function setPlaceRanking(placeId: string, ranking: number | null): Promise<Place> {
     assertPlaceId(placeId)
     const updated = await placesRepository.updateModeration(pg, placeId, { ranking })
     if (!updated) throw new PlaceNotFoundError(placeId)
@@ -90,6 +103,7 @@ export async function createModerationComponent(
   }
 
   async function setWorldRating(worldId: string, rating: string, moderator: string, comment?: string): Promise<World> {
+    assertValidRating(rating)
     return pg.withTransaction(async (tx) => {
       await worldsRepository.lockById(tx, worldId)
       const current = await worldsRepository.findByIdWithAggregates(tx, worldId)
@@ -116,7 +130,7 @@ export async function createModerationComponent(
     return updated
   }
 
-  async function setWorldRanking(worldId: string, ranking: number): Promise<World> {
+  async function setWorldRanking(worldId: string, ranking: number | null): Promise<World> {
     const updated = await worldsRepository.updateModeration(pg, worldId, { ranking })
     if (!updated) throw new WorldNotFoundError(worldId)
     return updated

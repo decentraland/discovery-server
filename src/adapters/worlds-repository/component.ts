@@ -88,7 +88,9 @@ export function createWorldsRepository(): IWorldsRepository {
   }
 
   async function lockById(client: Queryable, id: string): Promise<void> {
-    await client.query(SQL`SELECT 1 FROM worlds WHERE id = ${id} FOR UPDATE`)
+    // worlds.id is stored lowercased (CHECK id = lower(id)); lowercase here too so a
+    // mixed-case id actually locks the row (the read/write paths already lowercase).
+    await client.query(SQL`SELECT 1 FROM worlds WHERE id = ${id.toLowerCase()} FOR UPDATE`)
   }
 
   async function findByIdWithAggregates(client: Queryable, id: string, user?: string): Promise<AggregateWorld | null> {

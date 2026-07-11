@@ -1,5 +1,6 @@
 import { createModerationComponent } from '../../src/logic/moderation'
 import { PlaceNotFoundError } from '../../src/logic/places'
+import { BadRequestError } from '../../src/types/errors'
 
 const PLACE_ID = '11111111-1111-4111-8111-111111111111'
 
@@ -62,6 +63,15 @@ describe('when moderating a place', () => {
         expect.stringContaining('content rating changed'),
         undefined
       )
+    })
+  })
+
+  describe('and setting an invalid content rating', () => {
+    it('should reject it without touching the database', async () => {
+      const moderation = await createModerationComponent(components)
+
+      await expect(moderation.setPlaceRating(PLACE_ID, 'banana', '0xMOD')).rejects.toThrow(BadRequestError)
+      expect(components.placesRepository.updateModeration).not.toHaveBeenCalled()
     })
   })
 

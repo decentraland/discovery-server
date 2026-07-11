@@ -1,5 +1,6 @@
 import { createEventsComponent, EventValidationError } from '../../src/logic/events'
 import { createRecurrenceComponent } from '../../src/logic/recurrence'
+import { ProfilePermission } from '../../src/types/entities'
 
 describe('when creating an event', () => {
   let components: any
@@ -240,6 +241,91 @@ describe('when creating an event', () => {
         'e1',
         expect.objectContaining({ approved: true, approved_by: 'jarvis-agent' })
       )
+    })
+
+    it('should clear a prior rejection when approving', async () => {
+      components.eventsRepository.findById.mockResolvedValue({
+        id: 'e1',
+        user: '0xsomeoneelse',
+        name: 'Party',
+        approved: false,
+        rejected: true,
+        rejection_reason: 'spam'
+      })
+      const events = await createEventsComponent(components)
+      await events.updateEvent('e1', { approved: true }, '0xADMIN', { isAdmin: true })
+
+      expect(components.eventsRepository.update).toHaveBeenCalledWith(
+        components.pg,
+        'e1',
+        expect.objectContaining({ approved: true, rejected: false, rejected_by: null, rejection_reason: null })
+      )
+    })
+
+    it('should reject a patch that both approves and rejects', async () => {
+      const events = await createEventsComponent(components)
+
+      await expect(
+        events.updateEvent('e1', { approved: true, rejected: true }, '0xADMIN', { isAdmin: true })
+      ).rejects.toThrow(EventValidationError)
+    })
+  })
+
+  describe('and an owner holding only ApproveOwnEvent updates their own event', () => {
+    beforeEach(() => {
+      components.eventsRepository.findById.mockResolvedValue({
+        id: 'e1',
+        user: '0xowner',
+        name: 'Party',
+        approved: false,
+        rejected: false
+      })
+      components.eventsRepository.update.mockImplementation(async (_c: unknown, _id: string, patch: any) => ({
+        id: 'e1',
+        name: 'Party',
+        ...patch
+      }))
+      // Has ApproveOwnEvent, but NOT ApproveAnyEvent/EditAnyEvent.
+      components.profiles.hasAnyPermission.mockImplementation(async (_user: string, perms: ProfilePermission[]) =>
+        perms.includes(ProfilePermission.ApproveOwnEvent)
+      )
+    })
+
+    it('should let them approve their own event', async () => {
+      const events = await createEventsComponent(components)
+      await events.updateEvent('e1', { approved: true, highlighted: true }, '0xOWNER', {})
+
+      expect(components.eventsRepository.update).toHaveBeenCalledWith(
+        components.pg,
+        'e1',
+        expect.objectContaining({ approved: true })
+      )
+    })
+
+    it('should NOT let them highlight (feature) their own event', async () => {
+      const events = await createEventsComponent(components)
+      await events.updateEvent('e1', { approved: true, highlighted: true }, '0xOWNER', {})
+
+      const patch = components.eventsRepository.update.mock.calls[0][2]
+      expect(patch.highlighted).toBeUndefined()
+    })
+  })
+
+  describe('and deleting an already-deleted event', () => {
+    beforeEach(() => {
+      components.eventsRepository.findById.mockResolvedValue({
+        id: 'e1',
+        user: '0xowner',
+        name: 'Party',
+        deleted_at: new Date()
+      })
+    })
+
+    it('should be an idempotent no-op that does not overwrite the original deletion', async () => {
+      const events = await createEventsComponent(components)
+      await events.deleteEvent('e1', '0xowner', false)
+
+      expect(components.eventsRepository.update).not.toHaveBeenCalled()
     })
   })
 

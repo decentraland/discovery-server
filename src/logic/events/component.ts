@@ -443,32 +443,68 @@ export async function createEventsComponent(
       })
     }
 
-    // Moderation fields (approve/reject/highlight): only for holders of the
-    // relevant permission (ApproveAnyEvent, or ApproveOwnEvent on one's own event).
+    // Community ownership is validated on update too (not just create): an owner can't
+    // attach their event to a community they don't manage. Admins may attach any community.
+    if ('community_id' in patch && patch.community_id && !isAdmin && communitiesClient.enabled) {
+      const managed = await communitiesClient.getManagedCommunities(user)
+      if (!managed.some((community) => community.id === patch.community_id)) {
+        throw new EventValidationError(`community "${patch.community_id}" not found or not managed by you`)
+      }
+    }
+
+    // Approve/reject: admins, ApproveAnyEvent, or an owner with ApproveOwnEvent.
     const isOwner = event.user === user.toLowerCase()
-    const canModerate =
+    const canApprove =
       isAdmin ||
       (await profiles.hasAnyPermission(user, [Permission.ApproveAnyEvent])) ||
       (isOwner && (await profiles.hasAnyPermission(user, [Permission.ApproveOwnEvent])))
-    if (canModerate) {
+    // Highlight (featured placement) is a stronger action than self-approval — an owner with
+    // only ApproveOwnEvent must NOT be able to feature their own event.
+    const canHighlight =
+      isAdmin || (await profiles.hasAnyPermission(user, [Permission.ApproveAnyEvent, Permission.EditAnyEvent]))
+
+    if (canApprove) {
+      if (patch.approved === true && patch.rejected === true) {
+        throw new EventValidationError('an event cannot be both approved and rejected')
+      }
       if (patch.approved !== undefined) {
+        // Approving clears any prior rejection; unapproving drops the moderator stamp.
         update.approved = patch.approved
-        update.approved_by = actor
+        update.approved_by = patch.approved ? actor : null
+        if (patch.approved) {
+          update.rejected = false
+          update.rejected_by = null
+          update.rejection_reason = null
+        }
       }
       if (patch.rejected !== undefined) {
+        // Rejecting clears approval + featured placement; unrejecting drops the stamp/reason.
         update.rejected = patch.rejected
-        update.rejected_by = actor
+        update.rejected_by = patch.rejected ? actor : null
+        if (patch.rejected) {
+          update.approved = false
+          update.approved_by = null
+          update.highlighted = false
+          update.rejection_reason = patch.rejection_reason ?? null
+        } else {
+          update.rejection_reason = null
+        }
+      } else if (patch.rejection_reason !== undefined) {
+        update.rejection_reason = patch.rejection_reason
       }
-      if (patch.rejection_reason !== undefined) update.rejection_reason = patch.rejection_reason
-      if (patch.highlighted !== undefined) update.highlighted = patch.highlighted
+    }
+    // A reject in the same patch forces highlighted off, so only apply an explicit highlight
+    // when not rejecting.
+    if (canHighlight && patch.rejected !== true && patch.highlighted !== undefined) {
+      update.highlighted = patch.highlighted
     }
 
     const updated = await eventsRepository.update(pg, id, update)
     if (!updated) throw new EventNotFoundError(id)
-    if (canModerate && update.approved === true) {
+    if (canApprove && update.approved === true) {
       alert(`:white_check_mark: Event approved: ${updated.name} by ${actor}`)
     }
-    if (canModerate && update.rejected === true) {
+    if (canApprove && update.rejected === true) {
       alert(
         `:x: Event rejected: ${updated.name}${update.rejection_reason ? ` (${update.rejection_reason})` : ''} by ${actor}`
       )
@@ -480,6 +516,9 @@ export async function createEventsComponent(
     const event = await eventsRepository.findById(pg, id)
     if (!event) throw new EventNotFoundError(id)
     if (!byAdmin) await assertCanModify(event, user, false)
+    // Soft-delete is terminal: a re-delete is an idempotent no-op so it can't overwrite the
+    // original deleter/flags (e.g. an admin re-deleting an owner-deleted event).
+    if (event.deleted_at) return
 
     // Admins may record an override actor as the deleter (automation).
     const deletedBy = (byAdmin && actor?.trim()) || user.toLowerCase()
