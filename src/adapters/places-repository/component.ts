@@ -90,6 +90,10 @@ export function createPlacesRepository(): IPlacesRepository {
       LEFT JOIN user_likes ul ON ul.entity_id = p.id::text AND ul."user" = ${wallet}`
   }
 
+  async function lockById(client: Queryable, id: string): Promise<void> {
+    await client.query(SQL`SELECT 1 FROM places WHERE id = ${id} FOR UPDATE`)
+  }
+
   async function findByIdWithAggregates(client: Queryable, id: string, user?: string): Promise<AggregatePlace | null> {
     const query = SQL`SELECT p.*`
     query.append(userFlagsSelect(user))
@@ -241,6 +245,7 @@ export function createPlacesRepository(): IPlacesRepository {
   }
 
   return {
+    lockById,
     findByIdWithAggregates,
     findByIds,
     findWithAggregates,

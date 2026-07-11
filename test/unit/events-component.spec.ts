@@ -62,6 +62,16 @@ describe('when creating an event', () => {
     })
   })
 
+  describe('and the payload has a non-numeric duration', () => {
+    it('should throw an EventValidationError', async () => {
+      const events = await createEventsComponent(components)
+
+      await expect(
+        events.createEvent({ name: 'Bad', start_at: new Date().toISOString(), duration: 'abc' } as any, '0xUSER')
+      ).rejects.toThrow(EventValidationError)
+    })
+  })
+
   describe('and the creator has no approval permission', () => {
     beforeEach(() => {
       components.eventsRepository.create.mockImplementation(async (_c: unknown, row: any) => ({ id: 'e1', ...row }))

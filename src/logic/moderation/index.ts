@@ -43,6 +43,9 @@ export async function createModerationComponent(
   async function setPlaceRating(placeId: string, rating: string, moderator: string, comment?: string): Promise<Place> {
     assertPlaceId(placeId)
     return pg.withTransaction(async (tx) => {
+      // Lock the row first so a concurrent rating change can't make the audit record a stale
+      // "original" rating (the read-then-write must be serialized per place).
+      await placesRepository.lockById(tx, placeId)
       const current = await placesRepository.findByIdWithAggregates(tx, placeId)
       if (!current) throw new PlaceNotFoundError(placeId)
       const updated = await placesRepository.updateModeration(tx, placeId, { content_rating: rating })
@@ -88,6 +91,7 @@ export async function createModerationComponent(
 
   async function setWorldRating(worldId: string, rating: string, moderator: string, comment?: string): Promise<World> {
     return pg.withTransaction(async (tx) => {
+      await worldsRepository.lockById(tx, worldId)
       const current = await worldsRepository.findByIdWithAggregates(tx, worldId)
       if (!current) throw new WorldNotFoundError(worldId)
       const updated = await worldsRepository.updateModeration(tx, worldId, { content_rating: rating })

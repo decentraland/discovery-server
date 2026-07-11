@@ -1,6 +1,6 @@
 import type { HandlerContextWithPath, HTTPResponse } from '../../types'
 import type { Destination } from '../../types/entities'
-import { multiParam as multi, intParam } from './query-params'
+import { multiParam as multi, intParam, positionsParam } from './query-params'
 
 const MAP_MAX_LIMIT = 500
 
@@ -32,7 +32,7 @@ export async function getMapHandler(
   const user = context.verification?.auth?.toLowerCase()
 
   const { data } = await places.getPlaces({
-    positions: multi(params, 'positions'),
+    positions: positionsParam(params),
     categories: multi(params, 'categories'),
     only_favorites: params.get('only_favorites') === 'true',
     only_highlighted: params.get('only_highlighted') === 'true',
@@ -75,7 +75,7 @@ export async function getMapPlacesHandler(
 
   const { data, total } = await destinations.getDestinations(
     {
-      positions: multi(params, 'positions'),
+      positions: positionsParam(params),
       worldNames: multi(params, 'names') ?? multi(params, 'world_names'),
       categories: multi(params, 'categories'),
       search: params.get('search') ?? undefined,

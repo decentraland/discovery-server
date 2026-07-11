@@ -243,8 +243,11 @@ export async function createEventsComponent(
     const start_at = new Date(payload.start_at)
     if (Number.isNaN(start_at.getTime())) throw new EventValidationError('start_at is invalid')
 
-    const duration =
+    // Number() so a non-numeric string (e.g. "abc") coerces to NaN and is rejected here,
+    // not written into the integer column as a 500.
+    const duration = Number(
       payload.duration ?? (payload.finish_at ? new Date(payload.finish_at).getTime() - start_at.getTime() : 0)
+    )
     if (Number.isNaN(duration)) throw new EventValidationError('duration or finish_at is invalid')
     if (duration < 0) throw new EventValidationError('duration must be non-negative')
     if (duration > MAX_EVENT_DURATION_MS) throw new EventValidationError('duration exceeds the maximum of one day')
@@ -377,8 +380,9 @@ export async function createEventsComponent(
     if (RECURRENCE_KEYS.some((key) => key in patch)) {
       const start_at = patch.start_at ? new Date(patch.start_at) : event.start_at
       if (Number.isNaN(start_at.getTime())) throw new EventValidationError('start_at is invalid')
-      const duration =
+      const duration = Number(
         patch.duration ?? (patch.finish_at ? new Date(patch.finish_at).getTime() - start_at.getTime() : event.duration)
+      )
       if (Number.isNaN(duration)) throw new EventValidationError('duration or finish_at is invalid')
       if (duration < 0) throw new EventValidationError('duration must be non-negative')
       if (duration > MAX_EVENT_DURATION_MS) throw new EventValidationError('duration exceeds the maximum of one day')

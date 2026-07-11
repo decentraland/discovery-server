@@ -196,7 +196,8 @@ export function createEventsRepository(): IEventsRepository {
     query
       .append(SQL` ORDER BY e.next_start_at`)
       .append(direction)
-      .append(SQL` NULLS LAST LIMIT ${limit} OFFSET ${offset}`)
+      // e.id is a unique tie-breaker so pagination is stable when next_start_at ties (or is NULL).
+      .append(SQL` NULLS LAST, e.id LIMIT ${limit} OFFSET ${offset}`)
     const result = await client.query<Event>(query)
     return result.rows
   }
@@ -216,7 +217,7 @@ export function createEventsRepository(): IEventsRepository {
   async function getLiveEntityIds(client: Queryable): Promise<{ placeIds: string[]; worldIds: string[] }> {
     const result = await client.query<{ place_id: string | null; world_id: string | null }>(SQL`
       SELECT DISTINCT place_id, world_id FROM events
-      WHERE approved IS true AND deleted_at IS NULL
+      WHERE approved IS true AND rejected IS false AND deleted_at IS NULL
         AND next_start_at <= now() AND next_finish_at >= now()`)
     const placeIds = result.rows.map((r) => r.place_id).filter((id): id is string => !!id)
     const worldIds = result.rows.map((r) => r.world_id).filter((id): id is string => !!id)
@@ -231,10 +232,12 @@ export function createEventsRepository(): IEventsRepository {
     const result = await client.query<{ entity_id: string; id: string; name: string; next_start_at: string }>(SQL`
       SELECT DISTINCT ON (entity_id) entity_id, id, name, next_start_at FROM (
         SELECT place_id::text AS entity_id, id, name, next_start_at FROM events
-          WHERE approved IS true AND deleted_at IS NULL AND next_start_at > now() AND place_id IS NOT NULL
+          WHERE approved IS true AND rejected IS false AND deleted_at IS NULL
+            AND next_start_at > now() AND place_id IS NOT NULL
         UNION ALL
         SELECT world_id AS entity_id, id, name, next_start_at FROM events
-          WHERE approved IS true AND deleted_at IS NULL AND next_start_at > now() AND world_id IS NOT NULL
+          WHERE approved IS true AND rejected IS false AND deleted_at IS NULL
+            AND next_start_at > now() AND world_id IS NOT NULL
       ) upcoming
       ORDER BY entity_id, next_start_at ASC`)
     const byEntity: Record<string, { id: string; name: string; next_start_at: string }> = {}

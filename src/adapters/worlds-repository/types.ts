@@ -31,6 +31,8 @@ export type WorldModerationFields = Partial<
 >
 
 export interface IWorldsRepository {
+  /** Row-lock a world for the current transaction (FOR UPDATE) so a read-then-write can't race. */
+  lockById(client: Queryable, id: string): Promise<void>
   findByIdWithAggregates(client: Queryable, id: string, user?: string): Promise<AggregateWorld | null>
   findWithAggregates(client: Queryable, filters: WorldListFilters): Promise<AggregateWorld[]>
   count(client: Queryable, filters: WorldListFilters): Promise<number>

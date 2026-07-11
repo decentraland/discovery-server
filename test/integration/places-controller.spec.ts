@@ -25,6 +25,14 @@ test('when reading places from a real server', function ({ components }) {
       highlightedId = highlighted.id
     })
 
+    it('should filter by an "x,y" position without splitting the coordinate', async () => {
+      const response = await components.localFetch.fetch('/api/places?positions=0,0')
+      const body = await response.json()
+
+      expect(response.status).toBe(200)
+      expect(body.data.map((p: { id: string }) => p.id)).toEqual([genesisId])
+    })
+
     it('should list the places with a total count', async () => {
       const response = await components.localFetch.fetch('/api/places')
       const body = await response.json()

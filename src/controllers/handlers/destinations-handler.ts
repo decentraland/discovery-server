@@ -6,7 +6,7 @@ import type {
   DestinationOrderBy
 } from '../../adapters/destinations-repository'
 import { BadRequestError } from '../../types/errors'
-import { multiParam as multi, intParam, parseWithOptions, MAX_BATCH_ITEMS } from './query-params'
+import { multiParam as multi, intParam, parseWithOptions, positionsParam, MAX_BATCH_ITEMS } from './query-params'
 
 /** A body array of strings, capped to guard against giant `ANY(...)` scans; undefined if absent. */
 function boundedList(value: unknown): string[] | undefined {
@@ -21,13 +21,11 @@ const KIND_VALUES: DestinationKind[] = ['place', 'world']
 function parseFilters(params: URLSearchParams, user?: string): DestinationListFilters {
   const orderByParam = params.get('order_by') ?? undefined
   const kinds = multi(params, 'kinds')?.filter((k): k is DestinationKind => KIND_VALUES.includes(k as DestinationKind))
-  // positions are "x,y" tokens — use getAll so the comma isn't split.
-  const positions = params.getAll('positions').filter(Boolean)
-  if (positions.length > MAX_BATCH_ITEMS) throw new BadRequestError(`Too many positions (max ${MAX_BATCH_ITEMS})`)
+  const positions = positionsParam(params)
   return {
     search: params.get('search') ?? undefined,
     categories: multi(params, 'categories'),
-    positions: positions.length ? positions : undefined,
+    positions,
     worldNames: multi(params, 'world_names') ?? multi(params, 'names'),
     // by-ids lookup (folded in from the old POST batch endpoint)
     ids: multi(params, 'ids'),

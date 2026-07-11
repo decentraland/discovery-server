@@ -312,7 +312,8 @@ export async function initComponents(): Promise<AppComponents> {
     // so absorb transient failures (DB blips, subgraph hiccups) in-process with a few quick
     // retries before giving up. Ingestion is idempotent, so a retry (or an SQS redelivery) is
     // safe. A handled skip returns `{ processed: false }` and does not throw, so it never retries.
-    const retryAttempts = (await config.getNumber('SQS_HANDLER_RETRY_ATTEMPTS')) ?? 3
+    // At least one attempt: a configured 0 must not skip the handler and drop every message.
+    const retryAttempts = Math.max(1, (await config.getNumber('SQS_HANDLER_RETRY_ATTEMPTS')) ?? 3)
     const withRetry =
       (handler: (message: unknown) => Promise<unknown>) =>
       async (message: unknown): Promise<unknown> => {

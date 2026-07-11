@@ -12,6 +12,7 @@ describe('when reading places', () => {
 
   beforeEach(() => {
     placesRepository = {
+      lockById: jest.fn(),
       findByIdWithAggregates: jest.fn(),
       findByIds: jest.fn(),
       findWithAggregates: jest.fn(),

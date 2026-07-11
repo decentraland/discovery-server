@@ -9,6 +9,7 @@ describe('when reading worlds', () => {
 
   beforeEach(() => {
     worldsRepository = {
+      lockById: jest.fn(),
       findByIdWithAggregates: jest.fn(),
       findWithAggregates: jest.fn(),
       count: jest.fn(),

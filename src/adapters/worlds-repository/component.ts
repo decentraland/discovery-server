@@ -87,6 +87,10 @@ export function createWorldsRepository(): IWorldsRepository {
       LEFT JOIN user_likes ul ON ul.entity_id = w.id AND ul."user" = ${wallet}`
   }
 
+  async function lockById(client: Queryable, id: string): Promise<void> {
+    await client.query(SQL`SELECT 1 FROM worlds WHERE id = ${id} FOR UPDATE`)
+  }
+
   async function findByIdWithAggregates(client: Queryable, id: string, user?: string): Promise<AggregateWorld | null> {
     const query = SQL`SELECT w.*`
     query.append(LATERAL_COLUMNS).append(userFlagsSelect(user))
@@ -173,5 +177,5 @@ export function createWorldsRepository(): IWorldsRepository {
     return result.rows[0] ?? null
   }
 
-  return { findByIdWithAggregates, findWithAggregates, count, findNames, upsert, updateModeration }
+  return { lockById, findByIdWithAggregates, findWithAggregates, count, findNames, upsert, updateModeration }
 }

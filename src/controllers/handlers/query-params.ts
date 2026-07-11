@@ -31,6 +31,16 @@ export function intParam(params: URLSearchParams, key: string): number | undefin
   return Number.isInteger(value) && value >= 0 ? value : undefined
 }
 
+/**
+ * Parse `positions` as comma-safe "x,y" tokens: use getAll (NOT multiParam, which would
+ * split "10,20" into "10","20" and break the filter). Capped and undefined-if-empty.
+ */
+export function positionsParam(params: URLSearchParams): string[] | undefined {
+  const values = params.getAll('positions').filter(Boolean)
+  if (values.length > MAX_BATCH_ITEMS) throw new BadRequestError(`Too many positions (max ${MAX_BATCH_ITEMS})`)
+  return values.length ? values : undefined
+}
+
 export type WithOptions = { withLiveEvents: boolean; withConnectedUsers: boolean; withNextEvent: boolean }
 
 /**

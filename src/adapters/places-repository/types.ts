@@ -54,6 +54,8 @@ export type ScenePlaceInput = {
 }
 
 export interface IPlacesRepository {
+  /** Row-lock a place for the current transaction (FOR UPDATE) so a read-then-write can't race. */
+  lockById(client: Queryable, id: string): Promise<void>
   findByIdWithAggregates(client: Queryable, id: string, user?: string): Promise<AggregatePlace | null>
   findByIds(client: Queryable, ids: string[]): Promise<PlaceStatus[]>
   findWithAggregates(client: Queryable, filters: PlaceListFilters): Promise<AggregatePlace[]>

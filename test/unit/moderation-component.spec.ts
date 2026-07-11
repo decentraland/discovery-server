@@ -11,8 +11,8 @@ describe('when moderating a place', () => {
     tx = { query: jest.fn() }
     components = {
       pg: { withTransaction: jest.fn((cb: (client: any) => Promise<unknown>) => cb(tx)) },
-      placesRepository: { findByIdWithAggregates: jest.fn(), updateModeration: jest.fn() },
-      worldsRepository: { findByIdWithAggregates: jest.fn(), updateModeration: jest.fn() },
+      placesRepository: { lockById: jest.fn(), findByIdWithAggregates: jest.fn(), updateModeration: jest.fn() },
+      worldsRepository: { lockById: jest.fn(), findByIdWithAggregates: jest.fn(), updateModeration: jest.fn() },
       contentRatingsRepository: { record: jest.fn() },
       slackNotifier: { notify: jest.fn() },
       config: { getString: jest.fn().mockResolvedValue(undefined) },
@@ -45,6 +45,13 @@ describe('when moderating a place', () => {
       await moderation.setPlaceRating(PLACE_ID, 'R', '0xMOD')
 
       expect(components.placesRepository.updateModeration).toHaveBeenCalledWith(tx, PLACE_ID, { content_rating: 'R' })
+    })
+
+    it('should lock the place row on the transaction before reading its current rating', async () => {
+      const moderation = await createModerationComponent(components)
+      await moderation.setPlaceRating(PLACE_ID, 'R', '0xMOD')
+
+      expect(components.placesRepository.lockById).toHaveBeenCalledWith(tx, PLACE_ID)
     })
 
     it('should post a Slack alert about the rating change', async () => {
