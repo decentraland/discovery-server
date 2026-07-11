@@ -60,6 +60,30 @@ describe('when calculating recurrent properties', () => {
     })
   })
 
+  describe('and materializing daily occurrences with a specific time-of-day', () => {
+    let input: RecurrentEventInput
+
+    beforeEach(() => {
+      const start_at = new Date('2030-06-01T10:30:45.000Z')
+      input = baseInput({
+        start_at,
+        finish_at: new Date(start_at.getTime() + 60 * 60 * 1000),
+        recurrent: true,
+        recurrent_frequency: Frequency.DAILY,
+        recurrent_count: 5
+      })
+    })
+
+    it('should preserve the start_at UTC time-of-day on every occurrence', () => {
+      const result = recurrence.calculateRecurrentProperties(input)
+
+      expect(result.recurrent_dates.length).toBeGreaterThan(1)
+      for (const date of result.recurrent_dates) {
+        expect([date.getUTCHours(), date.getUTCMinutes(), date.getUTCSeconds()]).toEqual([10, 30, 45])
+      }
+    })
+  })
+
   describe('and the interval is negative', () => {
     let input: RecurrentEventInput
 

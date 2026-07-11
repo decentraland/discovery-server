@@ -72,15 +72,9 @@ function futureRecurrentDates(options: RecurrentEventInput): Date[] {
   const end = options.recurrent_until ?? new Date(Date.UTC(9999, 11, 31))
   if (end < now) return []
 
-  const dates = rrule.between(now, end, true, (_date, len) => len < MAX_EVENT_RECURRENT)
-
-  return dates.map((date) => {
-    date.setUTCHours(options.start_at.getUTCHours())
-    date.setUTCMinutes(options.start_at.getUTCMinutes())
-    date.setUTCSeconds(options.start_at.getUTCSeconds())
-    date.setUTCMilliseconds(options.start_at.getUTCMilliseconds())
-    return date
-  })
+  // rrule preserves the dtstart (start_at) UTC time-of-day on every occurrence, so the
+  // returned dates need no time re-stamping (pinned by the time-of-day preservation test).
+  return rrule.between(now, end, true, (_date, len) => len < MAX_EVENT_RECURRENT)
 }
 
 /**
@@ -147,11 +141,7 @@ export function createRecurrenceComponent(): IRecurrenceComponent {
 
       const recurrent_dates = futureRecurrentDates(recurrent)
       if (recurrent_dates.length) {
-        const last_date = new Date(recurrent_dates[recurrent_dates.length - 1])
-        last_date.setUTCHours(start_at.getUTCHours())
-        last_date.setUTCMinutes(start_at.getUTCMinutes())
-        last_date.setUTCSeconds(start_at.getUTCSeconds())
-        last_date.setUTCMilliseconds(start_at.getUTCMilliseconds())
+        const last_date = recurrent_dates[recurrent_dates.length - 1]
         recurrent.recurrent_dates = recurrent_dates
         recurrent.finish_at = new Date(last_date.getTime() + duration)
       }

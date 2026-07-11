@@ -2,6 +2,7 @@ import { Router, createBodySizeLimitMiddleware } from '@dcl/http-server'
 import type { GlobalContext } from '../types'
 import { errorHandler } from './middlewares/error-handler'
 import { cacheControlForAuthenticated } from './middlewares/cache-control'
+import { createEventSchema, updateEventSchema } from './schemas/event-schemas'
 import { createSignedFetchMiddleware } from './middlewares/signed-fetch'
 import { pingHandler } from './handlers/ping-handler'
 import { statusHandler } from './handlers/status-handler'
@@ -110,6 +111,9 @@ export async function setupRouter(globalContext: GlobalContext): Promise<Router<
     required: ['like'],
     additionalProperties: false
   })
+  // Validate the event create/update bodies (types + recurrence bounds) before the handler.
+  const validateCreateEvent = components.schemaValidator.withSchemaValidatorMiddleware(createEventSchema)
+  const validateUpdateEvent = components.schemaValidator.withSchemaValidatorMiddleware(updateEventSchema)
 
   router.use(errorHandler)
   // Reject oversized request bodies at the transport layer (before buffering) so an
@@ -150,11 +154,11 @@ export async function setupRouter(globalContext: GlobalContext): Promise<Router<
   // @deprecated — superseded by GET /v1/events
   router.get('/api/events', eventsAuth, getEventListHandler)
   router.post('/api/events/search', eventsAuth, searchEventsHandler)
-  router.post('/api/events', signedFetch(), createEventHandler)
+  router.post('/api/events', signedFetch(), validateCreateEvent, createEventHandler)
   router.get('/api/events/attending', signedFetch(), getAttendingEventsHandler)
   // @deprecated — superseded by GET /v1/events/:event_id
   router.get('/api/events/:event_id', eventsAuth, getEventHandler)
-  router.patch('/api/events/:event_id', eventsAuth, updateEventHandler)
+  router.patch('/api/events/:event_id', eventsAuth, validateUpdateEvent, updateEventHandler)
   router.delete('/api/events/:event_id', eventsAuth, deleteEventHandler)
   router.get('/api/events/:event_id/attendees', getAttendeesHandler)
   router.post('/api/events/:event_id/attendees', signedFetch(), createAttendeeHandler)

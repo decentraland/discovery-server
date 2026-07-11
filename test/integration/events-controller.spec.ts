@@ -152,6 +152,27 @@ test('when managing events over the API', function ({ components }) {
       )
     })
 
+    it('should reject a create whose recurrence values are out of range with a 400', async () => {
+      const path = '/api/events'
+      const headers = getSignedAuthHeaders('POST', path, {}, identity)
+      const response = await components.localFetch.fetch(path, {
+        method: 'POST',
+        headers: { ...headers, 'content-type': 'application/json' },
+        body: JSON.stringify({
+          name: 'Bad Recurrence',
+          start_at: new Date(Date.now() + HOUR_MS).toISOString(),
+          duration: HOUR_MS,
+          x: 0,
+          y: 0,
+          recurrent: true,
+          recurrent_frequency: 'DAILY',
+          recurrent_interval: 5000
+        })
+      })
+
+      expect(response.status).toBe(400)
+    })
+
     it('should hide the pending event from the public list but show it to its owner', async () => {
       const createPath = '/api/events'
       const createHeaders = getSignedAuthHeaders('POST', createPath, {}, identity)
