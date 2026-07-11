@@ -142,6 +142,18 @@ export async function initComponents(): Promise<AppComponents> {
   const interactions = await createInteractionsComponent({ pg, interactionsRepository, snapshotClient, logs })
   const profiles = await createProfilesComponent({ pg, profileSettingsRepository, config, logs })
   const recurrence = createRecurrenceComponent()
+  // notifications is created before events because the events logic fires the
+  // approve/reject/delete + community-event SNS notifications through it.
+  const notifications = await createNotificationsComponent({
+    pg,
+    eventsRepository,
+    attendeesRepository,
+    notificationCursorsRepository,
+    snsPublisher,
+    communitiesClient,
+    config,
+    logs
+  })
   const events = await createEventsComponent({
     pg,
     eventsRepository,
@@ -151,6 +163,7 @@ export async function initComponents(): Promise<AppComponents> {
     profiles,
     recurrence,
     communitiesClient,
+    notifications,
     slackNotifier,
     landClient,
     config,
@@ -165,6 +178,7 @@ export async function initComponents(): Promise<AppComponents> {
     hotScenes,
     worldsLiveData,
     sceneStats,
+    catalystClient,
     logs
   })
   const moderation = await createModerationComponent({
@@ -180,16 +194,6 @@ export async function initComponents(): Promise<AppComponents> {
   const sitemap = await createSitemapComponent({ config, eventsRepository, schedulesRepository, pg, logs })
   const posters = await createPostersComponent({ postersStorage, logs })
   const social = await createSocialComponent({ places, worlds, config, logs })
-  const notifications = await createNotificationsComponent({
-    pg,
-    eventsRepository,
-    attendeesRepository,
-    notificationCursorsRepository,
-    snsPublisher,
-    communitiesClient,
-    config,
-    logs
-  })
 
   // Job/consumer metric wrappers. Instrumenting here (rather than inside every
   // logic component) keeps the job_* / notifications_published / sqs_* series
@@ -286,7 +290,13 @@ export async function initComponents(): Promise<AppComponents> {
     pg,
     placesRepository,
     worldsRepository,
+    categoriesRepository,
+    contentRatingsRepository,
     subgraphsClient,
+    catalystClient,
+    landClient,
+    slackNotifier,
+    config,
     logs
   })
   const manifest = await createManifestComponent({ pg, placesRepository, manifestStorage, config, logs })
@@ -351,6 +361,18 @@ export async function initComponents(): Promise<AppComponents> {
       Events.Type.WORLD,
       Events.SubType.Worlds.WORLD_SCENES_UNDEPLOYMENT,
       withMetrics((message) => ingestion.processWorldScenesUndeployment(message as never))
+    )
+    // A world scene deployment carries only an entityId; the handler fetches the entity.
+    queueProcessor.addMessageHandler(
+      Events.Type.WORLD,
+      Events.SubType.Worlds.DEPLOYMENT,
+      withMetrics((message) => ingestion.processWorldDeployment(message as never))
+    )
+    // A full world undeployment disables every place of the world.
+    queueProcessor.addMessageHandler(
+      Events.Type.WORLD,
+      Events.SubType.Worlds.WORLD_UNDEPLOYMENT,
+      withMetrics((message) => ingestion.processWorldUndeployment(message as never))
     )
   }
 

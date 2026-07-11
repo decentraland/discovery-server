@@ -3,6 +3,7 @@ import type { GlobalContext } from '../types'
 import { errorHandler } from './middlewares/error-handler'
 import { cacheControlForAuthenticated } from './middlewares/cache-control'
 import { createEventSchema, updateEventSchema } from './schemas/event-schemas'
+import { createScheduleSchema, updateScheduleSchema } from './schemas/schedule-schemas'
 import { createSignedFetchMiddleware } from './middlewares/signed-fetch'
 import { pingHandler } from './handlers/ping-handler'
 import { statusHandler } from './handlers/status-handler'
@@ -114,6 +115,8 @@ export async function setupRouter(globalContext: GlobalContext): Promise<Router<
   // Validate the event create/update bodies (types + recurrence bounds) before the handler.
   const validateCreateEvent = components.schemaValidator.withSchemaValidatorMiddleware(createEventSchema)
   const validateUpdateEvent = components.schemaValidator.withSchemaValidatorMiddleware(updateEventSchema)
+  const validateCreateSchedule = components.schemaValidator.withSchemaValidatorMiddleware(createScheduleSchema)
+  const validateUpdateSchedule = components.schemaValidator.withSchemaValidatorMiddleware(updateScheduleSchema)
 
   router.use(errorHandler)
   // Reject oversized request bodies at the transport layer (before buffering) so an
@@ -140,12 +143,14 @@ export async function setupRouter(globalContext: GlobalContext): Promise<Router<
     '/api/schedules',
     signedFetch(),
     requirePermission(ProfilePermission.EditAnySchedule),
+    validateCreateSchedule,
     createScheduleHandler
   )
   router.patch(
     '/api/schedules/:schedule_id',
     signedFetch(),
     requirePermission(ProfilePermission.EditAnySchedule),
+    validateUpdateSchedule,
     updateScheduleHandler
   )
 

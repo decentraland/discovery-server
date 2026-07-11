@@ -58,5 +58,5 @@ export async function getWorldNamesHandler(
 
   const data = await worlds.getWorldNames()
 
-  return { status: 200, body: { ok: true, data } }
+  return { status: 200, body: { ok: true, data, total: data.length } }
 }

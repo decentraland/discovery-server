@@ -24,6 +24,19 @@ export interface INotificationsComponent {
   notifyStarted(): Promise<number>
   /** Emit an ended notification per event that just finished. */
   notifyEnded(): Promise<number>
+  /** Notify the creator that their event was approved by a moderator. Never throws. */
+  notifyEventApproved(event: Event): Promise<void>
+  /** Notify the creator that their event was rejected by a moderator. Never throws. */
+  notifyEventRejected(event: Event, reason: string): Promise<void>
+  /** Notify the creator that their event was deleted by a moderator/admin. Never throws. */
+  notifyEventDeleted(event: Event, reason?: string): Promise<void>
+  /**
+   * Fan a "Community Event Added" notification out to every member of the event's
+   * community. Called when a community-attached event becomes public (approved).
+   * A no-op (and never throws) when the event has no community or communities is
+   * unconfigured.
+   */
+  notifyCommunityEventPublished(event: Event): Promise<void>
 }
 
 /**
@@ -53,8 +66,11 @@ export async function createNotificationsComponent(
     notificationCursorsRepository,
     snsPublisher,
     communitiesClient,
-    config
+    config,
+    logs
   } = components
+
+  const logger = logs.getLogger('notifications')
 
   const eventsBaseUrl = ((await config.getString('EVENTS_BASE_URL')) ?? 'https://events.decentraland.org').replace(
     /\/$/,
@@ -183,5 +199,103 @@ export async function createNotificationsComponent(
     return published
   }
 
-  return { notifyUpcoming, notifyStarted, notifyEnded }
+  // Shared metadata for the creator-facing moderation notifications (approved/rejected/deleted).
+  const moderationMetadata = (event: Event) => ({
+    host: event.user,
+    title: event.name,
+    description: truncate(event.description ?? '', NOTIFICATION_DESCRIPTION_MAX),
+    image: event.image ?? ''
+  })
+
+  // Publish a single lifecycle notification, swallowing errors so a notification failure
+  // never fails the event mutation that triggered it (legacy parity).
+  async function publishLifecycle(kind: string, payload: PublishableEvents): Promise<void> {
+    try {
+      await snsPublisher.publish(payload)
+    } catch (error: any) {
+      logger.warn(`Failed to publish ${kind} notification: ${error?.message ?? String(error)}`)
+    }
+  }
+
+  async function notifyEventApproved(event: Event): Promise<void> {
+    await publishLifecycle('event-approved', [
+      {
+        type: Events.Type.EVENT,
+        subType: Events.SubType.Event.EVENT_APPROVED,
+        key: event.id,
+        timestamp: Date.now(),
+        metadata: { ...moderationMetadata(event), link: link(event) }
+      } as never
+    ])
+  }
+
+  async function notifyEventRejected(event: Event, reason: string): Promise<void> {
+    await publishLifecycle('event-rejected', [
+      {
+        type: Events.Type.EVENT,
+        subType: Events.SubType.Event.EVENT_REJECTED,
+        key: event.id,
+        timestamp: Date.now(),
+        metadata: { ...moderationMetadata(event), reason }
+      } as never
+    ])
+  }
+
+  async function notifyEventDeleted(event: Event, reason?: string): Promise<void> {
+    await publishLifecycle('event-deleted', [
+      {
+        type: Events.Type.EVENT,
+        subType: Events.SubType.Event.EVENT_DELETED,
+        key: event.id,
+        timestamp: Date.now(),
+        metadata: { ...moderationMetadata(event), ...(reason ? { reason } : {}) }
+      } as never
+    ])
+  }
+
+  async function notifyCommunityEventPublished(event: Event): Promise<void> {
+    if (!event.community_id || !communitiesClient.enabled) return
+    try {
+      const [community, members] = await Promise.all([
+        communitiesClient.getCommunity(event.community_id),
+        communitiesClient.getCommunityMembers(event.community_id)
+      ])
+      if (!community || !members.length) return
+      const now = Date.now()
+      const description = `The ${community.name} Community has added a new event.`
+      const payload: PublishableEvents = members.map(
+        (member) =>
+          ({
+            type: Events.Type.EVENT,
+            subType: Events.SubType.Event.EVENT_CREATED,
+            // One notification per member per event; dedup key includes the member.
+            key: `${event.id}-${member}-created`,
+            timestamp: now,
+            metadata: {
+              title: 'Community Event Added',
+              description,
+              name: event.name,
+              image: event.image ?? '',
+              communityId: community.id,
+              communityName: community.name,
+              communityThumbnail: community.thumbnailRaw,
+              attendee: member
+            }
+          }) as never
+      )
+      await snsPublisher.publish(payload)
+    } catch (error: any) {
+      logger.warn(`Failed to publish community-event notification for ${event.id}: ${error?.message ?? String(error)}`)
+    }
+  }
+
+  return {
+    notifyUpcoming,
+    notifyStarted,
+    notifyEnded,
+    notifyEventApproved,
+    notifyEventRejected,
+    notifyEventDeleted,
+    notifyCommunityEventPublished
+  }
 }

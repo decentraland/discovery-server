@@ -14,6 +14,10 @@ export type DestinationListFilters = {
   only_highlighted?: boolean
   only_favorites?: boolean
   owner?: string
+  /** `"x,y"` parcels the owner operates (owned/estate/rented); widens the owner filter. */
+  operatedPositions?: string[]
+  creator_address?: string
+  sdk?: string
   user?: string
   order_by?: DestinationOrderBy
   order?: 'asc' | 'desc'

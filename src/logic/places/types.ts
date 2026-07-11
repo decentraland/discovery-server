@@ -11,8 +11,13 @@ export interface IPlacesComponent {
   getPlace(id: string, user?: string): Promise<AggregatePlace>
   /** Filtered, paginated place list with a total count. */
   getPlaces(filters: PlaceListFilters): Promise<PlaceListResult>
-  /** Places by id (full aggregates), preserving retro-compat with the by-ids endpoint. */
-  getPlacesByIds(ids: string[], user?: string): Promise<AggregatePlace[]>
+  /**
+   * Places by id (full aggregates) with the same order/limit/offset/search filters as the list,
+   * plus a `total` counting the requested ids present (including disabled).
+   */
+  getPlacesByIds(ids: string[], filters?: Partial<PlaceListFilters>): Promise<PlaceListResult>
   /** Minimal status rows by id (no aggregates). */
   getPlacesStatus(ids: string[]): Promise<PlaceStatus[]>
+  /** A place's category slugs from the join table; throws `PlaceNotFoundError` only for a malformed id. */
+  getPlaceCategories(id: string): Promise<string[]>
 }

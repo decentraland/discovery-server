@@ -14,11 +14,14 @@ const EXT_BY_MIME: Record<string, string> = {
 
 export type PosterFile = { value: Buffer; mimeType?: string }
 
+/** Legacy poster upload response shape. */
+export type PosterUpload = { filename: string; url: string; size: number; type: string }
+
 export interface IPostersComponent {
-  /** Validate and store a horizontal poster; returns its public URL. */
-  uploadHorizontal(file: PosterFile | undefined): Promise<string>
-  /** Validate and store a vertical poster (no gif); returns its public URL. */
-  uploadVertical(file: PosterFile | undefined): Promise<string>
+  /** Validate and store a horizontal poster; returns its filename/url/size/type. */
+  uploadHorizontal(file: PosterFile | undefined): Promise<PosterUpload>
+  /** Validate and store a vertical poster (no gif); returns its filename/url/size/type. */
+  uploadVertical(file: PosterFile | undefined): Promise<PosterUpload>
 }
 
 /**
@@ -30,7 +33,7 @@ export async function createPostersComponent(
 ): Promise<IPostersComponent> {
   const { postersStorage } = components
 
-  async function upload(file: PosterFile | undefined, vertical: boolean): Promise<string> {
+  async function upload(file: PosterFile | undefined, vertical: boolean): Promise<PosterUpload> {
     if (!file || !file.value?.length) throw new BadRequestError('A poster file is required')
     if (file.value.length > MAX_POSTER_BYTES) throw new BadRequestError('Poster exceeds the 500KB limit')
 
@@ -39,9 +42,10 @@ export async function createPostersComponent(
       throw new BadRequestError(`Unsupported poster type: ${file.mimeType ?? 'unknown'}`)
     }
 
-    const key = `posters/${vertical ? 'vertical/' : ''}${randomUUID()}.${EXT_BY_MIME[file.mimeType]}`
+    const filename = `${vertical ? 'vertical/' : ''}${randomUUID()}.${EXT_BY_MIME[file.mimeType]}`
+    const key = `posters/${filename}`
     await postersStorage.uploadObject(key, file.value, file.mimeType)
-    return postersStorage.publicUrl(key)
+    return { filename, url: postersStorage.publicUrl(key), size: file.value.length, type: file.mimeType }
   }
 
   return {

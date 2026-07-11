@@ -20,13 +20,19 @@ test('when requesting categories from a real server', function ({ components }) 
   })
 
   describe('and requesting event categories', () => {
-    it('should respond with a 200 and the 25 seeded event tags', async () => {
+    it('should respond with a 200 and the 25 seeded event tags with metadata and i18n labels', async () => {
       const response = await components.localFetch.fetch('/api/events/categories')
       const body = await response.json()
 
       expect(response.status).toBe(200)
       expect(body.data).toHaveLength(25)
-      expect(body.data).toEqual(expect.arrayContaining(['art', 'music', 'gaming']))
+      expect(body.data).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ name: 'art', active: true, i18n: { en: 'Art & Culture' } }),
+          expect.objectContaining({ name: 'music', active: true, i18n: { en: 'Music' } }),
+          expect.objectContaining({ name: 'gaming', active: true, i18n: { en: 'Gaming' } })
+        ])
+      )
     })
   })
 })

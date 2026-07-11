@@ -16,3 +16,22 @@ export function placesCategoriesClause(categories: string[]): SQLStatement {
 export function placesPositionsClause(positions: string[]): SQLStatement {
   return SQL` AND p.positions && ${positions}::varchar[]`
 }
+
+/** Minimum search length; shorter queries return no matches (legacy parity). */
+export const MIN_SEARCH_LENGTH = 3
+
+/**
+ * Build a prefix ts_query from a free-text search so partial words match (legacy used
+ * pg-tsquery, which appends `:*` to every term). Strips punctuation, ANDs the terms:
+ * "dec ar" -> "dec:* & ar:*". Empty (junk-only input) yields '' so the caller can
+ * short-circuit to no matches instead of a `to_tsquery('')` syntax error.
+ */
+export function toPrefixTsQuery(search: string): string {
+  return search
+    .replace(/[^\p{L}\p{N}\s]+/gu, ' ')
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((term) => `${term}:*`)
+    .join(' & ')
+}

@@ -6,10 +6,11 @@ import type { IProfilesComponent } from '../../logic/profiles'
 import type { ICommsGatekeeperClient } from '../../adapters/comms-gatekeeper-client'
 import { BadRequestError, UnauthorizedError } from '../../types/errors'
 import { API_ADMIN_IDENTITY } from '../middlewares/authorization'
+import { ProfilePermission } from '../../types/entities'
 import { isPlaceId } from '../../logic/entity-id'
 import { intParam, multiParam as multi, MAX_BATCH_ITEMS } from './query-params'
 
-type ListContext = { viewer?: string; isAdmin?: boolean }
+type ListContext = { viewer?: string; isAdmin?: boolean; isModerator?: boolean }
 
 /** Parse a tri-state boolean query param: 'true' -> true, 'false' -> false, else undefined. */
 function boolParam(params: URLSearchParams, key: string): boolean | undefined {
@@ -46,8 +47,9 @@ function parseFilters(params: URLSearchParams, ctx: ListContext = {}): EventList
     listParam === 'live' || listParam === 'upcoming' || listParam === 'all' || listParam === 'active'
       ? listParam
       : 'active'
-  // Admins may opt into pending/rejected/deleted events for moderation.
-  const includeUnapproved = ctx.isAdmin ? params.get('allow_pending') === 'true' : false
+  // Moderators (admins + ApproveAnyEvent/EditAnyEvent holders) see pending/rejected events by
+  // default (legacy parity); deleted stays hidden unless an admin opts in with ?allow_deleted.
+  const includeUnapproved = !!ctx.isModerator
   const includeDeleted = ctx.isAdmin ? params.get('allow_deleted') === 'true' : false
 
   // Positions are "x,y" tokens — use getAll (not multiParam) so the comma isn't split.
@@ -59,6 +61,8 @@ function parseFilters(params: URLSearchParams, ctx: ListContext = {}): EventList
   return {
     search: params.get('search') ?? undefined,
     positions,
+    // Legacy `places_ids` filter on GET (uuid-validated so a bad id can't 500 the ::uuid cast).
+    placeIds: multi(params, 'places_ids')?.filter((id): id is string => isPlaceId(id)),
     worldNames: multi(params, 'world_names'),
     communityId: params.get('community_id') ?? undefined,
     creator: params.get('creator') ?? undefined,
@@ -111,6 +115,17 @@ async function decorateConnectedUsers(
   )
 }
 
+/** A moderator (admin or ApproveAnyEvent/EditAnyEvent holder) sees pending/rejected by default. */
+async function isModeratorViewer(
+  profiles: IProfilesComponent,
+  viewer: string | undefined,
+  isAdmin: boolean
+): Promise<boolean> {
+  if (isAdmin) return true
+  if (!viewer) return false
+  return profiles.hasAnyPermission(viewer, [ProfilePermission.ApproveAnyEvent, ProfilePermission.EditAnyEvent])
+}
+
 /** Run an event list query and apply the opt-in connected-users decoration. */
 async function listAndDecorate(
   components: { events: IEventsComponent; commsGatekeeperClient: ICommsGatekeeperClient },
@@ -135,7 +150,8 @@ export async function getEventListHandler(
   const { viewer, isAdmin } = resolveViewer(context.verification, context.components.profiles)
   const params = context.url.searchParams
   assertAuthedFilters(params, viewer)
-  return listAndDecorate(context.components, params, parseFilters(params, { viewer, isAdmin }))
+  const isModerator = await isModeratorViewer(context.components.profiles, viewer, isAdmin)
+  return listAndDecorate(context.components, params, parseFilters(params, { viewer, isAdmin, isModerator }))
 }
 
 /**
@@ -151,7 +167,8 @@ export async function searchEventsHandler(
   const { viewer, isAdmin } = resolveViewer(context.verification, context.components.profiles)
   const params = context.url.searchParams
   assertAuthedFilters(params, viewer)
-  const filters = parseFilters(params, { viewer, isAdmin })
+  const isModerator = await isModeratorViewer(context.components.profiles, viewer, isAdmin)
+  const filters = parseFilters(params, { viewer, isAdmin, isModerator })
 
   let body: any = {}
   try {
@@ -247,6 +264,7 @@ export async function deleteEventHandler(
   if (!viewer) throw new UnauthorizedError('Authentication required')
 
   const actor = context.url.searchParams.get('actor') ?? undefined
-  await context.components.events.deleteEvent(context.params.event_id, viewer, isAdmin, actor)
+  const reason = context.url.searchParams.get('reason') ?? undefined
+  await context.components.events.deleteEvent(context.params.event_id, viewer, isAdmin, actor, reason)
   return { status: 200, body: { ok: true, data: { id: context.params.event_id } } }
 }

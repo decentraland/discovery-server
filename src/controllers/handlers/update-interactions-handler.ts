@@ -1,6 +1,6 @@
 import type { HandlerContextWithPath, HTTPResponse } from '../../types'
 import { BadRequestError, UnauthorizedError } from '../../types/errors'
-import { resolveEntityType } from '../../logic/entity-id'
+import { resolveEntityType, isPlaceId } from '../../logic/entity-id'
 
 export type InteractionSummary = {
   likes: number
@@ -42,8 +42,13 @@ export async function updateLikesHandler(
   const user = context.verification?.auth?.toLowerCase()
   if (!user) throw new UnauthorizedError('Authentication required')
 
-  const entityId =
-    (context.params as Record<string, string>).entity_id ?? (context.params as Record<string, string>).world_id
+  const params = context.params as Record<string, string>
+  const isWorldsRoute = 'world_id' in params
+  const entityId = params.entity_id ?? params.world_id
+  // The worlds route rejects a place UUID: place interactions belong to /api/places/:entity_id.
+  if (isWorldsRoute && isPlaceId(entityId)) {
+    throw new BadRequestError('Invalid world ID. Use /api/places/:entity_id/likes for a place')
+  }
   const entityType = resolveEntityType(entityId)
 
   let body: { like?: unknown }
@@ -52,8 +57,19 @@ export async function updateLikesHandler(
   } catch {
     throw new BadRequestError('Invalid JSON body')
   }
+  // Legacy `/api/places/:entity_id/likes` treats a missing `like` as `true`; the worlds route requires it.
+  if (body.like === undefined && !isWorldsRoute) body.like = true
   if (!(body.like === null || typeof body.like === 'boolean')) {
     throw new BadRequestError('Body must contain a boolean or null "like"')
+  }
+
+  // Read first: this 404s a missing entity BEFORE any write (no orphan interaction row) and
+  // yields the caller's current vote so an idempotent re-click is a true no-op (no VP re-fetch,
+  // no score recompute) — matching legacy.
+  const before = await refreshedSummary(context.components, entityId, entityType, user)
+  const currentLike = before.user_like ? true : before.user_dislike ? false : null
+  if (currentLike === body.like) {
+    return { status: 200, body: { ok: true, data: before } }
   }
 
   await interactions.setLike({ entityId, entityType, user, like: body.like })
@@ -75,8 +91,12 @@ export async function updateFavoritesHandler(
   const user = context.verification?.auth?.toLowerCase()
   if (!user) throw new UnauthorizedError('Authentication required')
 
-  const entityId =
-    (context.params as Record<string, string>).entity_id ?? (context.params as Record<string, string>).world_id
+  const params = context.params as Record<string, string>
+  const isWorldsRoute = 'world_id' in params
+  const entityId = params.entity_id ?? params.world_id
+  if (isWorldsRoute && isPlaceId(entityId)) {
+    throw new BadRequestError('Invalid world ID. Use /api/places/:entity_id/favorites for a place')
+  }
   const entityType = resolveEntityType(entityId)
 
   let body: { favorites?: unknown }
@@ -87,6 +107,12 @@ export async function updateFavoritesHandler(
   }
   if (typeof body.favorites !== 'boolean') {
     throw new BadRequestError('Body must contain a boolean "favorites"')
+  }
+
+  // Read first (404s a missing entity before any write; enables the idempotent no-op).
+  const before = await refreshedSummary(context.components, entityId, entityType, user)
+  if (before.user_favorite === body.favorites) {
+    return { status: 200, body: { ok: true, data: before } }
   }
 
   await interactions.setFavorite({ entityId, entityType, user, favorite: body.favorites })

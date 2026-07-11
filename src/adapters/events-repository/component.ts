@@ -3,7 +3,10 @@ import type { Queryable } from '../pg'
 import type { Event } from '../../types/entities'
 import type { CreateEventRow, EventListFilters, IEventsRepository, UpdateEventRow } from './types'
 
-const MAX_LIMIT = 100
+// Legacy events list default + max page size (much larger than the places default) — kept for
+// parity so unpaginated consumers aren't silently truncated.
+const DEFAULT_LIMIT = 500
+const MAX_LIMIT = 500
 const MIN_SEARCH_LENGTH = 2
 
 // Whitelisted updatable columns (identifier is safe to inline; values parameterized).
@@ -94,7 +97,11 @@ export function createEventsRepository(): IEventsRepository {
     if (filters.search && filters.search.length >= MIN_SEARCH_LENGTH) {
       where.append(SQL` AND e.textsearch @@ websearch_to_tsquery('english', ${filters.search})`)
     }
-    if (filters.placeIds?.length) {
+    // Legacy OR-combines placeIds and communityId when both are present (a search may ask for
+    // "events at these places OR in this community"); otherwise each filter applies alone.
+    if (filters.placeIds?.length && filters.communityId) {
+      where.append(SQL` AND (e.place_id = ANY(${filters.placeIds}::uuid[]) OR e.community_id = ${filters.communityId})`)
+    } else if (filters.placeIds?.length) {
       where.append(SQL` AND e.place_id = ANY(${filters.placeIds}::uuid[])`)
     }
     if (filters.worldNames?.length) {
@@ -115,7 +122,7 @@ export function createEventsRepository(): IEventsRepository {
         where.append(SQL` AND `).append(clause)
       }
     }
-    if (filters.communityId) {
+    if (filters.communityId && !filters.placeIds?.length) {
       where.append(SQL` AND e.community_id = ${filters.communityId}`)
     }
     if (filters.creator) {
@@ -187,14 +194,21 @@ export function createEventsRepository(): IEventsRepository {
 
   async function list(client: Queryable, filters: EventListFilters): Promise<Event[]> {
     if (filters.search && filters.search.length < MIN_SEARCH_LENGTH) return []
-    const limit = Math.min(filters.limit ?? 50, MAX_LIMIT)
+    const limit = Math.min(filters.limit ?? DEFAULT_LIMIT, MAX_LIMIT)
     const offset = Math.max(filters.offset ?? 0, 0)
+    const searching = !!filters.search && filters.search.length >= MIN_SEARCH_LENGTH
 
     const query = SQL`SELECT e.* FROM events e WHERE `
     query.append(buildWhere(filters))
     const direction = filters.order === 'desc' ? SQL` DESC` : SQL` ASC`
+    query.append(SQL` ORDER BY `)
+    // When searching, best relevance match first (legacy parity), then the chronological order.
+    // Ranking is an ORDER BY expression (not a selected column) so it never leaks into the row.
+    if (searching) {
+      query.append(SQL`ts_rank_cd(e.textsearch, websearch_to_tsquery('english', ${filters.search})) DESC, `)
+    }
     query
-      .append(SQL` ORDER BY e.next_start_at`)
+      .append(SQL`e.next_start_at`)
       .append(direction)
       // e.id is a unique tie-breaker so pagination is stable when next_start_at ties (or is NULL).
       .append(SQL` NULLS LAST, e.id LIMIT ${limit} OFFSET ${offset}`)

@@ -21,6 +21,7 @@ describe('when running the notification crons', () => {
       communitiesClient: {
         enabled: false,
         getManagedCommunities: jest.fn().mockResolvedValue([]),
+        getCommunity: jest.fn().mockResolvedValue(null),
         getCommunityMembers: jest.fn().mockResolvedValue([])
       },
       config: { getString: jest.fn().mockResolvedValue('https://events.decentraland.org') },
@@ -174,6 +175,124 @@ describe('when running the notification crons', () => {
 
       expect(published).toBe(0)
       expect(components.notificationCursorsRepository.set).toHaveBeenCalled()
+    })
+  })
+
+  describe('and notifying the creator that their event was approved', () => {
+    let event: any
+
+    beforeEach(() => {
+      event = { id: 'e1', user: '0xowner', name: 'Party', description: 'desc', image: 'img' }
+    })
+
+    it('should publish a single event-approved notification with the creator and a link', async () => {
+      const notifications = await createNotificationsComponent(components)
+      await notifications.notifyEventApproved(event)
+
+      const published = publish.mock.calls[0][0]
+      expect(published).toHaveLength(1)
+      expect(published[0]).toEqual(
+        expect.objectContaining({
+          subType: 'event-approved',
+          key: 'e1',
+          metadata: expect.objectContaining({
+            host: '0xowner',
+            title: 'Party',
+            link: 'https://events.decentraland.org/event/e1'
+          })
+        })
+      )
+    })
+  })
+
+  describe('and notifying the creator that their event was rejected', () => {
+    let event: any
+
+    beforeEach(() => {
+      event = { id: 'e1', user: '0xowner', name: 'Party', description: 'desc', image: 'img' }
+    })
+
+    it('should publish a single event-rejected notification carrying the reason', async () => {
+      const notifications = await createNotificationsComponent(components)
+      await notifications.notifyEventRejected(event, 'spam')
+
+      const published = publish.mock.calls[0][0]
+      expect(published[0]).toEqual(
+        expect.objectContaining({
+          subType: 'event-rejected',
+          metadata: expect.objectContaining({ host: '0xowner', reason: 'spam' })
+        })
+      )
+    })
+  })
+
+  describe('and notifying the creator that their event was deleted', () => {
+    let event: any
+
+    beforeEach(() => {
+      event = { id: 'e1', user: '0xowner', name: 'Party', description: 'desc', image: 'img' }
+    })
+
+    it('should include the reason when one is given', async () => {
+      const notifications = await createNotificationsComponent(components)
+      await notifications.notifyEventDeleted(event, 'inappropriate')
+
+      const published = publish.mock.calls[0][0]
+      expect(published[0]).toEqual(
+        expect.objectContaining({
+          subType: 'event-deleted',
+          metadata: expect.objectContaining({ host: '0xowner', reason: 'inappropriate' })
+        })
+      )
+    })
+
+    it('should omit the reason when none is given', async () => {
+      const notifications = await createNotificationsComponent(components)
+      await notifications.notifyEventDeleted(event)
+
+      const published = publish.mock.calls[0][0]
+      expect(published[0].metadata).not.toHaveProperty('reason')
+    })
+  })
+
+  describe('and fanning a community-event notification out on approval', () => {
+    let event: any
+
+    beforeEach(() => {
+      event = { id: 'e1', user: '0xowner', name: 'Party', image: 'img', community_id: 'community-1' }
+      components.communitiesClient.enabled = true
+      components.communitiesClient.getCommunity.mockResolvedValue({
+        id: 'community-1',
+        name: 'Builders',
+        thumbnailRaw: 'https://thumb'
+      })
+      components.communitiesClient.getCommunityMembers.mockResolvedValue(['0xaaa', '0xbbb'])
+    })
+
+    it('should publish one EVENT_CREATED per community member', async () => {
+      const notifications = await createNotificationsComponent(components)
+      await notifications.notifyCommunityEventPublished(event)
+
+      const published = publish.mock.calls[0][0]
+      expect(published).toHaveLength(2)
+      expect(published[0]).toEqual(
+        expect.objectContaining({
+          subType: 'event-created',
+          metadata: expect.objectContaining({
+            title: 'Community Event Added',
+            communityName: 'Builders',
+            communityThumbnail: 'https://thumb',
+            attendee: '0xaaa'
+          })
+        })
+      )
+    })
+
+    it('should be a no-op when the event has no community', async () => {
+      const notifications = await createNotificationsComponent(components)
+      await notifications.notifyCommunityEventPublished({ ...event, community_id: null })
+
+      expect(publish).not.toHaveBeenCalled()
     })
   })
 })

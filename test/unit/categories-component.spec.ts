@@ -12,6 +12,7 @@ describe('when getting categories', () => {
       findActivePlaceCategories: jest.fn(),
       findActivePlaceCategoriesWithCounts: jest.fn(),
       findActiveEventCategories: jest.fn(),
+      setPlaceCategories: jest.fn(),
       reconcilePoiCategory: jest.fn()
     }
     pg = {}
@@ -96,15 +97,26 @@ describe('when getting categories', () => {
   })
 
   describe('and requesting event categories', () => {
+    let createdAt: Date
+    let updatedAt: Date
+
     beforeEach(() => {
-      categoriesRepository.findActiveEventCategories.mockResolvedValueOnce(['art', 'music'])
+      createdAt = new Date('2024-01-01T00:00:00.000Z')
+      updatedAt = new Date('2024-02-01T00:00:00.000Z')
+      categoriesRepository.findActiveEventCategories.mockResolvedValueOnce([
+        { name: 'art', active: true, created_at: createdAt, updated_at: updatedAt },
+        { name: 'music', active: true, created_at: createdAt, updated_at: updatedAt }
+      ])
     })
 
-    it('should return the active event category names', async () => {
+    it('should return the active event categories decorated with English labels', async () => {
       const categories = await createCategoriesComponent({ pg, categoriesRepository, dclListsClient, logs })
       const result = await categories.getEventCategories()
 
-      expect(result).toEqual(['art', 'music'])
+      expect(result).toEqual([
+        { name: 'art', active: true, created_at: createdAt, updated_at: updatedAt, i18n: { en: 'Art & Culture' } },
+        { name: 'music', active: true, created_at: createdAt, updated_at: updatedAt, i18n: { en: 'Music' } }
+      ])
     })
   })
 })

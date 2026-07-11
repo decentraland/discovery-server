@@ -3,6 +3,7 @@ import { PlaceNotFoundError } from '../../src/logic/places'
 import { BadRequestError } from '../../src/types/errors'
 
 const PLACE_ID = '11111111-1111-4111-8111-111111111111'
+const WORLD_ID = 'my-world.dcl.eth'
 
 describe('when moderating a place', () => {
   let components: any
@@ -12,8 +13,17 @@ describe('when moderating a place', () => {
     tx = { query: jest.fn() }
     components = {
       pg: { withTransaction: jest.fn((cb: (client: any) => Promise<unknown>) => cb(tx)) },
-      placesRepository: { lockById: jest.fn(), findByIdWithAggregates: jest.fn(), updateModeration: jest.fn() },
-      worldsRepository: { lockById: jest.fn(), findByIdWithAggregates: jest.fn(), updateModeration: jest.fn() },
+      placesRepository: {
+        lockById: jest.fn(),
+        // Default aggregate for the post-write re-read (moderation returns the full aggregate).
+        findByIdWithAggregates: jest.fn().mockResolvedValue({ id: PLACE_ID, content_rating: 'PR' }),
+        updateModeration: jest.fn()
+      },
+      worldsRepository: {
+        lockById: jest.fn(),
+        findByIdWithAggregates: jest.fn().mockResolvedValue({ id: WORLD_ID, content_rating: 'RP' }),
+        updateModeration: jest.fn()
+      },
       contentRatingsRepository: { record: jest.fn() },
       slackNotifier: { notify: jest.fn() },
       config: { getString: jest.fn().mockResolvedValue(undefined) },

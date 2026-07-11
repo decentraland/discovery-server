@@ -22,14 +22,19 @@ describe('when uploading a poster', () => {
   describe('and the file is a valid png', () => {
     it('should upload the bytes and return the public url', async () => {
       const posters = await createPostersComponent({ postersStorage, logs })
-      const url = await posters.uploadHorizontal({ value: Buffer.from('img'), mimeType: 'image/png' })
+      const result = await posters.uploadHorizontal({ value: Buffer.from('img'), mimeType: 'image/png' })
 
       expect(postersStorage.uploadObject).toHaveBeenCalledWith(
         expect.stringMatching(/^posters\/.+\.png$/),
         expect.any(Buffer),
         'image/png'
       )
-      expect(url).toBe('https://cdn/poster.png')
+      expect(result).toEqual({
+        filename: expect.stringMatching(/\.png$/),
+        url: 'https://cdn/poster.png',
+        size: 3,
+        type: 'image/png'
+      })
     })
   })
 

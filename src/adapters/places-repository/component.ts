@@ -1,17 +1,55 @@
 import SQL, { SQLStatement } from 'sql-template-strings'
 import type { Queryable } from '../pg'
 import type { AggregatePlace, Place, PlaceStatus } from '../../types/entities'
-import { placesCategoriesClause, placesPositionsClause } from '../places-filters'
+import { placesCategoriesClause, placesPositionsClause, toPrefixTsQuery, MIN_SEARCH_LENGTH } from '../places-filters'
 import type { IPlacesRepository, PlaceListFilters, PlaceListOrderBy, UpsertPlaceInput } from './types'
 
-const MIN_SEARCH_LENGTH = 3
 const MAX_LIMIT = 100
+const DEFAULT_LIMIT = 100
+
 const ORDER_COLUMNS: Record<PlaceListOrderBy, string> = {
   like_score: 'like_score',
   updated_at: 'updated_at',
   created_at: 'created_at',
   // most_active ranks by hot-scene membership first, then falls back to this column.
   most_active: 'like_score'
+}
+
+/**
+ * Split compound/camelCase tokens into their component words so a search for a
+ * sub-word still matches (ports decentraland-gatsby's createSearchableMatches).
+ * e.g. "DecentralandFoundation" -> "DecentralandFoundation Decentraland Foundation".
+ */
+function searchableMatches(str: string): string {
+  return str
+    .replace(/\W+/gi, ' ')
+    .replace(/\w{3,}/gi, (match) => {
+      if (match.length <= 3) return match
+      const extended = match.replace(/[A-Z][A-Z]*[a-z]*/g, (upper) => ' ' + upper).trim()
+      return match === extended ? match : match + ' ' + extended
+    })
+    .trim()
+}
+
+/**
+ * The weighted full-text vector written to `places.textsearch` at ingest, matching
+ * legacy PlaceModel.textsearch: title + world_name weight A, description (raw and
+ * word-split) weight B, owner weight C. Built with the 'english' config so it lines
+ * up with the search query's websearch_to_tsquery('english', ...).
+ */
+function textsearchSql(scene: {
+  title: string | null
+  world_name: string | null
+  description: string | null
+  owner: string | null
+}): SQLStatement {
+  return SQL`(
+    setweight(to_tsvector('english', coalesce(${scene.title}, '')), 'A') ||
+    setweight(to_tsvector('english', coalesce(${scene.world_name}, '')), 'A') ||
+    setweight(to_tsvector('english', coalesce(${scene.description}, '')), 'B') ||
+    setweight(to_tsvector('english', ${searchableMatches(scene.description ?? '')}), 'B') ||
+    setweight(to_tsvector('english', coalesce(${scene.owner}, '')), 'C')
+  )`
 }
 
 /**
@@ -32,7 +70,17 @@ export function createPlacesRepository(): IPlacesRepository {
       where.append(SQL` AND p.highlighted = true`)
     }
     if (filters.search && filters.search.length >= MIN_SEARCH_LENGTH) {
-      where.append(SQL` AND p.textsearch @@ websearch_to_tsquery('english', ${filters.search})`)
+      const query = toPrefixTsQuery(filters.search)
+      // A search of only punctuation matches nothing (legacy `rank > 0` semantics).
+      where.append(query ? SQL` AND p.textsearch @@ to_tsquery('english', ${query})` : SQL` AND FALSE`)
+    }
+    // most_active is served only from the currently-active base positions (legacy hot-scenes set).
+    if (filters.order_by === 'most_active') {
+      where.append(
+        filters.mostActivePositions?.length
+          ? SQL` AND p.base_position = ANY(${filters.mostActivePositions}::varchar[])`
+          : SQL` AND FALSE`
+      )
     }
     if (filters.categories?.length) {
       where.append(placesCategoriesClause(filters.categories))
@@ -113,28 +161,39 @@ export function createPlacesRepository(): IPlacesRepository {
     return result.rows
   }
 
+  async function countByIds(client: Queryable, ids: string[]): Promise<number> {
+    if (!ids.length) return 0
+    // Counts every id present in the table INCLUDING disabled (legacy countByIds semantics),
+    // so POST /api/places `total` can exceed the returned (enabled-only) rows.
+    const result = await client.query<{ total: string }>(
+      SQL`SELECT count(*) AS total FROM places WHERE id = ANY(${ids}::uuid[])`
+    )
+    return Number(result.rows[0]?.total ?? 0)
+  }
+
   async function findWithAggregates(client: Queryable, filters: PlaceListFilters): Promise<AggregatePlace[]> {
     if (filters.search && filters.search.length < MIN_SEARCH_LENGTH) return []
 
     const orderBy = ORDER_COLUMNS[filters.order_by ?? 'like_score']
     const direction = filters.order === 'asc' ? 'ASC' : 'DESC'
-    const limit = Math.min(filters.limit ?? 50, MAX_LIMIT)
+    const limit = Math.min(filters.limit ?? DEFAULT_LIMIT, MAX_LIMIT)
     const offset = Math.max(filters.offset ?? 0, 0)
+    const searchQuery =
+      filters.search && filters.search.length >= MIN_SEARCH_LENGTH ? toPrefixTsQuery(filters.search) : ''
 
     const query = SQL`SELECT p.*`
     query.append(userFlagsSelect(filters.user))
-    if (filters.search && filters.search.length >= MIN_SEARCH_LENGTH) {
-      query.append(SQL`, ts_rank_cd(p.textsearch, websearch_to_tsquery('english', ${filters.search})) AS rank`)
+    if (searchQuery) {
+      query.append(SQL`, ts_rank_cd(p.textsearch, to_tsquery('english', ${searchQuery})) AS rank`)
     }
     query.append(SQL` FROM places p`)
     query.append(userFlagsJoin(filters.user))
     query.append(SQL` WHERE `).append(buildWhere(filters))
 
     query.append(SQL` ORDER BY `)
-    if (filters.search && filters.search.length >= MIN_SEARCH_LENGTH) query.append(SQL`rank DESC, `)
-    if (filters.order_by === 'most_active' && filters.mostActivePositions?.length) {
-      query.append(SQL`(p.base_position = ANY(${filters.mostActivePositions}::varchar[])) DESC, `)
-    }
+    // most_active rows are re-sorted by realtime user_count in the places logic; the SQL
+    // order here only stabilizes ties.
+    if (searchQuery) query.append(SQL`rank DESC, `)
     // orderBy and direction are whitelisted above, so this is safe to append as raw text.
     query.append(` p.${orderBy} ${direction} NULLS LAST, p.deployed_at DESC`)
     query.append(SQL` LIMIT ${limit} OFFSET ${offset}`)
@@ -188,34 +247,81 @@ export function createPlacesRepository(): IPlacesRepository {
     return result.rows[0] ?? null
   }
 
-  async function upsertScene(client: Queryable, scene: import('./types').ScenePlaceInput): Promise<Place> {
-    const existing = await client.query<{ id: string }>(
-      SQL`SELECT id FROM places WHERE base_position = ${scene.base_position} AND world IS false LIMIT 1`
+  async function findCategoriesById(client: Queryable, id: string): Promise<string[]> {
+    const result = await client.query<{ category_id: string }>(
+      SQL`SELECT category_id FROM place_categories WHERE place_id = ${id}::uuid ORDER BY category_id`
     )
-    if (existing.rows[0]) {
-      const result = await client.query<Place>(SQL`
-        UPDATE places SET
-          positions = ${scene.positions}, title = ${scene.title}, description = ${scene.description},
-          image = ${scene.image}, owner = ${scene.owner}, creator_address = ${scene.owner},
-          contact_name = ${scene.contact_name}, contact_email = ${scene.contact_email},
-          categories = ${scene.categories}, sdk = ${scene.sdk}, deployed_at = ${scene.deployed_at},
-          disabled = false, disabled_at = NULL, updated_at = now()
-        WHERE id = ${existing.rows[0].id}
-        RETURNING *`)
-      return result.rows[0]
-    }
+    return result.rows.map((row) => row.category_id)
+  }
 
-    const result = await client.query<Place>(SQL`
+  async function findEnabledByPositions(client: Queryable, positions: string[]): Promise<Place[]> {
+    if (!positions.length) return []
+    const result = await client.query<Place>(
+      SQL`SELECT * FROM places WHERE world IS false AND disabled IS false AND positions && ${positions}::varchar[]`
+    )
+    return result.rows
+  }
+
+  async function findActiveByWorldIdAndPositions(
+    client: Queryable,
+    worldId: string,
+    positions: string[]
+  ): Promise<Place[]> {
+    if (!positions.length) return []
+    const result = await client.query<Place>(
+      SQL`SELECT * FROM places WHERE world IS true AND world_id = ${worldId.toLowerCase()}
+        AND disabled IS false AND positions && ${positions}::varchar[]`
+    )
+    return result.rows
+  }
+
+  async function insertScene(client: Queryable, scene: import('./types').ScenePlaceInput): Promise<Place> {
+    const query = SQL`
       INSERT INTO places (
         base_position, positions, title, description, image, owner, creator_address,
-        contact_name, contact_email, categories, sdk, deployed_at, world
+        contact_name, contact_email, content_rating, categories, sdk, deployed_at,
+        world, world_id, world_name, disabled, disabled_at, disabled_reason, textsearch
       ) VALUES (
         ${scene.base_position}, ${scene.positions}, ${scene.title}, ${scene.description}, ${scene.image},
-        ${scene.owner}, ${scene.owner}, ${scene.contact_name}, ${scene.contact_email}, ${scene.categories},
-        ${scene.sdk}, ${scene.deployed_at}, false
-      )
-      RETURNING *`)
+        ${scene.owner}, ${scene.creator_address}, ${scene.contact_name}, ${scene.contact_email},
+        ${scene.content_rating}, ${scene.categories}, ${scene.sdk}, ${scene.deployed_at},
+        ${scene.world}, ${scene.world_id}, ${scene.world_name}, ${scene.disabled},
+        ${scene.disabled ? new Date().toISOString() : null}, ${scene.disabled_reason}, `
+    query.append(textsearchSql(scene))
+    query.append(SQL`) RETURNING *`)
+    const result = await client.query<Place>(query)
     return result.rows[0]
+  }
+
+  async function updateScene(client: Queryable, id: string, scene: import('./types').ScenePlaceInput): Promise<Place> {
+    const query = SQL`
+      UPDATE places SET
+        positions = ${scene.positions}, title = ${scene.title}, description = ${scene.description},
+        image = ${scene.image}, owner = ${scene.owner}, creator_address = ${scene.creator_address},
+        contact_name = ${scene.contact_name}, contact_email = ${scene.contact_email},
+        content_rating = ${scene.content_rating}, categories = ${scene.categories}, sdk = ${scene.sdk},
+        deployed_at = ${scene.deployed_at}, world_id = ${scene.world_id}, world_name = ${scene.world_name},
+        disabled = ${scene.disabled}, disabled_at = ${scene.disabled ? new Date().toISOString() : null},
+        disabled_reason = ${scene.disabled_reason}, updated_at = now(), textsearch = `
+    query.append(textsearchSql(scene))
+    query.append(SQL` WHERE id = ${id} RETURNING *`)
+    const result = await client.query<Place>(query)
+    return result.rows[0]
+  }
+
+  async function disablePlaces(client: Queryable, ids: string[], reason: string): Promise<number> {
+    if (!ids.length) return 0
+    const result = await client.query(SQL`
+      UPDATE places SET disabled = true, disabled_at = now(), disabled_reason = ${reason}, updated_at = now()
+      WHERE id = ANY(${ids}::uuid[]) AND disabled IS false`)
+    return result.rowCount ?? 0
+  }
+
+  async function disableByWorldId(client: Queryable, worldId: string, before: Date): Promise<number> {
+    const result = await client.query(SQL`
+      UPDATE places SET disabled = true, disabled_at = now(), disabled_reason = 'undeployment', updated_at = now()
+      WHERE world_id = ${worldId.toLowerCase()} AND deployed_at < ${before.toISOString()} AND disabled IS false`)
+    return result.rowCount ?? 0
   }
 
   async function disableByWorldIdAndPositions(
@@ -251,8 +357,15 @@ export function createPlacesRepository(): IPlacesRepository {
     findWithAggregates,
     count,
     insert,
+    countByIds,
     updateModeration,
-    upsertScene,
+    findCategoriesById,
+    findEnabledByPositions,
+    findActiveByWorldIdAndPositions,
+    insertScene,
+    updateScene,
+    disablePlaces,
+    disableByWorldId,
     disableByWorldIdAndPositions,
     listOccupiedPositions
   }

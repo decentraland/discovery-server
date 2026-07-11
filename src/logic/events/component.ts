@@ -4,6 +4,7 @@ import { ProfilePermission as Permission } from '../../types/entities'
 import type { EventListFilters, CreateEventRow, UpdateEventRow } from '../../adapters/events-repository'
 import { AllowedInputFrequencies, MAX_RECURRENT_PAST_ITERATIONS } from '../recurrence'
 import type { RecurrentEventInput } from '../recurrence'
+import { isPlaceId } from '../entity-id'
 import { EventNotFoundError, EventUnauthorizedActionError, EventValidationError } from './errors'
 import type { CreateEventPayload, EventWithAttendance, IEventsComponent, UpdateEventPayload } from './types'
 
@@ -51,6 +52,7 @@ export async function createEventsComponent(
     | 'profiles'
     | 'recurrence'
     | 'communitiesClient'
+    | 'notifications'
     | 'slackNotifier'
     | 'landClient'
     | 'config'
@@ -66,6 +68,7 @@ export async function createEventsComponent(
     profiles,
     recurrence,
     communitiesClient,
+    notifications,
     slackNotifier,
     landClient,
     config
@@ -98,7 +101,7 @@ export async function createEventsComponent(
    * back to the static default image. A client-supplied value always wins.
    */
   async function resolvePresentation(
-    payload: CreateEventPayload,
+    payload: Pick<CreateEventPayload, 'x' | 'y' | 'image' | 'estate_id' | 'estate_name' | 'scene_name'>,
     isWorld: boolean
   ): Promise<{
     image: string | null
@@ -125,11 +128,25 @@ export async function createEventsComponent(
     return { image, estate_id, estate_name, scene_name: payload.scene_name ?? estate_name }
   }
 
-  // Legacy contract: `place_id` carries the world id for world events; foundation
-  // creators are shown as "Decentraland Foundation".
-  function serialize(event: Event): Event {
-    const user_name = foundationAddresses.has(event.user) ? 'Decentraland Foundation' : event.user_name
-    return { ...event, user_name, place_id: event.place_id ?? event.world_id }
+  // Legacy contract (model.toPublic): `place_id` carries the world id for world events;
+  // foundation creators show as "Decentraland Foundation"; `contact`/`details` are omitted
+  // for anyone who isn't the creator; and derived `position`/`live`/`estate_name` are added.
+  function serialize(event: Event, viewer?: string): Event {
+    const { contact, details, ...rest } = event
+    const isOwner = viewer !== undefined && viewer.toLowerCase() === event.user
+    const now = Date.now()
+    const nextStart = event.next_start_at ?? event.start_at
+    const live =
+      !!nextStart && now >= new Date(nextStart).getTime() && now < new Date(nextStart).getTime() + event.duration
+    return {
+      ...rest,
+      ...(isOwner ? { contact, details } : {}),
+      user_name: foundationAddresses.has(event.user) ? 'Decentraland Foundation' : event.user_name,
+      place_id: event.place_id ?? event.world_id,
+      estate_name: event.estate_name ?? event.scene_name,
+      position: [event.x, event.y],
+      live
+    }
   }
 
   async function resolveLocation(
@@ -227,29 +244,50 @@ export async function createEventsComponent(
     return true
   }
 
+  // Event ids are uuids; reject a non-uuid as not-found instead of letting the uuid cast 500.
+  function assertEventId(id: string): void {
+    if (!isPlaceId(id)) throw new EventNotFoundError(id)
+  }
+
   async function getEvent(id: string, user?: string, isAdmin = false): Promise<EventWithAttendance> {
+    assertEventId(id)
     const event = await eventsRepository.findById(pg, id)
     if (!event || !visibleToUser(event, user, isAdmin)) {
       throw new EventNotFoundError(id)
     }
     const attending = user ? await attendeesRepository.isAttending(pg, id, user) : false
-    return { ...serialize(event), attending }
+    return { ...serialize(event, user), attending }
+  }
+
+  // Serialize a list for a viewer, decorating each row with the viewer's `attending` flag
+  // (legacy list rows carry it). One batch query, not per-row.
+  async function serializeList(events: Event[], viewer?: string): Promise<Event[]> {
+    if (!viewer || !events.length) return events.map((event) => serialize(event, viewer))
+    const attended = new Set(
+      await attendeesRepository.listAttendedEventIds(
+        pg,
+        viewer,
+        events.map((event) => event.id)
+      )
+    )
+    return events.map((event) => ({ ...serialize(event, viewer), attending: attended.has(event.id) }))
   }
 
   async function getEvents(filters: EventListFilters): Promise<{ data: Event[]; total: number }> {
     const [data, total] = await Promise.all([eventsRepository.list(pg, filters), eventsRepository.count(pg, filters)])
-    return { data: data.map(serialize), total }
+    return { data: await serializeList(data, filters.viewer), total }
   }
 
   // List-only variant for callers that don't need the total (skips the count query).
   async function listEvents(filters: EventListFilters): Promise<Event[]> {
     const data = await eventsRepository.list(pg, filters)
-    return data.map(serialize)
+    return serializeList(data, filters.viewer)
   }
 
   async function getAttendingEvents(user: string): Promise<Event[]> {
     const data = await eventsRepository.listAttending(pg, user)
-    return data.map(serialize)
+    // Every row is one the user attends.
+    return data.map((event) => ({ ...serialize(event, user), attending: true }))
   }
 
   async function createEvent(payload: CreateEventPayload, user: string): Promise<Event> {
@@ -346,7 +384,7 @@ export async function createEventsComponent(
 
     const created = await eventsRepository.create(pg, row)
     alert(`:tada: New event submitted: ${created.name} by ${user.toLowerCase()}`)
-    return serialize(created)
+    return serialize(created, user)
   }
 
   async function assertCanModify(event: Event, user: string, isAdmin: boolean): Promise<void> {
@@ -378,6 +416,7 @@ export async function createEventsComponent(
     user: string,
     options: { isAdmin?: boolean; actor?: string } = {}
   ): Promise<Event> {
+    assertEventId(id)
     const isAdmin = options.isAdmin ?? false
     // The moderator recorded on approve/reject: an admin may override it (automation).
     const actor = (isAdmin && options.actor?.trim()) || user.toLowerCase()
@@ -444,6 +483,40 @@ export async function createEventsComponent(
       })
     }
 
+    // Location edit: re-resolve the target place/world and re-derive the Land metadata
+    // (estate/image/scene), matching legacy updateEvent. Client-supplied image/estate still
+    // win inside resolvePresentation.
+    if ('x' in patch || 'y' in patch || 'server' in patch || 'world' in patch) {
+      const x = toCoordinate(patch.x ?? event.x)
+      const y = toCoordinate(patch.y ?? event.y)
+      const server = 'server' in patch ? (patch.server ?? null) : event.server
+      const requestedWorld = 'world' in patch ? patch.world : event.world
+      const location = await resolveLocation({ x, y, server, world: requestedWorld })
+      const presentation = await resolvePresentation(
+        {
+          x,
+          y,
+          image: patch.image,
+          estate_id: patch.estate_id,
+          estate_name: patch.estate_name,
+          scene_name: patch.scene_name
+        },
+        location.world
+      )
+      Object.assign(update, {
+        x,
+        y,
+        server,
+        world: location.world,
+        place_id: location.place_id,
+        world_id: location.world_id,
+        image: presentation.image,
+        estate_id: presentation.estate_id,
+        estate_name: presentation.estate_name,
+        scene_name: presentation.scene_name
+      })
+    }
+
     // Community ownership is validated on update too (not just create): an owner can't
     // attach their event to a community they don't manage. Admins may attach any community.
     if ('community_id' in patch && patch.community_id && !isAdmin && communitiesClient.enabled) {
@@ -502,18 +575,43 @@ export async function createEventsComponent(
 
     const updated = await eventsRepository.update(pg, id, update)
     if (!updated) throw new EventNotFoundError(id)
-    if (canApprove && update.approved === true) {
+
+    // Lifecycle transitions (pre-update `event` vs the applied `update`) drive the
+    // Slack alerts and the SNS notifications to the creator. Fired only on the
+    // first transition into each state, matching legacy updateEvent.
+    const newlyApproved = !event.approved && update.approved === true
+    const newlyRejected = !event.rejected && update.rejected === true
+    if (canApprove && newlyApproved) {
       alert(`:white_check_mark: Event approved: ${updated.name} by ${actor}`)
+      // Fire-and-forget (the method swallows its own errors) so a slow/failed SNS
+      // publish never blocks or fails the PATCH — same as the Slack alert above.
+      void notifications.notifyEventApproved(updated)
     }
-    if (canApprove && update.rejected === true) {
+    if (canApprove && newlyRejected) {
       alert(
         `:x: Event rejected: ${updated.name}${update.rejection_reason ? ` (${update.rejection_reason})` : ''} by ${actor}`
       )
+      void notifications.notifyEventRejected(updated, updated.rejection_reason ?? '')
     }
-    return serialize(updated)
+    // Community members are told when a community-attached event becomes public: on its
+    // approval, or when an already-approved event moves to a different community. Skipped
+    // when the patch is explicitly detaching the community (legacy updateEvent shouldNotify).
+    const removingCommunity = 'community_id' in patch && patch.community_id === null
+    const communityChanged = updated.community_id !== event.community_id
+    if (updated.approved && updated.community_id && !removingCommunity && (newlyApproved || communityChanged)) {
+      void notifications.notifyCommunityEventPublished(updated)
+    }
+    return serialize(updated, user)
   }
 
-  async function deleteEvent(id: string, user: string, byAdmin: boolean, actor?: string): Promise<void> {
+  async function deleteEvent(
+    id: string,
+    user: string,
+    byAdmin: boolean,
+    actor?: string,
+    reason?: string
+  ): Promise<void> {
+    assertEventId(id)
     const event = await eventsRepository.findById(pg, id)
     if (!event) throw new EventNotFoundError(id)
     if (!byAdmin) await assertCanModify(event, user, false)
@@ -523,12 +621,21 @@ export async function createEventsComponent(
 
     // Admins may record an override actor as the deleter (automation).
     const deletedBy = (byAdmin && actor?.trim()) || user.toLowerCase()
+    // A moderator/admin removing someone else's event is a "deleted by moderator" action:
+    // it records a reason and notifies the creator. An owner deleting their own event does neither.
+    const isOwnerDelete = !byAdmin && event.user === user.toLowerCase()
+    const trimmedReason = reason?.trim() || undefined
     await eventsRepository.update(pg, id, {
       deleted_at: new Date(),
       deleted_by: deletedBy,
       deleted_by_user: !byAdmin,
-      deleted_by_admin: byAdmin
+      deleted_by_admin: byAdmin,
+      deleted_reason: isOwnerDelete ? null : (trimmedReason ?? null)
     })
+    if (!isOwnerDelete) {
+      // Fire-and-forget (the method swallows its own errors); mirrors the approve/reject path.
+      void notifications.notifyEventDeleted(event, trimmedReason)
+    }
   }
 
   async function updateNextStartAt(batchSize = 100): Promise<number> {

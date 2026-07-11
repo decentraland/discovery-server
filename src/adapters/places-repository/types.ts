@@ -38,7 +38,7 @@ export type PlaceModerationFields = Partial<
   Pick<Place, 'content_rating' | 'highlighted' | 'highlighted_image' | 'disabled' | 'disabled_reason' | 'ranking'>
 >
 
-/** Scene data extracted from a Catalyst deployment, keyed on base_position. */
+/** Scene data extracted from a deployment, ready to insert/update as a place row. */
 export type ScenePlaceInput = {
   base_position: string
   positions: string[]
@@ -46,11 +46,18 @@ export type ScenePlaceInput = {
   description: string | null
   image: string | null
   owner: string | null
+  creator_address: string | null
   contact_name: string | null
   contact_email: string | null
+  content_rating: string
   categories: string[]
   sdk: string | null
   deployed_at: string
+  world: boolean
+  world_id: string | null
+  world_name: string | null
+  disabled: boolean
+  disabled_reason: string | null
 }
 
 export interface IPlacesRepository {
@@ -58,13 +65,27 @@ export interface IPlacesRepository {
   lockById(client: Queryable, id: string): Promise<void>
   findByIdWithAggregates(client: Queryable, id: string, user?: string): Promise<AggregatePlace | null>
   findByIds(client: Queryable, ids: string[]): Promise<PlaceStatus[]>
+  /** Count how many of `ids` exist in the table, including disabled (POST /api/places `total`). */
+  countByIds(client: Queryable, ids: string[]): Promise<number>
   findWithAggregates(client: Queryable, filters: PlaceListFilters): Promise<AggregatePlace[]>
   count(client: Queryable, filters: PlaceListFilters): Promise<number>
   insert(client: Queryable, input: UpsertPlaceInput): Promise<Place>
   /** Apply moderation/admin field updates; sets disabled_at when disabling. */
   updateModeration(client: Queryable, id: string, fields: PlaceModerationFields): Promise<Place | null>
-  /** Upsert a genesis place from a scene deployment (matched on base_position); re-enables it. */
-  upsertScene(client: Queryable, scene: ScenePlaceInput): Promise<Place>
+  /** A place's category slugs from the authoritative `place_categories` join ([] if none/unknown). */
+  findCategoriesById(client: Queryable, id: string): Promise<string[]>
+  /** Enabled genesis (non-world) places whose positions overlap any of `positions`. */
+  findEnabledByPositions(client: Queryable, positions: string[]): Promise<Place[]>
+  /** Active places of a world whose positions overlap any of `positions` (world identity by overlap). */
+  findActiveByWorldIdAndPositions(client: Queryable, worldId: string, positions: string[]): Promise<Place[]>
+  /** Insert a new place from a scene deployment (computes textsearch). */
+  insertScene(client: Queryable, scene: ScenePlaceInput): Promise<Place>
+  /** Update an existing place (by id) from a scene deployment (recomputes textsearch); re-enables unless opted out. */
+  updateScene(client: Queryable, id: string, scene: ScenePlaceInput): Promise<Place>
+  /** Disable the given places with a reason. Returns the count disabled. */
+  disablePlaces(client: Queryable, ids: string[], reason: string): Promise<number>
+  /** Disable ALL of a world's places deployed before `before` (full world undeployment). Returns the count. */
+  disableByWorldId(client: Queryable, worldId: string, before: Date): Promise<number>
   /** Disable a world's places at the given base positions deployed before `before`. Returns the count disabled. */
   disableByWorldIdAndPositions(
     client: Queryable,

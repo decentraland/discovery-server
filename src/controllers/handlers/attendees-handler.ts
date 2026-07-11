@@ -13,14 +13,16 @@ export async function getAttendeesHandler(
 /** Legacy `POST /api/events/:event_id/attendees` — mark the authenticated user as attending. */
 export async function createAttendeeHandler(
   context: Pick<
-    HandlerContextWithPath<'attendees', '/api/events/:event_id/attendees'>,
+    HandlerContextWithPath<'attendees' | 'catalystClient', '/api/events/:event_id/attendees'>,
     'components' | 'params' | 'verification'
   >
 ): Promise<HTTPResponse<EventAttendee[]>> {
   const user = context.verification?.auth?.toLowerCase()
   if (!user) throw new UnauthorizedError('Authentication required')
 
-  await context.components.attendees.attend(context.params.event_id, user, null)
+  // Capture the attendee's profile display name (legacy stored it), best-effort.
+  const userName = await context.components.catalystClient.getProfileName(user)
+  await context.components.attendees.attend(context.params.event_id, user, userName)
   const data = await context.components.attendees.getAttendees(context.params.event_id)
   return { status: 200, body: { ok: true, data } }
 }

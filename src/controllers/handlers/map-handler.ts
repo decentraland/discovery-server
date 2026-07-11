@@ -1,8 +1,16 @@
 import type { HandlerContextWithPath, HTTPResponse } from '../../types'
 import type { Destination } from '../../types/entities'
+import type { OrderDirection, PlaceListOrderBy } from '../../adapters/places-repository'
 import { multiParam as multi, intParam, positionsParam } from './query-params'
 
 const MAP_MAX_LIMIT = 500
+const ORDER_BY_VALUES: PlaceListOrderBy[] = ['like_score', 'updated_at', 'created_at', 'most_active']
+
+function parseOrderBy(params: URLSearchParams): PlaceListOrderBy | undefined {
+  const value = params.get('order_by') ?? undefined
+  return ORDER_BY_VALUES.includes(value as PlaceListOrderBy) ? (value as PlaceListOrderBy) : undefined
+}
+const parseOrder = (params: URLSearchParams): OrderDirection => (params.get('order') === 'asc' ? 'asc' : 'desc')
 
 type MapPlace = {
   id: string
@@ -31,11 +39,14 @@ export async function getMapHandler(
   const params = context.url.searchParams
   const user = context.verification?.auth?.toLowerCase()
 
-  const { data } = await places.getPlaces({
+  const { data, total } = await places.getPlaces({
     positions: positionsParam(params),
     categories: multi(params, 'categories'),
+    search: params.get('search') ?? undefined,
     only_favorites: params.get('only_favorites') === 'true',
     only_highlighted: params.get('only_highlighted') === 'true',
+    order_by: parseOrderBy(params),
+    order: parseOrder(params),
     limit: Math.min(intParam(params, 'limit') ?? MAP_MAX_LIMIT, MAP_MAX_LIMIT),
     offset: intParam(params, 'offset'),
     user
@@ -59,7 +70,8 @@ export async function getMapHandler(
     }
   }
 
-  return { status: 200, body: { ok: true, data: map, total: data.length } }
+  // `total` is the full match count from the component (may exceed the returned page), not data.length.
+  return { status: 200, body: { ok: true, data: map, total } }
 }
 
 /**
@@ -73,13 +85,21 @@ export async function getMapPlacesHandler(
   const params = context.url.searchParams
   const user = context.verification?.auth?.toLowerCase()
 
+  const orderBy = parseOrderBy(params)
   const { data, total } = await destinations.getDestinations(
     {
       positions: positionsParam(params),
       worldNames: multi(params, 'names') ?? multi(params, 'world_names'),
       categories: multi(params, 'categories'),
       search: params.get('search') ?? undefined,
+      only_favorites: params.get('only_favorites') === 'true',
       only_highlighted: params.get('only_highlighted') === 'true',
+      owner: params.get('owner') ?? undefined,
+      creator_address: params.get('creator_address') ?? undefined,
+      sdk: params.get('sdk') ?? undefined,
+      // most_active isn't a destinations sort key (deferred); fall back to the default there.
+      order_by: orderBy === 'most_active' ? undefined : orderBy,
+      order: parseOrder(params),
       limit: Math.min(intParam(params, 'limit') ?? MAP_MAX_LIMIT, MAP_MAX_LIMIT),
       offset: intParam(params, 'offset'),
       user

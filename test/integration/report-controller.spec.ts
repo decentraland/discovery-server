@@ -16,8 +16,9 @@ test('when requesting a content-moderation report url', function ({ components }
       const body = await response.json()
 
       expect(response.status).toBe(200)
-      expect(typeof body.data.url).toBe('string')
-      expect(body.data.url).toContain('reports/')
+      // Legacy contract: the field is `signed_url`, not `url`.
+      expect(typeof body.data.signed_url).toBe('string')
+      expect(body.data.signed_url).toContain('reports/')
     })
   })
 

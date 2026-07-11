@@ -4,6 +4,7 @@ import { test } from '../components'
 test('when reading worlds from a real server', function ({ components }) {
   describe('and worlds exist', () => {
     beforeEach(async () => {
+      await components.pg.query(SQL`DELETE FROM places WHERE world IS true`)
       await components.pg.query(SQL`DELETE FROM worlds`)
       await components.worldsRepository.upsert(components.pg, {
         id: 'my-world.dcl.eth',
@@ -11,6 +12,10 @@ test('when reading worlds from a real server', function ({ components }) {
         title: 'My World',
         show_in_places: true
       })
+      // A world is only listable when it has an enabled place (legacy parity).
+      await components.pg.query(SQL`
+        INSERT INTO places (id, title, base_position, positions, world, world_id, deployed_at, disabled)
+        VALUES (gen_random_uuid(), 'My World', '0,0', '{"0,0"}', true, 'my-world.dcl.eth', now(), false)`)
       await components.worldsRepository.upsert(components.pg, {
         id: 'hidden.dcl.eth',
         world_name: 'hidden.dcl.eth',

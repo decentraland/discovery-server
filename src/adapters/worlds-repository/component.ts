@@ -1,9 +1,22 @@
 import SQL, { SQLStatement } from 'sql-template-strings'
 import type { Queryable } from '../pg'
 import type { AggregateWorld, World } from '../../types/entities'
+import { toPrefixTsQuery, MIN_SEARCH_LENGTH } from '../places-filters'
 import type { IWorldsRepository, UpsertWorldInput, WorldListFilters, WorldListOrderBy } from './types'
 
 const MAX_LIMIT = 100
+
+// A world is only listable/serviceable if it has at least one enabled place (legacy parity):
+// worlds whose scene was undeployed/disabled are hidden from lists, counts and world_names.
+const HAS_ENABLED_PLACE = SQL` AND EXISTS (SELECT 1 FROM places p WHERE p.world_id = w.id AND p.disabled IS false)`
+
+// The weighted world full-text match, computed on the fly (worlds have no tsvector column):
+// title + world_name weight A, description weight B, owner weight C.
+const worldTextsearch = SQL`(
+  setweight(to_tsvector('english', coalesce(w.title, '')), 'A') ||
+  setweight(to_tsvector('english', coalesce(w.world_name, '')), 'A') ||
+  setweight(to_tsvector('english', coalesce(w.description, '')), 'B') ||
+  setweight(to_tsvector('english', coalesce(w.owner, '')), 'C'))`
 // Columns `upsert` will update on conflict (identifiers are safe to inline).
 const UPSERT_UPDATABLE_COLUMNS: Array<keyof UpsertWorldInput> = [
   'world_name',
@@ -37,22 +50,30 @@ const ORDER_COLUMNS: Record<WorldListOrderBy, string> = {
 export function createWorldsRepository(): IWorldsRepository {
   const LATERAL_JOIN = SQL`
     LEFT JOIN LATERAL (
-      SELECT p.contact_name, p.contact_email, p.creator_address, p.sdk, p.deployed_at
+      SELECT p.image, p.contact_name, p.contact_email, p.creator_address, p.sdk, p.deployed_at
       FROM places p
       WHERE p.world_id = w.id AND p.disabled IS false
       ORDER BY p.deployed_at DESC
       LIMIT 1
     ) lp ON true`
 
-  const LATERAL_COLUMNS = SQL`, lp.contact_name, lp.contact_email, lp.creator_address, lp.sdk, lp.deployed_at`
+  // A world row's image falls back to its latest enabled place image; the rest are the
+  // constants the legacy serializer always emitted. Listed last so `image` overrides w.image.
+  const LATERAL_COLUMNS = SQL`, lp.contact_name, lp.contact_email, lp.creator_address, lp.sdk, lp.deployed_at,
+    COALESCE(w.image, lp.image) AS image, true AS world, '0,0' AS base_position,
+    false AS disabled, NULL::timestamptz AS disabled_at, 0 AS user_visits`
 
   function buildWhere(filters: WorldListFilters): SQLStatement {
     const where = SQL`w.show_in_places IS true`
+    // An explicit by-name lookup (e.g. resolving a world for an event) must find the world even
+    // before its first scene deploys; the enabled-place requirement only filters the open list.
+    if (!filters.names?.length) where.append(HAS_ENABLED_PLACE)
     if (filters.only_highlighted) {
       where.append(SQL` AND w.highlighted = true`)
     }
-    if (filters.search) {
-      where.append(SQL` AND w.world_name ILIKE ${'%' + filters.search.toLowerCase() + '%'}`)
+    if (filters.search && filters.search.length >= MIN_SEARCH_LENGTH) {
+      const query = toPrefixTsQuery(filters.search)
+      where.append(query ? SQL` AND ${worldTextsearch} @@ to_tsquery('english', ${query})` : SQL` AND FALSE`)
     }
     if (filters.names?.length) {
       const lowered = filters.names.map((n) => n.toLowerCase())
@@ -107,19 +128,25 @@ export function createWorldsRepository(): IWorldsRepository {
   }
 
   async function findWithAggregates(client: Queryable, filters: WorldListFilters): Promise<AggregateWorld[]> {
+    if (filters.search && filters.search.length < MIN_SEARCH_LENGTH) return []
     const orderBy = ORDER_COLUMNS[filters.order_by ?? 'like_score']
     const direction = filters.order === 'asc' ? 'ASC' : 'DESC'
     const limit = Math.min(filters.limit ?? 50, MAX_LIMIT)
     const offset = Math.max(filters.offset ?? 0, 0)
+    const searchQuery =
+      filters.search && filters.search.length >= MIN_SEARCH_LENGTH ? toPrefixTsQuery(filters.search) : ''
 
     const query = SQL`SELECT w.*`
     query.append(LATERAL_COLUMNS).append(userFlagsSelect(filters.user))
+    if (searchQuery) query.append(SQL`, ts_rank_cd(${worldTextsearch}, to_tsquery('english', ${searchQuery})) AS rank`)
     query
       .append(SQL` FROM worlds w`)
       .append(LATERAL_JOIN)
       .append(userFlagsJoin(filters.user))
     query.append(SQL` WHERE `).append(buildWhere(filters))
-    query.append(` ORDER BY w.${orderBy} ${direction} NULLS LAST, w.world_name ASC`)
+    query.append(SQL` ORDER BY `)
+    if (searchQuery) query.append(SQL`rank DESC, `)
+    query.append(` w.${orderBy} ${direction} NULLS LAST, w.updated_at DESC`)
     query.append(SQL` LIMIT ${limit} OFFSET ${offset}`)
 
     const result = await client.query<AggregateWorld>(query)
@@ -127,6 +154,7 @@ export function createWorldsRepository(): IWorldsRepository {
   }
 
   async function count(client: Queryable, filters: WorldListFilters): Promise<number> {
+    if (filters.search && filters.search.length < MIN_SEARCH_LENGTH) return 0
     const query = SQL`SELECT count(DISTINCT w.id) AS total FROM worlds w WHERE `
     query.append(buildWhere(filters))
     const result = await client.query<{ total: string }>(query)
@@ -134,9 +162,10 @@ export function createWorldsRepository(): IWorldsRepository {
   }
 
   async function findNames(client: Queryable): Promise<string[]> {
-    const result = await client.query<{ world_name: string }>(
-      SQL`SELECT world_name FROM worlds WHERE show_in_places IS true ORDER BY world_name ASC`
-    )
+    const query = SQL`SELECT w.world_name FROM worlds w WHERE w.show_in_places IS true`
+    query.append(HAS_ENABLED_PLACE)
+    query.append(SQL` ORDER BY w.world_name ASC`)
+    const result = await client.query<{ world_name: string }>(query)
     return result.rows.map((row) => row.world_name)
   }
 

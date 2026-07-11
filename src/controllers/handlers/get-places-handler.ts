@@ -2,7 +2,10 @@ import type { HandlerContextWithPath, HTTPResponse } from '../../types'
 import type { AggregatePlace, PlaceStatus } from '../../types/entities'
 import type { OrderDirection, PlaceListFilters, PlaceListOrderBy } from '../../adapters/places-repository'
 import { BadRequestError } from '../../types/errors'
-import { multiParam as multi, intParam, positionsParam, MAX_BATCH_ITEMS } from './query-params'
+import { multiParam as multi, intParam, positionsParam } from './query-params'
+
+// Legacy hard-caps a by-ids batch at 100 (rejecting more), unlike the 1000-item unified cap.
+const PLACES_MAX_IDS = 100
 
 const ORDER_BY_VALUES: PlaceListOrderBy[] = ['like_score', 'updated_at', 'created_at', 'most_active']
 
@@ -53,15 +56,19 @@ export async function getPlaceHandler(
   return { status: 200, body: { ok: true, data } }
 }
 
-/** Legacy `GET /api/places/:place_id/categories` — the place's category slugs. */
+/**
+ * Legacy `GET /api/places/:place_id/categories` — the place's category slugs, read from the
+ * authoritative `place_categories` join. A valid-uuid-but-unknown place returns `{ categories: [] }`
+ * (200), matching legacy; only a malformed id is rejected.
+ */
 export async function getPlaceCategoriesHandler(
   context: Pick<HandlerContextWithPath<'places', '/api/places/:place_id/categories'>, 'components' | 'params'>
 ): Promise<HTTPResponse<{ categories: string[] }>> {
   const { places } = context.components
 
-  const place = await places.getPlace(context.params.place_id)
+  const categories = await places.getPlaceCategories(context.params.place_id)
 
-  return { status: 200, body: { ok: true, data: { categories: place.categories ?? [] } } }
+  return { status: 200, body: { ok: true, data: { categories } } }
 }
 
 async function readIds(context: { request: { json: () => Promise<unknown> } }): Promise<string[]> {
@@ -75,23 +82,23 @@ async function readIds(context: { request: { json: () => Promise<unknown> } }): 
   if (!Array.isArray(ids) || ids.some((id) => typeof id !== 'string')) {
     throw new BadRequestError('Body must be an array of ids or { ids: string[] }')
   }
-  if (ids.length > MAX_BATCH_ITEMS) {
-    throw new BadRequestError(`Too many ids (max ${MAX_BATCH_ITEMS})`)
+  if (ids.length > PLACES_MAX_IDS) {
+    throw new BadRequestError(`Too many ids (max ${PLACES_MAX_IDS})`)
   }
   return ids as string[]
 }
 
-/** Legacy `POST /api/places` — places by an array of ids. */
+/** Legacy `POST /api/places` — places by an array of ids (list filters apply from the query string). */
 export async function getPlaceListByIdHandler(
-  context: Pick<HandlerContextWithPath<'places', '/api/places'>, 'components' | 'request' | 'verification'>
+  context: Pick<HandlerContextWithPath<'places', '/api/places'>, 'components' | 'request' | 'url' | 'verification'>
 ): Promise<HTTPResponse<AggregatePlace[]>> {
   const { places } = context.components
   const user = context.verification?.auth?.toLowerCase()
 
   const ids = await readIds(context)
-  const data = await places.getPlacesByIds(ids, user)
+  const { data, total } = await places.getPlacesByIds(ids, parseFilters(context.url.searchParams, user))
 
-  return { status: 200, body: { ok: true, data, total: data.length } }
+  return { status: 200, body: { ok: true, data, total } }
 }
 
 /** Legacy `POST /api/places/status` — raw status rows by id (no aggregates). */

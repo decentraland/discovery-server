@@ -18,8 +18,15 @@ describe('when reading places', () => {
       findWithAggregates: jest.fn(),
       count: jest.fn(),
       insert: jest.fn(),
+      countByIds: jest.fn().mockResolvedValue(0),
       updateModeration: jest.fn(),
-      upsertScene: jest.fn(),
+      findCategoriesById: jest.fn().mockResolvedValue([]),
+      findEnabledByPositions: jest.fn(),
+      findActiveByWorldIdAndPositions: jest.fn(),
+      insertScene: jest.fn(),
+      updateScene: jest.fn(),
+      disablePlaces: jest.fn(),
+      disableByWorldId: jest.fn(),
       disableByWorldIdAndPositions: jest.fn(),
       listOccupiedPositions: jest.fn()
     }
@@ -29,7 +36,11 @@ describe('when reading places', () => {
       getActivePositions: jest.fn().mockResolvedValue([]),
       refresh: jest.fn()
     }
-    sceneStats = { getVisits: jest.fn().mockResolvedValue(0), refresh: jest.fn() }
+    sceneStats = {
+      getVisits: jest.fn().mockResolvedValue(0),
+      getVisitsForPositions: jest.fn().mockResolvedValue(0),
+      refresh: jest.fn()
+    }
     catalystClient = { getOperatedPositions: jest.fn().mockResolvedValue([]) }
     logs = { getLogger: () => ({ info: jest.fn(), error: jest.fn(), warn: jest.fn(), debug: jest.fn() }) }
   })
@@ -98,7 +109,7 @@ describe('when reading places', () => {
     it('should query the repository with the valid uuid ids filter', async () => {
       const ids = ['11111111-1111-1111-1111-111111111111', '22222222-2222-2222-2222-222222222222']
       const places = await createPlacesComponent({ pg, placesRepository, hotScenes, sceneStats, catalystClient, logs })
-      await places.getPlacesByIds([...ids, 'not-a-uuid'], '0xUSER')
+      await places.getPlacesByIds([...ids, 'not-a-uuid'], { user: '0xUSER' })
 
       expect(placesRepository.findWithAggregates).toHaveBeenCalledWith(
         pg,
@@ -112,7 +123,7 @@ describe('when reading places', () => {
       const places = await createPlacesComponent({ pg, placesRepository, hotScenes, sceneStats, catalystClient, logs })
       const result = await places.getPlacesByIds([])
 
-      expect(result).toEqual([])
+      expect(result).toEqual({ data: [], total: 0 })
       expect(placesRepository.findWithAggregates).not.toHaveBeenCalled()
     })
   })

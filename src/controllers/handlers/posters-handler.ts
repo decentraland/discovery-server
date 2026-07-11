@@ -1,6 +1,6 @@
 import type { HandlerContextWithPath, HTTPResponse } from '../../types'
 import { BadRequestError, UnauthorizedError } from '../../types/errors'
-import type { PosterFile } from '../../logic/posters'
+import type { PosterFile, PosterUpload } from '../../logic/posters'
 
 type PosterContext = Pick<HandlerContextWithPath<'posters'>, 'components' | 'request' | 'verification'>
 
@@ -19,15 +19,15 @@ async function readPoster(ctx: PosterContext): Promise<PosterFile | undefined> {
 }
 
 /** Legacy `POST /api/poster` — upload a horizontal event poster (multipart). */
-export async function createPosterHandler(ctx: PosterContext): Promise<HTTPResponse<{ url: string }>> {
+export async function createPosterHandler(ctx: PosterContext): Promise<HTTPResponse<PosterUpload>> {
   if (!ctx.verification?.auth) throw new UnauthorizedError('Authentication required')
-  const url = await ctx.components.posters.uploadHorizontal(await readPoster(ctx))
-  return { status: 200, body: { ok: true, data: { url } } }
+  const data = await ctx.components.posters.uploadHorizontal(await readPoster(ctx))
+  return { status: 200, body: { ok: true, data } }
 }
 
 /** Legacy `POST /api/poster-vertical` — upload a vertical event poster (multipart). */
-export async function createVerticalPosterHandler(ctx: PosterContext): Promise<HTTPResponse<{ url: string }>> {
+export async function createVerticalPosterHandler(ctx: PosterContext): Promise<HTTPResponse<PosterUpload>> {
   if (!ctx.verification?.auth) throw new UnauthorizedError('Authentication required')
-  const url = await ctx.components.posters.uploadVertical(await readPoster(ctx))
-  return { status: 200, body: { ok: true, data: { url } } }
+  const data = await ctx.components.posters.uploadVertical(await readPoster(ctx))
+  return { status: 200, body: { ok: true, data } }
 }

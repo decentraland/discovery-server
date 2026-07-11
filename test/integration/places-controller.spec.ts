@@ -16,6 +16,10 @@ test('when reading places from a real server', function ({ components }) {
         categories: ['art']
       })
       genesisId = genesis.id
+      // The categories sub-route reads the authoritative place_categories join, so seed it.
+      await components.pg.query(
+        SQL`INSERT INTO place_categories (category_id, place_id) VALUES ('art', ${genesisId}::uuid) ON CONFLICT DO NOTHING`
+      )
       const highlighted = await components.placesRepository.insert(components.pg, {
         title: 'Featured Spot',
         base_position: '10,10',

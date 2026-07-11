@@ -1,6 +1,6 @@
 import SQL from 'sql-template-strings'
 import type { Queryable } from '../pg'
-import type { CategoryScope, CategoryWithCount, ICategoriesRepository } from './types'
+import type { CategoryScope, CategoryWithCount, EventCategory, ICategoriesRepository } from './types'
 
 /**
  * Owns SQL for the `categories`, `place_categories` and `event_categories`
@@ -19,14 +19,14 @@ export function createCategoriesRepository(): ICategoriesRepository {
     client: Queryable,
     scope: CategoryScope = 'all'
   ): Promise<CategoryWithCount[]> {
-    // count(p.id) — not count(pc.place_id) — so disabled/scope-filtered places
-    // are excluded from the count. The scope predicate lives in the JOIN (not
-    // WHERE) so active categories with no matching entity still appear with 0.
+    // count(pc.place_id) counts every category assignment INCLUDING disabled places
+    // (legacy CategoryModel parity). The scope predicate lives in the JOIN (not WHERE)
+    // so active categories with no matching entity still appear with 0.
     const query = SQL`
-      SELECT c.name, count(p.id) AS count
+      SELECT c.name, count(pc.place_id) AS count
       FROM categories c
       LEFT JOIN place_categories pc ON pc.category_id = c.name
-      LEFT JOIN places p ON pc.place_id = p.id AND p.disabled IS false`
+      LEFT JOIN places p ON pc.place_id = p.id`
 
     if (scope === 'worlds') {
       query.append(SQL` AND p.world IS true`)
@@ -40,18 +40,34 @@ export function createCategoriesRepository(): ICategoriesRepository {
     return result.rows.map((row) => ({ name: row.name, count: Number(row.count) }))
   }
 
-  async function findActiveEventCategories(client: Queryable): Promise<string[]> {
-    const result = await client.query<{ name: string }>(
-      SQL`SELECT name FROM event_categories WHERE active IS true ORDER BY name`
+  async function findActiveEventCategories(client: Queryable): Promise<EventCategory[]> {
+    const result = await client.query<EventCategory>(
+      SQL`SELECT name, active, created_at, updated_at FROM event_categories WHERE active IS true ORDER BY name`
     )
-    return result.rows.map((row) => row.name)
+    return result.rows
+  }
+
+  async function setPlaceCategories(client: Queryable, placeId: string, categoryNames: string[]): Promise<void> {
+    // Replace the join rows for this place, then mirror onto the denormalized array.
+    await client.query(SQL`DELETE FROM place_categories WHERE place_id = ${placeId}::uuid`)
+    if (categoryNames.length) {
+      await client.query(SQL`
+        INSERT INTO place_categories (category_id, place_id)
+        SELECT unnest(${categoryNames}::varchar[]), ${placeId}::uuid ON CONFLICT DO NOTHING`)
+    }
+    await client.query(
+      SQL`UPDATE places SET categories = ${categoryNames}, updated_at = now() WHERE id = ${placeId}::uuid`
+    )
   }
 
   async function reconcilePoiCategory(client: Queryable, basePositions: string[]): Promise<number> {
     const positions = basePositions.length ? basePositions : ['']
-    // Target places: enabled genesis places at the POI positions.
+    // Target places: enabled genesis places occupying any POI parcel — by base position or any
+    // parcel in the scene (a POI declared on a non-base parcel still tags its scene, legacy parity).
     const target = await client.query<{ id: string }>(
-      SQL`SELECT id FROM places WHERE base_position = ANY(${positions}::varchar[]) AND disabled IS false AND world IS false`
+      SQL`SELECT id FROM places
+          WHERE (base_position = ANY(${positions}::varchar[]) OR positions && ${positions}::varchar[])
+            AND disabled IS false AND world IS false`
     )
     const ids = target.rows.map((r) => r.id)
 
@@ -83,6 +99,7 @@ export function createCategoriesRepository(): ICategoriesRepository {
     findActivePlaceCategories,
     findActivePlaceCategoriesWithCounts,
     findActiveEventCategories,
+    setPlaceCategories,
     reconcilePoiCategory
   }
 }

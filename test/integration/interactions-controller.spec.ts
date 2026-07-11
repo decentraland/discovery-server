@@ -30,6 +30,53 @@ test('when writing interactions over signed-fetch routes', function ({ component
     })
   })
 
+  describe('and the world likes endpoint receives a place uuid', () => {
+    let identity: Awaited<ReturnType<typeof getIdentity>>
+
+    beforeEach(async () => {
+      identity = await getIdentity()
+    })
+
+    it('should reject it with a 400 directing the caller to the places route', async () => {
+      const path = `/api/worlds/11111111-1111-4111-8111-111111111111/likes`
+      const headers = getSignedAuthHeaders('PATCH', path, {}, identity)
+      const response = await components.localFetch.fetch(path, {
+        method: 'PATCH',
+        headers: { ...headers, 'content-type': 'application/json' },
+        body: JSON.stringify({ like: true })
+      })
+
+      expect(response.status).toBe(400)
+    })
+  })
+
+  describe('and liking a place that does not exist', () => {
+    let identity: Awaited<ReturnType<typeof getIdentity>>
+
+    beforeEach(async () => {
+      await components.pg.query(SQL`DELETE FROM user_likes`)
+      await components.pg.query(SQL`DELETE FROM places`)
+      identity = await getIdentity()
+    })
+
+    it('should return 404 without leaving an orphan interaction row', async () => {
+      const id = '11111111-1111-4111-8111-111111111111'
+      const path = `/api/places/${id}/likes`
+      const headers = getSignedAuthHeaders('PATCH', path, {}, identity)
+      const response = await components.localFetch.fetch(path, {
+        method: 'PATCH',
+        headers: { ...headers, 'content-type': 'application/json' },
+        body: JSON.stringify({ like: true })
+      })
+
+      expect(response.status).toBe(404)
+      const { rows } = await components.pg.query<{ n: string }>(
+        SQL`SELECT count(*) AS n FROM user_likes WHERE entity_id = ${id}`
+      )
+      expect(Number(rows[0].n)).toBe(0)
+    })
+  })
+
   describe('and the request is not signed', () => {
     let placeId: string
 

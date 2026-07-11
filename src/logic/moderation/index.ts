@@ -1,5 +1,6 @@
 import type { AppComponents } from '../../types'
-import type { Place, World } from '../../types/entities'
+import type { AggregatePlace, AggregateWorld } from '../../types/entities'
+import type { Queryable } from '../../adapters/pg'
 import { BadRequestError } from '../../types/errors'
 import { isPlaceId } from '../entity-id'
 import { PlaceNotFoundError } from '../places'
@@ -11,13 +12,13 @@ import { WorldNotFoundError } from '../worlds'
 const VALID_RATINGS = ['PR', 'RP', 'E', 'T', 'A', 'R']
 
 export interface IModerationComponent {
-  setPlaceRating(placeId: string, rating: string, moderator: string, comment?: string): Promise<Place>
-  setPlaceHighlight(placeId: string, highlighted: boolean): Promise<Place>
-  setPlaceDisabled(placeId: string, disabled: boolean, reason?: string): Promise<Place>
-  setPlaceRanking(placeId: string, ranking: number | null): Promise<Place>
-  setWorldRating(worldId: string, rating: string, moderator: string, comment?: string): Promise<World>
-  setWorldHighlight(worldId: string, highlighted: boolean): Promise<World>
-  setWorldRanking(worldId: string, ranking: number | null): Promise<World>
+  setPlaceRating(placeId: string, rating: string, moderator: string, comment?: string): Promise<AggregatePlace>
+  setPlaceHighlight(placeId: string, highlighted: boolean): Promise<AggregatePlace>
+  setPlaceDisabled(placeId: string, disabled: boolean, reason?: string): Promise<AggregatePlace>
+  setPlaceRanking(placeId: string, ranking: number | null): Promise<AggregatePlace>
+  setWorldRating(worldId: string, rating: string, moderator: string, comment?: string): Promise<AggregateWorld>
+  setWorldHighlight(worldId: string, highlighted: boolean): Promise<AggregateWorld>
+  setWorldRanking(worldId: string, ranking: number | null): Promise<AggregateWorld>
 }
 
 /**
@@ -52,7 +53,25 @@ export async function createModerationComponent(
     }
   }
 
-  async function setPlaceRating(placeId: string, rating: string, moderator: string, comment?: string): Promise<Place> {
+  // Re-read the full aggregate (with the actor's like/favorite flags) so a moderation response
+  // carries the same shape as a normal place/world read — legacy returned the aggregate too.
+  async function placeAggregate(client: Queryable, placeId: string, user?: string): Promise<AggregatePlace> {
+    const aggregate = await placesRepository.findByIdWithAggregates(client, placeId, user)
+    if (!aggregate) throw new PlaceNotFoundError(placeId)
+    return aggregate
+  }
+  async function worldAggregate(client: Queryable, worldId: string, user?: string): Promise<AggregateWorld> {
+    const aggregate = await worldsRepository.findByIdWithAggregates(client, worldId, user)
+    if (!aggregate) throw new WorldNotFoundError(worldId)
+    return aggregate
+  }
+
+  async function setPlaceRating(
+    placeId: string,
+    rating: string,
+    moderator: string,
+    comment?: string
+  ): Promise<AggregatePlace> {
     assertPlaceId(placeId)
     assertValidRating(rating)
     return pg.withTransaction(async (tx) => {
@@ -73,18 +92,18 @@ export async function createModerationComponent(
       alert(
         `:label: Place content rating changed: ${current.id} ${current.content_rating ?? '—'} → ${rating} by ${moderator}`
       )
-      return updated
+      return placeAggregate(tx, placeId, moderator)
     })
   }
 
-  async function setPlaceHighlight(placeId: string, highlighted: boolean): Promise<Place> {
+  async function setPlaceHighlight(placeId: string, highlighted: boolean): Promise<AggregatePlace> {
     assertPlaceId(placeId)
     const updated = await placesRepository.updateModeration(pg, placeId, { highlighted })
     if (!updated) throw new PlaceNotFoundError(placeId)
-    return updated
+    return placeAggregate(pg, placeId)
   }
 
-  async function setPlaceDisabled(placeId: string, disabled: boolean, reason = 'moderation'): Promise<Place> {
+  async function setPlaceDisabled(placeId: string, disabled: boolean, reason = 'moderation'): Promise<AggregatePlace> {
     assertPlaceId(placeId)
     const updated = await placesRepository.updateModeration(pg, placeId, {
       disabled,
@@ -92,17 +111,22 @@ export async function createModerationComponent(
     })
     if (!updated) throw new PlaceNotFoundError(placeId)
     alert(`:x: Place ${disabled ? 'disabled' : 're-enabled'}: ${placeId}${disabled ? ` (${reason})` : ''}`)
-    return updated
+    return placeAggregate(pg, placeId)
   }
 
-  async function setPlaceRanking(placeId: string, ranking: number | null): Promise<Place> {
+  async function setPlaceRanking(placeId: string, ranking: number | null): Promise<AggregatePlace> {
     assertPlaceId(placeId)
     const updated = await placesRepository.updateModeration(pg, placeId, { ranking })
     if (!updated) throw new PlaceNotFoundError(placeId)
-    return updated
+    return placeAggregate(pg, placeId)
   }
 
-  async function setWorldRating(worldId: string, rating: string, moderator: string, comment?: string): Promise<World> {
+  async function setWorldRating(
+    worldId: string,
+    rating: string,
+    moderator: string,
+    comment?: string
+  ): Promise<AggregateWorld> {
     assertValidRating(rating)
     return pg.withTransaction(async (tx) => {
       await worldsRepository.lockById(tx, worldId)
@@ -120,20 +144,20 @@ export async function createModerationComponent(
       alert(
         `:label: World content rating changed: ${current.id} ${current.content_rating ?? '—'} → ${rating} by ${moderator}`
       )
-      return updated
+      return worldAggregate(tx, worldId, moderator)
     })
   }
 
-  async function setWorldHighlight(worldId: string, highlighted: boolean): Promise<World> {
+  async function setWorldHighlight(worldId: string, highlighted: boolean): Promise<AggregateWorld> {
     const updated = await worldsRepository.updateModeration(pg, worldId, { highlighted })
     if (!updated) throw new WorldNotFoundError(worldId)
-    return updated
+    return worldAggregate(pg, worldId)
   }
 
-  async function setWorldRanking(worldId: string, ranking: number | null): Promise<World> {
+  async function setWorldRanking(worldId: string, ranking: number | null): Promise<AggregateWorld> {
     const updated = await worldsRepository.updateModeration(pg, worldId, { ranking })
     if (!updated) throw new WorldNotFoundError(worldId)
-    return updated
+    return worldAggregate(pg, worldId)
   }
 
   return {

@@ -27,10 +27,17 @@ export interface IDestinationsComponent {
 export async function createDestinationsComponent(
   components: Pick<
     AppComponents,
-    'pg' | 'destinationsRepository' | 'liveEvents' | 'hotScenes' | 'worldsLiveData' | 'sceneStats' | 'logs'
+    | 'pg'
+    | 'destinationsRepository'
+    | 'liveEvents'
+    | 'hotScenes'
+    | 'worldsLiveData'
+    | 'sceneStats'
+    | 'catalystClient'
+    | 'logs'
   >
 ): Promise<IDestinationsComponent> {
-  const { pg, destinationsRepository, liveEvents, hotScenes, worldsLiveData, sceneStats } = components
+  const { pg, destinationsRepository, liveEvents, hotScenes, worldsLiveData, sceneStats, catalystClient } = components
 
   /**
    * Decorate a page of destinations in a single pass. Realtime signals come from the
@@ -61,14 +68,13 @@ export async function createDestinationsComponent(
             destination.kind === 'place' ? livePlaces.has(destination.id) : liveWorlds.has(destination.id)
         }
         if (nextEventMap) decorated.next_event = nextEventMap[destination.id] ?? null
-        if (options.withConnectedUsers) {
-          decorated.user_count =
-            destination.kind === 'world'
-              ? await worldsLiveData.getUserCount(destination.world_name ?? destination.id)
-              : destination.base_position
-                ? await hotScenes.getUserCount(destination.base_position)
-                : 0
-        }
+        // Legacy always populated user_count (O(1) from the cached snapshots), not only on request.
+        decorated.user_count =
+          destination.kind === 'world'
+            ? await worldsLiveData.getUserCount(destination.world_name ?? destination.id)
+            : destination.base_position
+              ? await hotScenes.getUserCount(destination.base_position)
+              : 0
         return decorated
       })
     )
@@ -80,9 +86,13 @@ export async function createDestinationsComponent(
   ): Promise<{ data: Destination[]; total: number }> {
     // Favorites are per-user; an anonymous only_favorites query is empty.
     if (filters.only_favorites && !filters.user) return { data: [], total: 0 }
+    // Legacy `owner` also matches operated (owned/estate/rented) parcels, resolved via Catalyst.
+    const effectiveFilters = filters.owner
+      ? { ...filters, operatedPositions: await catalystClient.getOperatedPositions(filters.owner) }
+      : filters
     const [rows, total] = await Promise.all([
-      destinationsRepository.findWithAggregates(pg, filters),
-      destinationsRepository.count(pg, filters)
+      destinationsRepository.findWithAggregates(pg, effectiveFilters),
+      destinationsRepository.count(pg, effectiveFilters)
     ])
     return { data: await decorate(rows, options), total }
   }

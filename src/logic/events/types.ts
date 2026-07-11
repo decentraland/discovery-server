@@ -65,7 +65,12 @@ export interface IEventsComponent {
     user: string,
     options?: { isAdmin?: boolean; actor?: string }
   ): Promise<Event>
-  deleteEvent(id: string, user: string, byAdmin: boolean, actor?: string): Promise<void>
+  /**
+   * Soft-delete an event. An owner may delete their own; a moderator/admin may delete any and
+   * records a `reason` + notifies the creator. `actor` overrides the recorded deleter (admin
+   * automation); `reason` is stored only for moderator/admin deletes.
+   */
+  deleteEvent(id: string, user: string, byAdmin: boolean, actor?: string, reason?: string): Promise<void>
   /** Cron: recompute next_start_at/next_finish_at/recurrent_dates for recurrent events whose window passed. Returns the count updated. */
   updateNextStartAt(batchSize?: number): Promise<number>
 }

@@ -78,6 +78,12 @@ export type World = {
   creator_address: string | null
   sdk: string | null
   deployed_at: string | null
+  // Synthesized constants the legacy world serializer always emitted (documented in worldSchema):
+  world: boolean
+  base_position: string
+  disabled: boolean
+  disabled_at: string | null
+  user_visits: number
 }
 
 export type AggregateWorld = World & {
@@ -92,11 +98,16 @@ export type AggregateWorld = World & {
 export type Destination = {
   id: string
   kind: 'place' | 'world'
+  /** Legacy `AggregateDestinationAttributes.world` flag (kept alongside `kind` for legacy consumers). */
+  world: boolean
   title: string | null
   description: string | null
   image: string | null
   base_position: string | null
+  positions: string[]
   world_name: string | null
+  owner: string | null
+  content_rating: string
   categories: string[]
   likes: number
   dislikes: number
@@ -104,6 +115,15 @@ export type Destination = {
   like_rate: number | null
   like_score: number | null
   highlighted: boolean
+  highlighted_image: string | null
+  ranking: number | null
+  disabled: boolean
+  is_private: boolean
+  contact_name: string | null
+  contact_email: string | null
+  creator_address: string | null
+  sdk: string | null
+  deployed_at: string | null
   user_like: boolean
   user_dislike: boolean
   user_favorite: boolean
@@ -152,8 +172,9 @@ export type Event = {
   url: string | null
   user: string
   user_name: string | null
-  contact: string | null
-  details: string | null
+  // Optional because they are omitted from responses for non-owners (see events serialize).
+  contact?: string | null
+  details?: string | null
   approved: boolean
   rejected: boolean
   approved_by: string | null
@@ -171,6 +192,10 @@ export type Event = {
   deleted_reason: string | null
   created_at: Date
   updated_at: Date
+  // Derived, response-only (added by the events serialize; not stored columns).
+  position?: number[]
+  live?: boolean
+  attending?: boolean
 }
 
 export type EventAttendee = {

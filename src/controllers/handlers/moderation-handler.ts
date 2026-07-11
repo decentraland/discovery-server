@@ -53,10 +53,11 @@ export async function updatePlaceDisabledHandler(
     'components' | 'params' | 'request'
   >
 ): Promise<HTTPResponse<Place>> {
-  const body = await readBody<{ disabled?: unknown; reason?: unknown }>(context)
+  const body = await readBody<{ disabled?: unknown }>(context)
   if (typeof body.disabled !== 'boolean') throw new BadRequestError('disabled must be a boolean')
-  const reason = typeof body.reason === 'string' ? body.reason : undefined
-  const data = await context.components.moderation.setPlaceDisabled(context.params.place_id, body.disabled, reason)
+  // A moderation disable always records reason 'moderation' (legacy forced it); a client-supplied
+  // reason is ignored so this route can't stamp opt_out/undeployment semantics on a moderated place.
+  const data = await context.components.moderation.setPlaceDisabled(context.params.place_id, body.disabled)
   return { status: 200, body: { ok: true, data } }
 }
 

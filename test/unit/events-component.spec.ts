@@ -23,7 +23,14 @@ describe('when creating an event', () => {
       communitiesClient: {
         enabled: false,
         getManagedCommunities: jest.fn().mockResolvedValue([]),
+        getCommunity: jest.fn().mockResolvedValue(null),
         getCommunityMembers: jest.fn().mockResolvedValue([])
+      },
+      notifications: {
+        notifyEventApproved: jest.fn().mockResolvedValue(undefined),
+        notifyEventRejected: jest.fn().mockResolvedValue(undefined),
+        notifyEventDeleted: jest.fn().mockResolvedValue(undefined),
+        notifyCommunityEventPublished: jest.fn().mockResolvedValue(undefined)
       },
       slackNotifier: { notify: jest.fn() },
       landClient: {
@@ -96,7 +103,10 @@ describe('when creating an event', () => {
 
   describe('and the creator has no approval permission', () => {
     beforeEach(() => {
-      components.eventsRepository.create.mockImplementation(async (_c: unknown, row: any) => ({ id: 'e1', ...row }))
+      components.eventsRepository.create.mockImplementation(async (_c: unknown, row: any) => ({
+        id: '11111111-1111-4111-8111-111111111111',
+        ...row
+      }))
     })
 
     it('should create the event as not approved', async () => {
@@ -129,7 +139,10 @@ describe('when creating an event', () => {
   describe('and the creator can approve their own events', () => {
     beforeEach(() => {
       components.profiles.hasAnyPermission.mockResolvedValue(true)
-      components.eventsRepository.create.mockImplementation(async (_c: unknown, row: any) => ({ id: 'e1', ...row }))
+      components.eventsRepository.create.mockImplementation(async (_c: unknown, row: any) => ({
+        id: '11111111-1111-4111-8111-111111111111',
+        ...row
+      }))
     })
 
     it('should still create the event unapproved (every event requires moderator approval)', async () => {
@@ -148,7 +161,10 @@ describe('when creating an event', () => {
 
   describe('and deriving image/estate from Land on create', () => {
     beforeEach(() => {
-      components.eventsRepository.create.mockImplementation(async (_c: unknown, row: any) => ({ id: 'e1', ...row }))
+      components.eventsRepository.create.mockImplementation(async (_c: unknown, row: any) => ({
+        id: '11111111-1111-4111-8111-111111111111',
+        ...row
+      }))
     })
 
     it('should default a genesis event image to the parcel map when the client sends none', async () => {
@@ -202,7 +218,10 @@ describe('when creating an event', () => {
       components.config.getString.mockImplementation(async (key: string) =>
         key === 'FOUNDATION_ADDRESSES' ? '0xfoundation' : undefined
       )
-      components.eventsRepository.create.mockImplementation(async (_c: unknown, row: any) => ({ id: 'e1', ...row }))
+      components.eventsRepository.create.mockImplementation(async (_c: unknown, row: any) => ({
+        id: '11111111-1111-4111-8111-111111111111',
+        ...row
+      }))
     })
 
     it('should display the creator name as "Decentraland Foundation"', async () => {
@@ -219,14 +238,14 @@ describe('when creating an event', () => {
   describe('and an admin updates an event via the admin bearer', () => {
     beforeEach(() => {
       components.eventsRepository.findById.mockResolvedValue({
-        id: 'e1',
+        id: '11111111-1111-4111-8111-111111111111',
         user: '0xsomeoneelse',
         name: 'Party',
         approved: false,
         rejected: false
       })
       components.eventsRepository.update.mockImplementation(async (_c: unknown, _id: string, patch: any) => ({
-        id: 'e1',
+        id: '11111111-1111-4111-8111-111111111111',
         name: 'Party',
         ...patch
       }))
@@ -234,18 +253,21 @@ describe('when creating an event', () => {
 
     it('should approve without a per-wallet permission and stamp the override actor', async () => {
       const events = await createEventsComponent(components)
-      await events.updateEvent('e1', { approved: true }, '0xADMIN', { isAdmin: true, actor: 'jarvis-agent' })
+      await events.updateEvent('11111111-1111-4111-8111-111111111111', { approved: true }, '0xADMIN', {
+        isAdmin: true,
+        actor: 'jarvis-agent'
+      })
 
       expect(components.eventsRepository.update).toHaveBeenCalledWith(
         components.pg,
-        'e1',
+        '11111111-1111-4111-8111-111111111111',
         expect.objectContaining({ approved: true, approved_by: 'jarvis-agent' })
       )
     })
 
     it('should clear a prior rejection when approving', async () => {
       components.eventsRepository.findById.mockResolvedValue({
-        id: 'e1',
+        id: '11111111-1111-4111-8111-111111111111',
         user: '0xsomeoneelse',
         name: 'Party',
         approved: false,
@@ -253,11 +275,11 @@ describe('when creating an event', () => {
         rejection_reason: 'spam'
       })
       const events = await createEventsComponent(components)
-      await events.updateEvent('e1', { approved: true }, '0xADMIN', { isAdmin: true })
+      await events.updateEvent('11111111-1111-4111-8111-111111111111', { approved: true }, '0xADMIN', { isAdmin: true })
 
       expect(components.eventsRepository.update).toHaveBeenCalledWith(
         components.pg,
-        'e1',
+        '11111111-1111-4111-8111-111111111111',
         expect.objectContaining({ approved: true, rejected: false, rejected_by: null, rejection_reason: null })
       )
     })
@@ -266,7 +288,9 @@ describe('when creating an event', () => {
       const events = await createEventsComponent(components)
 
       await expect(
-        events.updateEvent('e1', { approved: true, rejected: true }, '0xADMIN', { isAdmin: true })
+        events.updateEvent('11111111-1111-4111-8111-111111111111', { approved: true, rejected: true }, '0xADMIN', {
+          isAdmin: true
+        })
       ).rejects.toThrow(EventValidationError)
     })
   })
@@ -274,14 +298,14 @@ describe('when creating an event', () => {
   describe('and an owner holding only ApproveOwnEvent updates their own event', () => {
     beforeEach(() => {
       components.eventsRepository.findById.mockResolvedValue({
-        id: 'e1',
+        id: '11111111-1111-4111-8111-111111111111',
         user: '0xowner',
         name: 'Party',
         approved: false,
         rejected: false
       })
       components.eventsRepository.update.mockImplementation(async (_c: unknown, _id: string, patch: any) => ({
-        id: 'e1',
+        id: '11111111-1111-4111-8111-111111111111',
         name: 'Party',
         ...patch
       }))
@@ -293,18 +317,28 @@ describe('when creating an event', () => {
 
     it('should let them approve their own event', async () => {
       const events = await createEventsComponent(components)
-      await events.updateEvent('e1', { approved: true, highlighted: true }, '0xOWNER', {})
+      await events.updateEvent(
+        '11111111-1111-4111-8111-111111111111',
+        { approved: true, highlighted: true },
+        '0xOWNER',
+        {}
+      )
 
       expect(components.eventsRepository.update).toHaveBeenCalledWith(
         components.pg,
-        'e1',
+        '11111111-1111-4111-8111-111111111111',
         expect.objectContaining({ approved: true })
       )
     })
 
     it('should NOT let them highlight (feature) their own event', async () => {
       const events = await createEventsComponent(components)
-      await events.updateEvent('e1', { approved: true, highlighted: true }, '0xOWNER', {})
+      await events.updateEvent(
+        '11111111-1111-4111-8111-111111111111',
+        { approved: true, highlighted: true },
+        '0xOWNER',
+        {}
+      )
 
       const patch = components.eventsRepository.update.mock.calls[0][2]
       expect(patch.highlighted).toBeUndefined()
@@ -314,7 +348,7 @@ describe('when creating an event', () => {
   describe('and deleting an already-deleted event', () => {
     beforeEach(() => {
       components.eventsRepository.findById.mockResolvedValue({
-        id: 'e1',
+        id: '11111111-1111-4111-8111-111111111111',
         user: '0xowner',
         name: 'Party',
         deleted_at: new Date()
@@ -323,7 +357,7 @@ describe('when creating an event', () => {
 
     it('should be an idempotent no-op that does not overwrite the original deletion', async () => {
       const events = await createEventsComponent(components)
-      await events.deleteEvent('e1', '0xowner', false)
+      await events.deleteEvent('11111111-1111-4111-8111-111111111111', '0xowner', false)
 
       expect(components.eventsRepository.update).not.toHaveBeenCalled()
     })
@@ -340,7 +374,10 @@ describe('when creating an event', () => {
         y: 0,
         community_id: 'community-1'
       }
-      components.eventsRepository.create.mockImplementation(async (_c: unknown, row: any) => ({ id: 'e1', ...row }))
+      components.eventsRepository.create.mockImplementation(async (_c: unknown, row: any) => ({
+        id: '11111111-1111-4111-8111-111111111111',
+        ...row
+      }))
     })
 
     describe('and the communities client is disabled', () => {
@@ -392,6 +429,195 @@ describe('when creating an event', () => {
           )
         })
       })
+    })
+  })
+
+  describe('and a moderator approves a pending event', () => {
+    beforeEach(() => {
+      components.profiles.hasAnyPermission.mockResolvedValue(true)
+      components.eventsRepository.findById.mockResolvedValue({
+        id: '11111111-1111-4111-8111-111111111111',
+        user: '0xowner',
+        name: 'Party',
+        description: 'desc',
+        image: 'https://img',
+        approved: false,
+        rejected: false,
+        community_id: null
+      })
+      components.eventsRepository.update.mockImplementation(async (_c: unknown, _id: string, patch: any) => ({
+        id: '11111111-1111-4111-8111-111111111111',
+        user: '0xowner',
+        name: 'Party',
+        community_id: null,
+        ...patch
+      }))
+    })
+
+    it('should notify the creator that the event was approved', async () => {
+      const events = await createEventsComponent(components)
+      await events.updateEvent('11111111-1111-4111-8111-111111111111', { approved: true }, '0xMOD', {})
+
+      expect(components.notifications.notifyEventApproved).toHaveBeenCalledTimes(1)
+    })
+
+    it('should not fan a community notification out when the event has no community', async () => {
+      const events = await createEventsComponent(components)
+      await events.updateEvent('11111111-1111-4111-8111-111111111111', { approved: true }, '0xMOD', {})
+
+      expect(components.notifications.notifyCommunityEventPublished).not.toHaveBeenCalled()
+    })
+
+    describe('and the event is attached to a community', () => {
+      beforeEach(() => {
+        components.eventsRepository.findById.mockResolvedValue({
+          id: '11111111-1111-4111-8111-111111111111',
+          user: '0xowner',
+          name: 'Party',
+          approved: false,
+          rejected: false,
+          community_id: 'community-1'
+        })
+        components.eventsRepository.update.mockImplementation(async (_c: unknown, _id: string, patch: any) => ({
+          id: '11111111-1111-4111-8111-111111111111',
+          user: '0xowner',
+          name: 'Party',
+          community_id: 'community-1',
+          ...patch
+        }))
+      })
+
+      it('should fan a community-event notification out to the members', async () => {
+        const events = await createEventsComponent(components)
+        await events.updateEvent('11111111-1111-4111-8111-111111111111', { approved: true }, '0xMOD', {})
+
+        expect(components.notifications.notifyCommunityEventPublished).toHaveBeenCalledTimes(1)
+      })
+    })
+  })
+
+  describe('and an already-approved event moves to a different community', () => {
+    beforeEach(() => {
+      components.communitiesClient.enabled = true
+      components.communitiesClient.getManagedCommunities.mockResolvedValue([{ id: 'community-1' }])
+      components.eventsRepository.findById.mockResolvedValue({
+        id: '11111111-1111-4111-8111-111111111111',
+        user: '0xowner',
+        name: 'Party',
+        approved: true,
+        rejected: false,
+        community_id: 'old-community'
+      })
+      components.eventsRepository.update.mockImplementation(async (_c: unknown, _id: string, patch: any) => ({
+        id: '11111111-1111-4111-8111-111111111111',
+        user: '0xowner',
+        name: 'Party',
+        approved: true,
+        community_id: 'old-community',
+        ...patch
+      }))
+    })
+
+    it('should fan a community-event notification out for the new community without a re-approval', async () => {
+      const events = await createEventsComponent(components)
+      await events.updateEvent('11111111-1111-4111-8111-111111111111', { community_id: 'community-1' }, '0xowner', {})
+
+      expect(components.notifications.notifyCommunityEventPublished).toHaveBeenCalledTimes(1)
+    })
+
+    it('should not notify a fresh approval since the event was already approved', async () => {
+      const events = await createEventsComponent(components)
+      await events.updateEvent('11111111-1111-4111-8111-111111111111', { community_id: 'community-1' }, '0xowner', {})
+
+      expect(components.notifications.notifyEventApproved).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('and a moderator rejects a pending event', () => {
+    beforeEach(() => {
+      components.profiles.hasAnyPermission.mockResolvedValue(true)
+      components.eventsRepository.findById.mockResolvedValue({
+        id: '11111111-1111-4111-8111-111111111111',
+        user: '0xowner',
+        name: 'Party',
+        approved: false,
+        rejected: false,
+        community_id: null
+      })
+      components.eventsRepository.update.mockImplementation(async (_c: unknown, _id: string, patch: any) => ({
+        id: '11111111-1111-4111-8111-111111111111',
+        user: '0xowner',
+        name: 'Party',
+        community_id: null,
+        ...patch
+      }))
+    })
+
+    it('should notify the creator that the event was rejected with the reason', async () => {
+      const events = await createEventsComponent(components)
+      await events.updateEvent(
+        '11111111-1111-4111-8111-111111111111',
+        { rejected: true, rejection_reason: 'spam' },
+        '0xMOD',
+        {}
+      )
+
+      expect(components.notifications.notifyEventRejected).toHaveBeenCalledWith(
+        expect.objectContaining({ id: '11111111-1111-4111-8111-111111111111' }),
+        'spam'
+      )
+    })
+  })
+
+  describe("and a moderator deletes another user's event", () => {
+    beforeEach(() => {
+      components.eventsRepository.findById.mockResolvedValue({
+        id: '11111111-1111-4111-8111-111111111111',
+        user: '0xowner',
+        name: 'Party',
+        deleted_at: null
+      })
+      components.eventsRepository.update.mockResolvedValue({ id: '11111111-1111-4111-8111-111111111111' })
+    })
+
+    it('should record the reason and notify the creator', async () => {
+      const events = await createEventsComponent(components)
+      await events.deleteEvent('11111111-1111-4111-8111-111111111111', '0xADMIN', true, undefined, 'inappropriate')
+
+      expect(components.eventsRepository.update).toHaveBeenCalledWith(
+        components.pg,
+        '11111111-1111-4111-8111-111111111111',
+        expect.objectContaining({ deleted_reason: 'inappropriate' })
+      )
+    })
+
+    it('should notify the creator of the deletion with the reason', async () => {
+      const events = await createEventsComponent(components)
+      await events.deleteEvent('11111111-1111-4111-8111-111111111111', '0xADMIN', true, undefined, 'inappropriate')
+
+      expect(components.notifications.notifyEventDeleted).toHaveBeenCalledWith(
+        expect.objectContaining({ id: '11111111-1111-4111-8111-111111111111' }),
+        'inappropriate'
+      )
+    })
+  })
+
+  describe('and an owner deletes their own event', () => {
+    beforeEach(() => {
+      components.eventsRepository.findById.mockResolvedValue({
+        id: '11111111-1111-4111-8111-111111111111',
+        user: '0xowner',
+        name: 'Party',
+        deleted_at: null
+      })
+      components.eventsRepository.update.mockResolvedValue({ id: '11111111-1111-4111-8111-111111111111' })
+    })
+
+    it('should not notify the creator', async () => {
+      const events = await createEventsComponent(components)
+      await events.deleteEvent('11111111-1111-4111-8111-111111111111', '0xowner', false)
+
+      expect(components.notifications.notifyEventDeleted).not.toHaveBeenCalled()
     })
   })
 })

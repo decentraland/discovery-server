@@ -20,8 +20,12 @@ const KIND_VALUES: DestinationKind[] = ['place', 'world']
 
 function parseFilters(params: URLSearchParams, user?: string): DestinationListFilters {
   const orderByParam = params.get('order_by') ?? undefined
-  const kinds = multi(params, 'kinds')?.filter((k): k is DestinationKind => KIND_VALUES.includes(k as DestinationKind))
-  const positions = positionsParam(params)
+  let kinds = multi(params, 'kinds')?.filter((k): k is DestinationKind => KIND_VALUES.includes(k as DestinationKind))
+  // Legacy only_worlds / only_places narrow the kind set (mapped onto the `kinds` filter).
+  if (params.get('only_worlds') === 'true') kinds = ['world']
+  else if (params.get('only_places') === 'true') kinds = ['place']
+  // Legacy calls the position filter `pointer`; accept it as an alias of `positions`.
+  const positions = positionsParam(params) ?? multi(params, 'pointer')
   return {
     search: params.get('search') ?? undefined,
     categories: multi(params, 'categories'),
@@ -32,6 +36,8 @@ function parseFilters(params: URLSearchParams, user?: string): DestinationListFi
     only_highlighted: params.get('only_highlighted') === 'true',
     only_favorites: params.get('only_favorites') === 'true',
     owner: params.get('owner') ?? undefined,
+    creator_address: params.get('creator_address') ?? undefined,
+    sdk: params.get('sdk') ?? undefined,
     kinds: kinds?.length ? kinds : undefined,
     order_by: ORDER_BY_VALUES.includes(orderByParam as DestinationOrderBy)
       ? (orderByParam as DestinationOrderBy)
@@ -66,11 +72,17 @@ export async function getDestinationsByIdHandler(
   const { destinations } = context.components
   const user = context.verification?.auth?.toLowerCase()
 
-  let body: { ids?: unknown; positions?: unknown; world_names?: unknown } = {}
+  let raw: unknown = {}
   try {
-    body = (await context.request.json()) as typeof body
+    raw = await context.request.json()
   } catch {
     // tolerate an empty body
+  }
+  // Legacy POST /api/destinations sends a bare JSON array of ids; newer callers send an object.
+  const body = (Array.isArray(raw) ? { ids: raw } : (raw ?? {})) as {
+    ids?: unknown
+    positions?: unknown
+    world_names?: unknown
   }
   const ids = boundedList(body.ids)
   const positions = boundedList(body.positions)

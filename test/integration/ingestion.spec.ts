@@ -19,6 +19,9 @@ function sceneDeployment(base: string, title: string): any {
         scene: { base, parcels: [base] },
         display: { title, description: 'A scene' },
         contact: { name: 'creator' },
+        owner: '0xSceneOwner',
+        creator: '0xSceneCreator',
+        runtimeVersion: '7',
         tags: ['art']
       }
     },
@@ -37,9 +40,26 @@ test('when ingesting Catalyst scene deployments', function ({ components }) {
 
       expect(result.processed).toBe(true)
       const place = await components.placesRepository.findByIdWithAggregates(components.pg, result.placeId!)
+      // owner/creator come from the scene metadata (not the deployer wallet); sdk from runtimeVersion.
       expect(place).toEqual(
-        expect.objectContaining({ base_position: '10,20', title: 'My Scene', owner: '0xdeployer', categories: ['art'] })
+        expect.objectContaining({
+          base_position: '10,20',
+          title: 'My Scene',
+          owner: '0xsceneowner',
+          creator_address: '0xscenecreator',
+          sdk: '7',
+          categories: ['art']
+        })
       )
+    })
+
+    it('should build a textsearch vector so the place is findable by search', async () => {
+      const result = await components.ingestion.processCatalystDeployment(sceneDeployment('12,22', 'Searchable Scene'))
+
+      const { rows } = await components.pg.query<{ n: string }>(SQL`
+        SELECT count(*) AS n FROM places
+        WHERE id = ${result.placeId}::uuid AND textsearch @@ websearch_to_tsquery('english', 'searchable')`)
+      expect(Number(rows[0].n)).toBe(1)
     })
   })
 

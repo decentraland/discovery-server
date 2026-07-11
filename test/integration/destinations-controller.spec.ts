@@ -17,6 +17,10 @@ test('when discovering destinations', function ({ components }) {
         title: 'My World',
         show_in_places: true
       })
+      // A world only surfaces in destinations when it has an enabled place (legacy parity).
+      await components.pg.query(SQL`
+        INSERT INTO places (id, title, base_position, positions, world, world_id, deployed_at, disabled)
+        VALUES (gen_random_uuid(), 'My World', '0,0', '{"0,0"}', true, 'my-world.dcl.eth', now(), false)`)
       // Reset the live-events snapshot to match the freshly-reset DB (no live/next events).
       await components.liveEvents.refresh()
     })
@@ -85,6 +89,9 @@ test('when discovering destinations', function ({ components }) {
         world_name: 'w.dcl.eth',
         show_in_places: true
       })
+      await components.pg.query(SQL`
+        INSERT INTO places (id, title, base_position, positions, world, world_id, deployed_at, disabled)
+        VALUES (gen_random_uuid(), 'W', '9,9', '{"9,9"}', true, 'w.dcl.eth', now(), false)`)
     })
 
     it('should return the matching place AND world, not an empty set', async () => {

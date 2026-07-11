@@ -8,6 +8,16 @@ const MAX_PAGES = 1000
 
 type LandPermission = { x: string; y: string }
 type LandsPermissionsResponse = { elements?: LandPermission[] }
+type ProfileResponse = { avatars?: Array<{ name?: string }> }
+
+/** The subset of a Catalyst/worlds entity the ingestion path reads. */
+export type SceneEntity = {
+  type?: string
+  pointers?: string[]
+  timestamp?: number
+  content?: Array<{ file: string; hash: string }>
+  metadata?: Record<string, unknown>
+}
 
 export interface ICatalystClient {
   /**
@@ -16,6 +26,13 @@ export interface ICatalystClient {
    * or on error.
    */
   getOperatedPositions(address: string): Promise<string[]>
+  /** The wallet's profile display name from the `profiles` lambda; null when none/unconfigured/error. */
+  getProfileName(address: string): Promise<string | null>
+  /**
+   * Fetch a deployed entity by id from a content server (`/contents/:id`), for events that
+   * carry only an entityId (world deployments). Returns null on any error/unconfigured input.
+   */
+  getEntityById(contentServerUrl: string, entityId: string): Promise<SceneEntity | null>
 }
 
 /**
@@ -67,5 +84,34 @@ export async function createCatalystClient(
     }
   }
 
-  return { getOperatedPositions }
+  async function getProfileName(address: string): Promise<string | null> {
+    if (!baseUrl) return null
+    const wallet = address.toLowerCase()
+    if (!/^0x[a-f0-9]{40}$/.test(wallet)) return null
+    try {
+      const response = await fetcher.fetch(`${baseUrl}/lambdas/profiles/${encodeURIComponent(wallet)}`)
+      if (!response.ok) return null
+      const body = (await response.json()) as ProfileResponse
+      return body?.avatars?.[0]?.name ?? null
+    } catch (error: any) {
+      logger.warn(`Failed to fetch profile name for ${address}: ${error?.message ?? String(error)}`)
+      return null
+    }
+  }
+
+  async function getEntityById(contentServerUrl: string, entityId: string): Promise<SceneEntity | null> {
+    // entityId is a content hash; reject anything with path/query metacharacters so it
+    // can't escape the /contents/ path of the (event-supplied) content server.
+    if (!contentServerUrl || !/^[a-zA-Z0-9]+$/.test(entityId)) return null
+    try {
+      const response = await fetcher.fetch(`${contentServerUrl.replace(/\/+$/, '')}/contents/${entityId}`)
+      if (!response.ok) throw new Error(`unexpected status ${response.status}`)
+      return (await response.json()) as SceneEntity
+    } catch (error: any) {
+      logger.warn(`Failed to fetch entity ${entityId}: ${error?.message ?? String(error)}`)
+      return null
+    }
+  }
+
+  return { getOperatedPositions, getProfileName, getEntityById }
 }

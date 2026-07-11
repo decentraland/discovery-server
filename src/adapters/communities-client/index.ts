@@ -5,11 +5,16 @@ const MEMBERS_PAGE_SIZE = 100
 
 export type Community = { id: string; name: string; ownerAddress: string }
 
+/** A single community's public metadata, used to build the EVENT_CREATED fan-out. */
+export type CommunityDetails = { id: string; name: string; thumbnailRaw?: string }
+
 export interface ICommunitiesClient {
   /** Whether the communities API is configured (URL present). */
   readonly enabled: boolean
   /** Communities the given wallet owns or moderates (empty on unconfigured/error). */
   getManagedCommunities(address: string): Promise<Community[]>
+  /** A single community's metadata, or null when unconfigured / not found / on error. */
+  getCommunity(communityId: string): Promise<CommunityDetails | null>
   /** Member wallet addresses of a community, paginated (empty on unconfigured/error). */
   getCommunityMembers(communityId: string): Promise<string[]>
 }
@@ -85,5 +90,23 @@ export async function createCommunitiesClient(
     }
   }
 
-  return { enabled: !!baseUrl, getManagedCommunities, getCommunityMembers }
+  async function getCommunity(communityId: string): Promise<CommunityDetails | null> {
+    if (!baseUrl) return null
+    try {
+      // communityId is stored from event input; encode it so it can't inject into the path.
+      const response = await fetcher.fetch(`${baseUrl}/v1/communities/${encodeURIComponent(communityId)}`, { headers })
+      if (!response.ok) throw new Error(`unexpected status ${response.status}`)
+      const body = (await response.json()) as {
+        data?: { id?: string; name?: string; thumbnails?: { raw?: string } }
+      }
+      const data = body?.data
+      if (!data?.id || !data.name) return null
+      return { id: data.id, name: data.name, thumbnailRaw: data.thumbnails?.raw }
+    } catch (error: any) {
+      logger.warn(`Failed to fetch community ${communityId}: ${error?.message ?? String(error)}`)
+      return null
+    }
+  }
+
+  return { enabled: !!baseUrl, getManagedCommunities, getCommunity, getCommunityMembers }
 }

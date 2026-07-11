@@ -1,7 +1,7 @@
 import type { AppComponents } from '../../types'
 import type { CategoryScope } from '../../adapters/categories-repository'
-import { placeCategoriesI18n } from '../../intl/categories'
-import type { ICategoriesComponent, PlaceCategoryView } from './types'
+import { placeCategoriesI18n, eventCategoriesI18n } from '../../intl/categories'
+import type { ICategoriesComponent, PlaceCategoryView, EventCategoryView } from './types'
 
 /**
  * Category listing plus the daily POI sync. Counts come from the categories
@@ -21,8 +21,12 @@ export async function createCategoriesComponent(
     }))
   }
 
-  async function getEventCategories(): Promise<string[]> {
-    return categoriesRepository.findActiveEventCategories(pg)
+  async function getEventCategories(): Promise<EventCategoryView[]> {
+    const categories = await categoriesRepository.findActiveEventCategories(pg)
+    return categories.map((category) => ({
+      ...category,
+      i18n: { en: eventCategoriesI18n[category.name] ?? category.name }
+    }))
   }
 
   async function syncPois(): Promise<number> {

@@ -13,6 +13,10 @@ test('when serving the map endpoints on a real server', function ({ components }
       await components.pg.query(SQL`
         INSERT INTO worlds (id, world_name, owner, show_in_places)
         VALUES ('my-world.dcl.eth', 'my-world.dcl.eth', '0xowner', true)`)
+      // A world surfaces in the destinations/map feed only with an enabled place (legacy parity).
+      await components.pg.query(SQL`
+        INSERT INTO places (id, title, base_position, positions, world, world_id, deployed_at, disabled)
+        VALUES (gen_random_uuid(), 'My World', '0,0', '{"0,0"}', true, 'my-world.dcl.eth', now(), false)`)
     })
 
     describe('and requesting GET /api/map', () => {

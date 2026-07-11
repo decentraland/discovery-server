@@ -25,6 +25,14 @@ export function createAttendeesRepository(): IAttendeesRepository {
     return result.rows
   }
 
+  async function listAttendedEventIds(client: Queryable, user: string, eventIds: string[]): Promise<string[]> {
+    if (!eventIds.length) return []
+    const result = await client.query<{ event_id: string }>(SQL`
+      SELECT event_id FROM event_attendees
+      WHERE "user" = ${user.toLowerCase()} AND event_id = ANY(${eventIds}::uuid[])`)
+    return result.rows.map((row) => row.event_id)
+  }
+
   async function isAttending(client: Queryable, eventId: string, user: string): Promise<boolean> {
     const result = await client.query(
       SQL`SELECT 1 FROM event_attendees WHERE event_id = ${eventId} AND "user" = ${user.toLowerCase()}`
@@ -56,5 +64,5 @@ export function createAttendeesRepository(): IAttendeesRepository {
       WHERE events.id = ${eventId}`)
   }
 
-  return { add, remove, listByEvent, isAttending, lockEvent, recomputeCounters }
+  return { add, remove, listByEvent, listAttendedEventIds, isAttending, lockEvent, recomputeCounters }
 }
