@@ -7,8 +7,10 @@ import type { IPgComponent } from './types'
 /**
  * Postgres pool + migration runner. Migrations in `src/migrations` run on
  * component START via `@dcl/pg-component` (node-pg-migrate v7 under the hood);
- * the pool drains on STOP. Connection string comes from
- * `PG_COMPONENT_PSQL_CONNECTION_STRING`.
+ * the pool drains on STOP. `@dcl/pg-component` reads either the split parts
+ * (`PG_COMPONENT_PSQL_HOST/PORT/USER/PASSWORD/DATABASE`, used by the deployment)
+ * or `PG_COMPONENT_PSQL_CONNECTION_STRING` (used locally / by tests). Do not set
+ * both at runtime — a connection string overrides the split parts in node-postgres.
  */
 export async function createPgAdapter(
   components: Pick<
