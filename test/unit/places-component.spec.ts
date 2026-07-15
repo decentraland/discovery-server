@@ -20,7 +20,6 @@ describe('when reading places', () => {
       insert: jest.fn(),
       countByIds: jest.fn().mockResolvedValue(0),
       updateModeration: jest.fn(),
-      findCategoriesById: jest.fn().mockResolvedValue([]),
       findEnabledByPositions: jest.fn(),
       findActiveByWorldIdAndPositions: jest.fn(),
       insertScene: jest.fn(),
@@ -33,6 +32,7 @@ describe('when reading places', () => {
     pg = {}
     hotScenes = {
       getUserCount: jest.fn().mockResolvedValue(0),
+      getRealms: jest.fn().mockResolvedValue([]),
       getActivePositions: jest.fn().mockResolvedValue([]),
       refresh: jest.fn()
     }
@@ -58,6 +58,34 @@ describe('when reading places', () => {
       const places = await createPlacesComponent({ pg, placesRepository, hotScenes, sceneStats, catalystClient, logs })
 
       await expect(places.getPlace('missing')).rejects.toThrow(PlaceNotFoundError)
+    })
+  })
+
+  describe('and listing places with with_realms_detail', () => {
+    let place: AggregatePlace
+    const realms = [{ serverName: 'realm-1', url: 'https://realm-1', usersCount: 4 }]
+
+    beforeEach(() => {
+      place = { id: 'p1', base_position: '0,0' } as AggregatePlace
+      placesRepository.findWithAggregates.mockResolvedValue([place])
+      placesRepository.count.mockResolvedValue(1)
+      hotScenes.getRealms.mockResolvedValue(realms)
+    })
+
+    it('should decorate each place with realms_detail from hot-scenes', async () => {
+      const places = await createPlacesComponent({ pg, placesRepository, hotScenes, sceneStats, catalystClient, logs })
+      const result = await places.getPlaces({ withRealmsDetail: true })
+
+      expect(hotScenes.getRealms).toHaveBeenCalledWith('0,0')
+      expect(result.data[0].realms_detail).toEqual(realms)
+    })
+
+    it('should omit realms_detail when with_realms_detail is not requested', async () => {
+      const places = await createPlacesComponent({ pg, placesRepository, hotScenes, sceneStats, catalystClient, logs })
+      const result = await places.getPlaces({})
+
+      expect(hotScenes.getRealms).not.toHaveBeenCalled()
+      expect(result.data[0]).not.toHaveProperty('realms_detail')
     })
   })
 

@@ -184,7 +184,6 @@ export async function initComponents(): Promise<AppComponents> {
   const moderation = await createModerationComponent({
     pg,
     placesRepository,
-    worldsRepository,
     contentRatingsRepository,
     slackNotifier,
     config,

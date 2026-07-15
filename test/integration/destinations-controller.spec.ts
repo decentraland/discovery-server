@@ -142,4 +142,34 @@ test('when discovering destinations', function ({ components }) {
       expect(body.data).toEqual([])
     })
   })
+
+  describe('and filtering to SDK7 destinations with only_sdk7', () => {
+    let sdk7Id: string
+
+    beforeEach(async () => {
+      await components.pg.query(SQL`DELETE FROM places`)
+      await components.pg.query(SQL`DELETE FROM worlds`)
+      const sdk7 = await components.placesRepository.insert(components.pg, {
+        title: 'SDK7',
+        base_position: '7,7',
+        positions: ['7,7'],
+        sdk: '7'
+      })
+      sdk7Id = sdk7.id
+      await components.placesRepository.insert(components.pg, {
+        title: 'SDK6',
+        base_position: '6,6',
+        positions: ['6,6'],
+        sdk: '6'
+      })
+    })
+
+    it('should return only the SDK7 places', async () => {
+      const response = await components.localFetch.fetch('/api/destinations?only_sdk7=true&kinds=place')
+      const body = await response.json()
+
+      expect(response.status).toBe(200)
+      expect(body.data.map((d: { id: string }) => d.id)).toEqual([sdk7Id])
+    })
+  })
 })

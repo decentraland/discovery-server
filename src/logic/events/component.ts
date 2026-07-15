@@ -284,12 +284,6 @@ export async function createEventsComponent(
     return serializeList(data, filters.viewer)
   }
 
-  async function getAttendingEvents(user: string): Promise<Event[]> {
-    const data = await eventsRepository.listAttending(pg, user)
-    // Every row is one the user attends.
-    return data.map((event) => ({ ...serialize(event, user), attending: true }))
-  }
-
   async function createEvent(payload: CreateEventPayload, user: string): Promise<Event> {
     if (!payload.name) throw new EventValidationError('name is required')
     if (!payload.start_at) throw new EventValidationError('start_at is required')
@@ -679,7 +673,6 @@ export async function createEventsComponent(
     getEvent,
     getEvents,
     listEvents,
-    getAttendingEvents,
     createEvent,
     updateEvent,
     deleteEvent,

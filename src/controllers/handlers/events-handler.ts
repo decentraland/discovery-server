@@ -126,17 +126,29 @@ async function isModeratorViewer(
   return profiles.hasAnyPermission(viewer, [ProfilePermission.ApproveAnyEvent, ProfilePermission.EditAnyEvent])
 }
 
-/** Run an event list query and apply the opt-in connected-users decoration. */
+/** Envelope for the event list: a bare array, or `{ events, total }` for the by-community/places view. */
+type EventListData = Event[] | { events: Event[]; total: number }
+
+/**
+ * Run an event list query and apply the opt-in connected-users decoration. Legacy nests the
+ * payload as `{ events, total }` when the query filters by `places_ids` or `community_id`, and
+ * returns a bare event array otherwise — a conditional envelope real consumers depend on (sites
+ * community events and social-service-ea read `data.events`/`data.total`; mobile-bff and the
+ * moderation tool read `data` as an array). Reproduced here rather than flattened.
+ */
 async function listAndDecorate(
   components: { events: IEventsComponent; commsGatekeeperClient: ICommsGatekeeperClient },
   params: URLSearchParams,
   filters: EventListFilters
-): Promise<HTTPResponse<Event[]>> {
+): Promise<HTTPResponse<EventListData>> {
   const { data, total } = await components.events.getEvents(filters)
   const decorated =
     params.get('with_connected_users') === 'true'
       ? await decorateConnectedUsers(components.commsGatekeeperClient, data)
       : data
+  if (filters.placeIds?.length || filters.communityId) {
+    return { status: 200, body: { ok: true, data: { events: decorated, total } } }
+  }
   return { status: 200, body: { ok: true, data: decorated, total } }
 }
 
@@ -146,7 +158,7 @@ export async function getEventListHandler(
     HandlerContextWithPath<'events' | 'profiles' | 'commsGatekeeperClient', '/api/events'>,
     'components' | 'url' | 'verification'
   >
-): Promise<HTTPResponse<Event[]>> {
+): Promise<HTTPResponse<EventListData>> {
   const { viewer, isAdmin } = resolveViewer(context.verification, context.components.profiles)
   const params = context.url.searchParams
   assertAuthedFilters(params, viewer)
@@ -163,7 +175,7 @@ export async function searchEventsHandler(
     HandlerContextWithPath<'events' | 'profiles' | 'commsGatekeeperClient', '/api/events/search'>,
     'components' | 'url' | 'request' | 'verification'
   >
-): Promise<HTTPResponse<Event[]>> {
+): Promise<HTTPResponse<EventListData>> {
   const { viewer, isAdmin } = resolveViewer(context.verification, context.components.profiles)
   const params = context.url.searchParams
   assertAuthedFilters(params, viewer)
@@ -181,24 +193,14 @@ export async function searchEventsHandler(
     if (body.placeIds.length > MAX_BATCH_ITEMS) throw new BadRequestError(`Too many placeIds (max ${MAX_BATCH_ITEMS})`)
     // Keep only well-formed uuids so a bad id can't 500 the `::uuid[]` cast.
     const valid = body.placeIds.filter((id: unknown): id is string => typeof id === 'string' && isPlaceId(id))
-    // The caller filtered by specific places; if none are valid ids, nothing matches.
-    if (!valid.length) return { status: 200, body: { ok: true, data: [], total: 0 } }
+    // The caller filtered by specific places; if none are valid ids, nothing matches. This is a
+    // by-places query, so keep the nested { events, total } envelope consumers expect here.
+    if (!valid.length) return { status: 200, body: { ok: true, data: { events: [], total: 0 } } }
     filters.placeIds = valid
   }
   if (typeof body.communityId === 'string') filters.communityId = body.communityId
 
   return listAndDecorate(context.components, params, filters)
-}
-
-/** Legacy `GET /api/events/attending` — events the authenticated user attends. */
-export async function getAttendingEventsHandler(
-  context: Pick<HandlerContextWithPath<'events', '/api/events/attending'>, 'components' | 'verification'>
-): Promise<HTTPResponse<Event[]>> {
-  const user = context.verification?.auth?.toLowerCase()
-  if (!user) throw new UnauthorizedError('Authentication required')
-
-  const data = await context.components.events.getAttendingEvents(user)
-  return { status: 200, body: { ok: true, data } }
 }
 
 /** Legacy `GET /api/events/:event_id` — a single event. */

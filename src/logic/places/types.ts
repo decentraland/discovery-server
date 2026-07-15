@@ -8,7 +8,7 @@ export type PlaceListResult = {
 
 export interface IPlacesComponent {
   /** A single place with the requesting user's like/favorite state; throws `PlaceNotFoundError`. */
-  getPlace(id: string, user?: string): Promise<AggregatePlace>
+  getPlace(id: string, user?: string, withRealmsDetail?: boolean): Promise<AggregatePlace>
   /** Filtered, paginated place list with a total count. */
   getPlaces(filters: PlaceListFilters): Promise<PlaceListResult>
   /**
@@ -18,6 +18,4 @@ export interface IPlacesComponent {
   getPlacesByIds(ids: string[], filters?: Partial<PlaceListFilters>): Promise<PlaceListResult>
   /** Minimal status rows by id (no aggregates). */
   getPlacesStatus(ids: string[]): Promise<PlaceStatus[]>
-  /** A place's category slugs from the join table; throws `PlaceNotFoundError` only for a malformed id. */
-  getPlaceCategories(id: string): Promise<string[]>
 }

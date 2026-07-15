@@ -35,24 +35,52 @@ test('when moderating places and worlds', function ({ components }) {
     })
   })
 
-  describe('and disabling a place via the component', () => {
+  describe('and an operator disables a place via the component', () => {
     let placeId: string
 
     beforeEach(async () => {
       await components.pg.query(SQL`DELETE FROM places`)
-      const place = await components.placesRepository.insert(components.pg, { title: 'Plaza', base_position: '1,1' })
+      const place = await components.placesRepository.insert(components.pg, { title: 'Plaza', base_position: '3,3' })
       placeId = place.id
       await components.moderation.setPlaceDisabled(placeId, true)
     })
 
-    it('should mark the place disabled with a timestamp and reason', async () => {
-      const result = await components.pg.query<{ disabled: boolean; disabled_reason: string; disabled_at: Date }>(
-        SQL`SELECT disabled, disabled_reason, disabled_at FROM places WHERE id = ${placeId}`
+    it('should mark the place disabled with the moderation reason', async () => {
+      const result = await components.pg.query<{ disabled: boolean; disabled_reason: string }>(
+        SQL`SELECT disabled, disabled_reason FROM places WHERE id = ${placeId}`
       )
 
-      expect(result.rows[0].disabled).toBe(true)
-      expect(result.rows[0].disabled_reason).toBe('moderation')
+      expect(result.rows[0]).toEqual(expect.objectContaining({ disabled: true, disabled_reason: 'moderation' }))
+    })
+
+    it('should stamp the disabled_at timestamp', async () => {
+      const result = await components.pg.query<{ disabled_at: Date | null }>(
+        SQL`SELECT disabled_at FROM places WHERE id = ${placeId}`
+      )
+
       expect(result.rows[0].disabled_at).not.toBeNull()
+    })
+  })
+
+  describe('and re-enabling a place via the component', () => {
+    let placeId: string
+
+    beforeEach(async () => {
+      await components.pg.query(SQL`DELETE FROM places`)
+      const place = await components.placesRepository.insert(components.pg, { title: 'Plaza', base_position: '4,4' })
+      placeId = place.id
+      await components.moderation.setPlaceDisabled(placeId, true)
+      await components.moderation.setPlaceDisabled(placeId, false)
+    })
+
+    it('should clear the disabled flag, reason and timestamp', async () => {
+      const result = await components.pg.query<{
+        disabled: boolean
+        disabled_reason: string | null
+        disabled_at: Date | null
+      }>(SQL`SELECT disabled, disabled_reason, disabled_at FROM places WHERE id = ${placeId}`)
+
+      expect(result.rows[0]).toEqual({ disabled: false, disabled_reason: null, disabled_at: null })
     })
   })
 

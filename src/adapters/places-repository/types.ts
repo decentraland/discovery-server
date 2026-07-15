@@ -23,6 +23,8 @@ export type PlaceListFilters = {
   order?: OrderDirection
   /** Base positions of currently-active scenes; enables `most_active` ordering. */
   mostActivePositions?: string[]
+  /** Decorate each row with per-realm live occupancy (`realms_detail`); handled by the logic layer. */
+  withRealmsDetail?: boolean
   limit?: number
   offset?: number
 }
@@ -72,8 +74,6 @@ export interface IPlacesRepository {
   insert(client: Queryable, input: UpsertPlaceInput): Promise<Place>
   /** Apply moderation/admin field updates; sets disabled_at when disabling. */
   updateModeration(client: Queryable, id: string, fields: PlaceModerationFields): Promise<Place | null>
-  /** A place's category slugs from the authoritative `place_categories` join ([] if none/unknown). */
-  findCategoriesById(client: Queryable, id: string): Promise<string[]>
   /** Enabled genesis (non-world) places whose positions overlap any of `positions`. */
   findEnabledByPositions(client: Queryable, positions: string[]): Promise<Place[]>
   /** Active places of a world whose positions overlap any of `positions` (world identity by overlap). */

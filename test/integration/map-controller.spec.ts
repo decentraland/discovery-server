@@ -37,16 +37,5 @@ test('when serving the map endpoints on a real server', function ({ components }
         expect(Object.values(body.data).some((p: any) => p.base_position === '')).toBe(false)
       })
     })
-
-    describe('and requesting GET /api/map/places', () => {
-      it('should return the unified places+worlds list', async () => {
-        const response = await components.localFetch.fetch('/api/map/places')
-        const body = await response.json()
-
-        expect(response.status).toBe(200)
-        expect(body.data.some((d: any) => d.kind === 'place')).toBe(true)
-        expect(body.data.some((d: any) => d.kind === 'world')).toBe(true)
-      })
-    })
   })
 })

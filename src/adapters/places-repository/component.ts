@@ -247,13 +247,6 @@ export function createPlacesRepository(): IPlacesRepository {
     return result.rows[0] ?? null
   }
 
-  async function findCategoriesById(client: Queryable, id: string): Promise<string[]> {
-    const result = await client.query<{ category_id: string }>(
-      SQL`SELECT category_id FROM place_categories WHERE place_id = ${id}::uuid ORDER BY category_id`
-    )
-    return result.rows.map((row) => row.category_id)
-  }
-
   async function findEnabledByPositions(client: Queryable, positions: string[]): Promise<Place[]> {
     if (!positions.length) return []
     const result = await client.query<Place>(
@@ -359,7 +352,6 @@ export function createPlacesRepository(): IPlacesRepository {
     insert,
     countByIds,
     updateModeration,
-    findCategoriesById,
     findEnabledByPositions,
     findActiveByWorldIdAndPositions,
     insertScene,

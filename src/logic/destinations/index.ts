@@ -6,6 +6,7 @@ export type GetDestinationsOptions = {
   withLiveEvents?: boolean
   withConnectedUsers?: boolean
   withNextEvent?: boolean
+  withRealmsDetail?: boolean
 }
 
 export interface IDestinationsComponent {
@@ -75,6 +76,10 @@ export async function createDestinationsComponent(
             : destination.base_position
               ? await hotScenes.getUserCount(destination.base_position)
               : 0
+        // Per-realm live occupancy (places only), opt-in via with_realms_detail (unity-explorer).
+        if (options.withRealmsDetail && destination.kind === 'place' && destination.base_position) {
+          decorated.realms_detail = await hotScenes.getRealms(destination.base_position)
+        }
         return decorated
       })
     )

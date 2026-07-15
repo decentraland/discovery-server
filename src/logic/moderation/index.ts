@@ -1,10 +1,9 @@
 import type { AppComponents } from '../../types'
-import type { AggregatePlace, AggregateWorld } from '../../types/entities'
+import type { AggregatePlace } from '../../types/entities'
 import type { Queryable } from '../../adapters/pg'
 import { BadRequestError } from '../../types/errors'
 import { isPlaceId } from '../entity-id'
 import { PlaceNotFoundError } from '../places'
-import { WorldNotFoundError } from '../worlds'
 
 // Allowed content ratings (legacy enum + the 'RP' pending code discovery worlds use). Any other
 // value would poison the ingestion RATING_RANK guard and, for the varchar(4) places column,
@@ -14,11 +13,8 @@ const VALID_RATINGS = ['PR', 'RP', 'E', 'T', 'A', 'R']
 export interface IModerationComponent {
   setPlaceRating(placeId: string, rating: string, moderator: string, comment?: string): Promise<AggregatePlace>
   setPlaceHighlight(placeId: string, highlighted: boolean): Promise<AggregatePlace>
-  setPlaceDisabled(placeId: string, disabled: boolean, reason?: string): Promise<AggregatePlace>
   setPlaceRanking(placeId: string, ranking: number | null): Promise<AggregatePlace>
-  setWorldRating(worldId: string, rating: string, moderator: string, comment?: string): Promise<AggregateWorld>
-  setWorldHighlight(worldId: string, highlighted: boolean): Promise<AggregateWorld>
-  setWorldRanking(worldId: string, ranking: number | null): Promise<AggregateWorld>
+  setPlaceDisabled(placeId: string, disabled: boolean, reason?: string): Promise<AggregatePlace>
 }
 
 /**
@@ -29,10 +25,10 @@ export interface IModerationComponent {
 export async function createModerationComponent(
   components: Pick<
     AppComponents,
-    'pg' | 'placesRepository' | 'worldsRepository' | 'contentRatingsRepository' | 'slackNotifier' | 'config' | 'logs'
+    'pg' | 'placesRepository' | 'contentRatingsRepository' | 'slackNotifier' | 'config' | 'logs'
   >
 ): Promise<IModerationComponent> {
-  const { pg, placesRepository, worldsRepository, contentRatingsRepository, slackNotifier, config } = components
+  const { pg, placesRepository, contentRatingsRepository, slackNotifier, config } = components
 
   // Content-moderation alerts channel (legacy CONTENT_MODERATION_SLACK_WEBHOOK); a
   // no-op when Slack or the channel is unconfigured.
@@ -60,12 +56,6 @@ export async function createModerationComponent(
     if (!aggregate) throw new PlaceNotFoundError(placeId)
     return aggregate
   }
-  async function worldAggregate(client: Queryable, worldId: string, user?: string): Promise<AggregateWorld> {
-    const aggregate = await worldsRepository.findByIdWithAggregates(client, worldId, user)
-    if (!aggregate) throw new WorldNotFoundError(worldId)
-    return aggregate
-  }
-
   async function setPlaceRating(
     placeId: string,
     rating: string,
@@ -103,6 +93,15 @@ export async function createModerationComponent(
     return placeAggregate(pg, placeId)
   }
 
+  async function setPlaceRanking(placeId: string, ranking: number | null): Promise<AggregatePlace> {
+    assertPlaceId(placeId)
+    const updated = await placesRepository.updateModeration(pg, placeId, { ranking })
+    if (!updated) throw new PlaceNotFoundError(placeId)
+    return placeAggregate(pg, placeId)
+  }
+
+  // Admin disable/re-enable of a place. A moderation disable always records reason 'moderation'
+  // and updateModeration stamps disabled_at; re-enabling clears both the flag and the reason.
   async function setPlaceDisabled(placeId: string, disabled: boolean, reason = 'moderation'): Promise<AggregatePlace> {
     assertPlaceId(placeId)
     const updated = await placesRepository.updateModeration(pg, placeId, {
@@ -114,59 +113,10 @@ export async function createModerationComponent(
     return placeAggregate(pg, placeId)
   }
 
-  async function setPlaceRanking(placeId: string, ranking: number | null): Promise<AggregatePlace> {
-    assertPlaceId(placeId)
-    const updated = await placesRepository.updateModeration(pg, placeId, { ranking })
-    if (!updated) throw new PlaceNotFoundError(placeId)
-    return placeAggregate(pg, placeId)
-  }
-
-  async function setWorldRating(
-    worldId: string,
-    rating: string,
-    moderator: string,
-    comment?: string
-  ): Promise<AggregateWorld> {
-    assertValidRating(rating)
-    return pg.withTransaction(async (tx) => {
-      await worldsRepository.lockById(tx, worldId)
-      const current = await worldsRepository.findByIdWithAggregates(tx, worldId)
-      if (!current) throw new WorldNotFoundError(worldId)
-      const updated = await worldsRepository.updateModeration(tx, worldId, { content_rating: rating })
-      if (!updated) throw new WorldNotFoundError(worldId)
-      await contentRatingsRepository.record(tx, {
-        entityId: current.id,
-        originalRating: current.content_rating,
-        updateRating: rating,
-        moderator,
-        comment
-      })
-      alert(
-        `:label: World content rating changed: ${current.id} ${current.content_rating ?? '—'} → ${rating} by ${moderator}`
-      )
-      return worldAggregate(tx, worldId, moderator)
-    })
-  }
-
-  async function setWorldHighlight(worldId: string, highlighted: boolean): Promise<AggregateWorld> {
-    const updated = await worldsRepository.updateModeration(pg, worldId, { highlighted })
-    if (!updated) throw new WorldNotFoundError(worldId)
-    return worldAggregate(pg, worldId)
-  }
-
-  async function setWorldRanking(worldId: string, ranking: number | null): Promise<AggregateWorld> {
-    const updated = await worldsRepository.updateModeration(pg, worldId, { ranking })
-    if (!updated) throw new WorldNotFoundError(worldId)
-    return worldAggregate(pg, worldId)
-  }
-
   return {
     setPlaceRating,
     setPlaceHighlight,
-    setPlaceDisabled,
     setPlaceRanking,
-    setWorldRating,
-    setWorldHighlight,
-    setWorldRanking
+    setPlaceDisabled
   }
 }

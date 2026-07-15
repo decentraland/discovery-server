@@ -52,7 +52,6 @@ export interface IEventsComponent {
   getEvents(filters: EventListFilters): Promise<{ data: Event[]; total: number }>
   /** List events without computing the total (for callers that don't paginate). */
   listEvents(filters: EventListFilters): Promise<Event[]>
-  getAttendingEvents(user: string): Promise<Event[]>
   createEvent(payload: CreateEventPayload, user: string): Promise<Event>
   /**
    * Update an event. `options.isAdmin` grants the moderation fields

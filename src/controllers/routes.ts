@@ -16,13 +16,12 @@ import {
   updateScheduleHandler
 } from './handlers/get-schedules-handler'
 import {
-  getPlaceCategoriesHandler,
   getPlaceHandler,
   getPlaceListByIdHandler,
   getPlaceListHandler,
   getPlaceStatusListHandler
 } from './handlers/get-places-handler'
-import { getMapHandler, getMapPlacesHandler } from './handlers/map-handler'
+import { getMapHandler } from './handlers/map-handler'
 import { getWorldHandler, getWorldListHandler, getWorldNamesHandler } from './handlers/get-worlds-handler'
 import { updateFavoritesHandler, updateLikesHandler } from './handlers/update-interactions-handler'
 import {
@@ -41,7 +40,6 @@ import {
 import {
   createEventHandler,
   deleteEventHandler,
-  getAttendingEventsHandler,
   getEventHandler,
   getEventListHandler,
   searchEventsHandler,
@@ -73,10 +71,7 @@ import {
   updatePlaceDisabledHandler,
   updatePlaceHighlightHandler,
   updatePlaceRankingHandler,
-  updatePlaceRatingHandler,
-  updateWorldHighlightHandler,
-  updateWorldRankingHandler,
-  updateWorldRatingHandler
+  updatePlaceRatingHandler
 } from './handlers/moderation-handler'
 
 /**
@@ -91,8 +86,6 @@ export async function setupRouter(globalContext: GlobalContext): Promise<Router<
   const signedFetch = createSignedFetchMiddleware(components.fetcher)
   const requirePermission = createRequirePermission(components.profiles)
   const dataTeamToken = await components.config.getString('DATA_TEAM_AUTH_TOKEN')
-  // Data-team ranking routes are only mounted when their bearer token is configured.
-  const withDataTeamBearer = dataTeamToken ? createAnyBearerMiddleware([dataTeamToken]) : undefined
   // Service admin bearer tokens (unified + legacy rotation aliases).
   const adminTokens = [
     await components.config.getString('API_ADMIN_TOKEN'),
@@ -101,6 +94,10 @@ export async function setupRouter(globalContext: GlobalContext): Promise<Router<
   ]
   // Moderation routes: signed admin wallet OR the service admin bearer.
   const adminAuth = createAdminAuth(components.fetcher, components.profiles, adminTokens)
+  // Ranking writes accept the data-team pipeline token OR any service admin bearer (places #850);
+  // mounted whenever at least one such token is configured.
+  const rankingTokens = [dataTeamToken, ...adminTokens].filter((t): t is string => !!t)
+  const withRankingBearer = rankingTokens.length ? createAnyBearerMiddleware(rankingTokens) : undefined
   // Events read/moderation routes: optional-signed, with the admin bearer unlocking
   // the admin view (pending/rejected/deleted) and moderation.
   const eventsAuth = createOptionalSignedOrAdminBearer(components.fetcher, adminTokens)
@@ -160,7 +157,6 @@ export async function setupRouter(globalContext: GlobalContext): Promise<Router<
   router.get('/api/events', eventsAuth, getEventListHandler)
   router.post('/api/events/search', eventsAuth, searchEventsHandler)
   router.post('/api/events', signedFetch(), validateCreateEvent, createEventHandler)
-  router.get('/api/events/attending', signedFetch(), getAttendingEventsHandler)
   // @deprecated — superseded by GET /v1/events/:event_id
   router.get('/api/events/:event_id', eventsAuth, getEventHandler)
   router.patch('/api/events/:event_id', eventsAuth, validateUpdateEvent, updateEventHandler)
@@ -174,22 +170,20 @@ export async function setupRouter(globalContext: GlobalContext): Promise<Router<
   router.post('/api/places', signedFetch({ optional: true }), getPlaceListByIdHandler)
   router.post('/api/places/status', getPlaceStatusListHandler)
   router.get('/api/places/:place_id', signedFetch({ optional: true }), getPlaceHandler)
-  router.get('/api/places/:place_id/categories', getPlaceCategoriesHandler)
   // @deprecated — superseded by PATCH /v1/destinations/:id/like
   router.patch('/api/places/:entity_id/likes', signedFetch(), updateLikesHandler)
   // @deprecated — superseded by PATCH /v1/destinations/:id/favorite
   router.patch('/api/places/:entity_id/favorites', signedFetch(), updateFavoritesHandler)
-  // places moderation (signed admin or service admin bearer); ranking is data-team bearer
+  // places moderation (signed admin or service admin bearer); ranking also accepts the data-team bearer
   router.put('/api/places/:place_id/rating', adminAuth, updatePlaceRatingHandler)
   router.put('/api/places/:place_id/highlight', adminAuth, updatePlaceHighlightHandler)
   router.put('/api/places/:place_id/disable', adminAuth, updatePlaceDisabledHandler)
-  if (withDataTeamBearer) {
-    router.put('/api/places/:place_id/ranking', withDataTeamBearer, updatePlaceRankingHandler)
+  if (withRankingBearer) {
+    router.put('/api/places/:place_id/ranking', withRankingBearer, updatePlaceRankingHandler)
   }
 
-  // map (optional-signed reads): genesis keyed feed + unified places+worlds list
+  // map (optional-signed reads): the genesis keyed feed
   router.get('/api/map', signedFetch({ optional: true }), getMapHandler)
-  router.get('/api/map/places', signedFetch({ optional: true }), getMapPlacesHandler)
 
   // content-moderation report (signed → presigned S3 upload URL)
   router.post('/api/report', signedFetch(), createReportHandler)
@@ -233,16 +227,9 @@ export async function setupRouter(globalContext: GlobalContext): Promise<Router<
   router.get('/api/worlds', signedFetch({ optional: true }), getWorldListHandler)
   router.get('/api/world_names', getWorldNamesHandler)
   router.get('/api/worlds/:world_id', signedFetch({ optional: true }), getWorldHandler)
-  // @deprecated — superseded by PATCH /v1/destinations/:id/like
-  router.patch('/api/worlds/:world_id/likes', signedFetch(), updateLikesHandler)
-  // @deprecated — superseded by PATCH /v1/destinations/:id/favorite
-  router.patch('/api/worlds/:world_id/favorites', signedFetch(), updateFavoritesHandler)
-  // worlds moderation (signed admin or service admin bearer); ranking is data-team bearer
-  router.put('/api/worlds/:world_id/rating', adminAuth, updateWorldRatingHandler)
-  router.put('/api/worlds/:world_id/highlight', adminAuth, updateWorldHighlightHandler)
-  if (withDataTeamBearer) {
-    router.put('/api/worlds/:world_id/ranking', withDataTeamBearer, updateWorldRankingHandler)
-  }
+  // Worlds are liked/favorited through the polymorphic /api/places/:entity_id endpoints (a world
+  // id resolves to a world), and world ratings come from the worlds-content deployment ingestion —
+  // so worlds have no dedicated like/favorite or moderation write routes.
 
   // profile settings (permissions/authorization)
   router.get(

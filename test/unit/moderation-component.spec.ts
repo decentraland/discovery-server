@@ -106,19 +106,49 @@ describe('when moderating a place', () => {
     })
   })
 
-  describe('and disabling a place', () => {
-    beforeEach(() => {
+  describe('and disabling an existing place', () => {
+    beforeEach(async () => {
       components.placesRepository.updateModeration.mockResolvedValueOnce({ id: PLACE_ID, disabled: true })
-    })
-
-    it('should update the place with a moderation disabled reason', async () => {
       const moderation = await createModerationComponent(components)
       await moderation.setPlaceDisabled(PLACE_ID, true)
+    })
 
+    it('should update the place as disabled with the moderation reason', () => {
       expect(components.placesRepository.updateModeration).toHaveBeenCalledWith(components.pg, PLACE_ID, {
         disabled: true,
         disabled_reason: 'moderation'
       })
+    })
+
+    it('should post a Slack alert about the disable', () => {
+      expect(components.slackNotifier.notify).toHaveBeenCalledWith(expect.stringContaining('disabled'), undefined)
+    })
+  })
+
+  describe('and re-enabling an existing place', () => {
+    beforeEach(async () => {
+      components.placesRepository.updateModeration.mockResolvedValueOnce({ id: PLACE_ID, disabled: false })
+      const moderation = await createModerationComponent(components)
+      await moderation.setPlaceDisabled(PLACE_ID, false)
+    })
+
+    it('should clear the disabled reason', () => {
+      expect(components.placesRepository.updateModeration).toHaveBeenCalledWith(components.pg, PLACE_ID, {
+        disabled: false,
+        disabled_reason: null
+      })
+    })
+  })
+
+  describe('and disabling a place that does not exist', () => {
+    beforeEach(() => {
+      components.placesRepository.updateModeration.mockResolvedValueOnce(null)
+    })
+
+    it('should throw a PlaceNotFoundError', async () => {
+      const moderation = await createModerationComponent(components)
+
+      await expect(moderation.setPlaceDisabled(PLACE_ID, true)).rejects.toThrow(PlaceNotFoundError)
     })
   })
 })

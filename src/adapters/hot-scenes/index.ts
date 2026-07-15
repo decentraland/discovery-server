@@ -3,17 +3,23 @@ import type { IFetchComponent } from '@dcl/core-commons'
 
 const DEFAULT_TTL_MS = 60 * 1000
 
+/** Per-realm live occupancy for a scene, as surfaced by realm-provider `/hot-scenes`. */
+export type RealmDetail = { serverName: string; url: string; usersCount: number }
+
 export type HotScene = {
   id: string
   name: string
   baseCoords: [number, number]
   usersTotalCount: number
   parcels: [number, number][]
+  realms?: RealmDetail[]
 }
 
 export interface IHotScenesComponent {
   /** Realtime user count for the scene at a base position (0 if none/unconfigured). */
   getUserCount(basePosition: string): Promise<number>
+  /** Per-realm live occupancy for the scene at a base position (the `realms_detail` decoration). */
+  getRealms(basePosition: string): Promise<RealmDetail[]>
   /** Base positions ("x,y") of scenes that currently have users — drives most_active ordering. */
   getActivePositions(): Promise<string[]>
   /** Force a refresh of the cached hot-scenes snapshot (used by the refresh cron). */
@@ -40,6 +46,7 @@ export async function createHotScenesComponent(
   const ttl = (await config.getNumber('HOT_SCENES_TTL_MS')) ?? DEFAULT_TTL_MS
 
   let countByPosition = new Map<string, number>()
+  let realmsByPosition = new Map<string, RealmDetail[]>()
   let lastRefresh = 0
   let inFlight: Promise<void> | null = null
 
@@ -55,10 +62,15 @@ export async function createHotScenesComponent(
       if (!response.ok) throw new Error(`unexpected status ${response.status}`)
       const scenes = (await response.json()) as HotScene[]
       const next = new Map<string, number>()
+      const nextRealms = new Map<string, RealmDetail[]>()
       for (const scene of scenes ?? []) {
-        if (Array.isArray(scene.baseCoords)) next.set(position(scene), scene.usersTotalCount ?? 0)
+        if (Array.isArray(scene.baseCoords)) {
+          next.set(position(scene), scene.usersTotalCount ?? 0)
+          nextRealms.set(position(scene), scene.realms ?? [])
+        }
       }
       countByPosition = next
+      realmsByPosition = nextRealms
       lastRefresh = Date.now()
     } catch (error: any) {
       // Back off for the TTL even on failure so a dead upstream isn't hammered by
@@ -84,10 +96,15 @@ export async function createHotScenesComponent(
     return countByPosition.get(basePosition) ?? 0
   }
 
+  async function getRealms(basePosition: string): Promise<RealmDetail[]> {
+    await ensureFresh()
+    return realmsByPosition.get(basePosition) ?? []
+  }
+
   async function getActivePositions(): Promise<string[]> {
     await ensureFresh()
     return [...countByPosition.entries()].filter(([, count]) => count > 0).map(([pos]) => pos)
   }
 
-  return { getUserCount, getActivePositions, refresh }
+  return { getUserCount, getRealms, getActivePositions, refresh }
 }

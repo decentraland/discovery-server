@@ -25,11 +25,6 @@ export type UpsertWorldInput = Partial<Omit<World, 'created_at' | 'updated_at'>>
   world_name: string
 }
 
-/** Moderation/admin-updatable fields (worlds have no disabled state). */
-export type WorldModerationFields = Partial<
-  Pick<World, 'content_rating' | 'highlighted' | 'highlighted_image' | 'ranking'>
->
-
 export interface IWorldsRepository {
   /** Row-lock a world for the current transaction (FOR UPDATE) so a read-then-write can't race. */
   lockById(client: Queryable, id: string): Promise<void>
@@ -38,5 +33,4 @@ export interface IWorldsRepository {
   count(client: Queryable, filters: WorldListFilters): Promise<number>
   findNames(client: Queryable): Promise<string[]>
   upsert(client: Queryable, input: UpsertWorldInput): Promise<World>
-  updateModeration(client: Queryable, id: string, fields: WorldModerationFields): Promise<World | null>
 }

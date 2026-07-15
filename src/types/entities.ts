@@ -36,6 +36,9 @@ export type Place = {
 }
 
 /** A place decorated with the requesting user's like/favorite state. */
+/** Per-realm live occupancy for a scene (the `realms_detail` decoration, from hot-scenes). */
+export type RealmDetail = { serverName: string; url: string; usersCount: number }
+
 export type AggregatePlace = Place & {
   user_like: boolean
   user_dislike: boolean
@@ -44,6 +47,8 @@ export type AggregatePlace = Place & {
   user_count?: number
   /** 30-day unique visitors, decorated from scene-stats when available. */
   user_visits?: number
+  /** Per-realm live occupancy, decorated when `with_realms_detail=true`. */
+  realms_detail?: RealmDetail[]
 }
 
 /** Minimal status row returned by the by-ids status endpoint. */
@@ -133,6 +138,8 @@ export type Destination = {
   user_count?: number
   /** 30-day unique visitors (places only; 0 for worlds), from scene-stats. */
   user_visits?: number
+  /** Per-realm live occupancy (places only), decorated when `with_realms_detail=true`. */
+  realms_detail?: RealmDetail[]
   /** The next upcoming event at this destination, when decorated (with=next_event). */
   next_event?: { id: string; name: string; next_start_at: string } | null
 }

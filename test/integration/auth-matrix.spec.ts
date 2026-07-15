@@ -77,25 +77,84 @@ test('when exercising the auth matrix', function ({ components }) {
     })
   })
 
-  describe('and calling a data-team route (PUT /api/places/:id/ranking)', () => {
-    it('should allow a valid data-team bearer', async () => {
-      const path = `/api/places/${placeId}/ranking`
-      const response = await components.localFetch.fetch(path, {
-        method: 'PUT',
-        headers: DATA_TEAM_BEARER,
-        body: JSON.stringify({ ranking: 5 })
+  describe('and calling the ranking route (PUT /api/places/:id/ranking)', () => {
+    let response: Awaited<ReturnType<typeof components.localFetch.fetch>>
+
+    describe('and the caller presents a valid data-team bearer', () => {
+      beforeEach(async () => {
+        response = await components.localFetch.fetch(`/api/places/${placeId}/ranking`, {
+          method: 'PUT',
+          headers: DATA_TEAM_BEARER,
+          body: JSON.stringify({ ranking: 5 })
+        })
       })
-      expect(response.status).toBe(200)
+
+      it('should allow the ranking update', () => {
+        expect(response.status).toBe(200)
+      })
     })
 
-    it('should reject the admin bearer on the data-team route', async () => {
-      const path = `/api/places/${placeId}/ranking`
-      const response = await components.localFetch.fetch(path, {
-        method: 'PUT',
-        headers: ADMIN_BEARER,
-        body: JSON.stringify({ ranking: 5 })
+    describe('and the caller presents a valid admin bearer', () => {
+      beforeEach(async () => {
+        response = await components.localFetch.fetch(`/api/places/${placeId}/ranking`, {
+          method: 'PUT',
+          headers: ADMIN_BEARER,
+          body: JSON.stringify({ ranking: 5 })
+        })
       })
-      expect(response.status).toBe(401)
+
+      // places #850 — ranking now accepts the service admin bearer, not only the data-team token.
+      it('should also allow the ranking update', () => {
+        expect(response.status).toBe(200)
+      })
+    })
+
+    describe('and the caller presents an unknown bearer', () => {
+      beforeEach(async () => {
+        response = await components.localFetch.fetch(`/api/places/${placeId}/ranking`, {
+          method: 'PUT',
+          headers: { authorization: 'Bearer wrong-token' },
+          body: JSON.stringify({ ranking: 5 })
+        })
+      })
+
+      it('should respond with a 401', () => {
+        expect(response.status).toBe(401)
+      })
+    })
+  })
+
+  describe('and calling the disable route (PUT /api/places/:id/disable)', () => {
+    let response: Awaited<ReturnType<typeof components.localFetch.fetch>>
+
+    describe('and the caller presents a valid admin bearer', () => {
+      beforeEach(async () => {
+        response = await components.localFetch.fetch(`/api/places/${placeId}/disable`, {
+          method: 'PUT',
+          headers: ADMIN_BEARER,
+          body: JSON.stringify({ disabled: true })
+        })
+      })
+
+      it('should allow the disable action', () => {
+        expect(response.status).toBe(200)
+      })
+    })
+
+    describe('and the caller is a signed non-admin wallet', () => {
+      beforeEach(async () => {
+        const identity = await getIdentity()
+        const path = `/api/places/${placeId}/disable`
+        response = await components.localFetch.fetch(path, {
+          method: 'PUT',
+          headers: getSignedAuthHeaders('PUT', path, {}, identity),
+          body: JSON.stringify({ disabled: true })
+        })
+      })
+
+      it('should respond with a 403', () => {
+        expect(response.status).toBe(403)
+      })
     })
   })
 

@@ -41,18 +41,24 @@ export function positionsParam(params: URLSearchParams): string[] | undefined {
   return values.length ? values : undefined
 }
 
-export type WithOptions = { withLiveEvents: boolean; withConnectedUsers: boolean; withNextEvent: boolean }
+export type WithOptions = {
+  withLiveEvents: boolean
+  withConnectedUsers: boolean
+  withNextEvent: boolean
+  withRealmsDetail: boolean
+}
 
 /**
  * Parse the destination decoration flags. Supports the `with=` multi-value form
- * (`with=live_events,connected_users,next_event`) plus the legacy boolean aliases
- * `with_live_events` / `with_connected_users`.
+ * (`with=live_events,connected_users,next_event,realms_detail`) plus the legacy boolean
+ * aliases `with_live_events` / `with_connected_users` / `with_realms_detail`.
  */
 export function parseWithOptions(params: URLSearchParams): WithOptions {
   const withList = multiParam(params, 'with') ?? []
   return {
     withLiveEvents: params.get('with_live_events') === 'true' || withList.includes('live_events'),
     withConnectedUsers: params.get('with_connected_users') === 'true' || withList.includes('connected_users'),
-    withNextEvent: withList.includes('next_event')
+    withNextEvent: withList.includes('next_event'),
+    withRealmsDetail: params.get('with_realms_detail') === 'true' || withList.includes('realms_detail')
   }
 }

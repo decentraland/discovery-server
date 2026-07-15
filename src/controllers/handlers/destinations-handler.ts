@@ -37,7 +37,8 @@ function parseFilters(params: URLSearchParams, user?: string): DestinationListFi
     only_favorites: params.get('only_favorites') === 'true',
     owner: params.get('owner') ?? undefined,
     creator_address: params.get('creator_address') ?? undefined,
-    sdk: params.get('sdk') ?? undefined,
+    // `only_sdk7=true` is unity-explorer's shorthand for the SDK7 filter (sdk=7).
+    sdk: params.get('only_sdk7') === 'true' ? '7' : (params.get('sdk') ?? undefined),
     kinds: kinds?.length ? kinds : undefined,
     order_by: ORDER_BY_VALUES.includes(orderByParam as DestinationOrderBy)
       ? (orderByParam as DestinationOrderBy)

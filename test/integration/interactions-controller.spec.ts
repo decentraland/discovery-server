@@ -30,26 +30,6 @@ test('when writing interactions over signed-fetch routes', function ({ component
     })
   })
 
-  describe('and the world likes endpoint receives a place uuid', () => {
-    let identity: Awaited<ReturnType<typeof getIdentity>>
-
-    beforeEach(async () => {
-      identity = await getIdentity()
-    })
-
-    it('should reject it with a 400 directing the caller to the places route', async () => {
-      const path = `/api/worlds/11111111-1111-4111-8111-111111111111/likes`
-      const headers = getSignedAuthHeaders('PATCH', path, {}, identity)
-      const response = await components.localFetch.fetch(path, {
-        method: 'PATCH',
-        headers: { ...headers, 'content-type': 'application/json' },
-        body: JSON.stringify({ like: true })
-      })
-
-      expect(response.status).toBe(400)
-    })
-  })
-
   describe('and liking a place that does not exist', () => {
     let identity: Awaited<ReturnType<typeof getIdentity>>
 

@@ -224,10 +224,6 @@ export function createEventsRepository(): IEventsRepository {
     return Number(result.rows[0]?.total ?? 0)
   }
 
-  async function listAttending(client: Queryable, user: string): Promise<Event[]> {
-    return list(client, { attendee: user, list: 'all' })
-  }
-
   async function getLiveEntityIds(client: Queryable): Promise<{ placeIds: string[]; worldIds: string[] }> {
     const result = await client.query<{ place_id: string | null; world_id: string | null }>(SQL`
       SELECT DISTINCT place_id, world_id FROM events
@@ -302,7 +298,6 @@ export function createEventsRepository(): IEventsRepository {
     update,
     list,
     count,
-    listAttending,
     getLiveEntityIds,
     getAllNextEvents,
     findRecurrentNeedingUpdate,

@@ -14,8 +14,7 @@ describe('when reading worlds', () => {
       findWithAggregates: jest.fn(),
       count: jest.fn(),
       findNames: jest.fn(),
-      upsert: jest.fn(),
-      updateModeration: jest.fn()
+      upsert: jest.fn()
     }
     pg = {}
     worldsLiveData = { getUserCount: jest.fn().mockResolvedValue(0), refresh: jest.fn() }

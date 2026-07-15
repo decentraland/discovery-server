@@ -329,7 +329,7 @@ test('when managing events over the API', function ({ components }) {
                 null, now() + interval '1 hour', now() + interval '2 hours')`)
     })
 
-    it('should return only the events for the requested community', async () => {
+    it('should return only the events for the requested community in the nested {events,total} envelope', async () => {
       const response = await components.localFetch.fetch('/api/events/search', {
         method: 'POST',
         body: JSON.stringify({ communityId: 'community-1' })
@@ -337,15 +337,19 @@ test('when managing events over the API', function ({ components }) {
       const body = await response.json()
 
       expect(response.status).toBe(200)
-      expect(body.data).toHaveLength(1)
-      expect(body.data[0].name).toBe('Community party')
+      // A by-community query nests the payload (legacy contract; consumers read data.events/data.total).
+      expect(body.data.events).toHaveLength(1)
+      expect(body.data.events[0].name).toBe('Community party')
+      expect(body.data.total).toBe(1)
     })
 
-    it('should tolerate a missing body and return the active events', async () => {
+    it('should return the flat active-events array when no community/places filter is given', async () => {
       const response = await components.localFetch.fetch('/api/events/search', { method: 'POST' })
       const body = await response.json()
 
       expect(response.status).toBe(200)
+      // No by-community/places filter → bare array + top-level total.
+      expect(Array.isArray(body.data)).toBe(true)
       expect(body.total).toBe(2)
     })
   })

@@ -19,23 +19,25 @@ export async function createPlacesComponent(
 ): Promise<IPlacesComponent> {
   const { pg, placesRepository, hotScenes, sceneStats, catalystClient } = components
 
-  async function decorate(place: AggregatePlace): Promise<AggregatePlace> {
+  async function decorate(place: AggregatePlace, withRealmsDetail = false): Promise<AggregatePlace> {
     // user_visits: base position first, then any parcel of a multi-parcel scene (legacy fallback).
-    const [user_count, user_visits] = await Promise.all([
+    // realms_detail (per-realm live occupancy) is opt-in via with_realms_detail (unity-explorer).
+    const [user_count, user_visits, realms] = await Promise.all([
       hotScenes.getUserCount(place.base_position),
-      sceneStats.getVisitsForPositions([place.base_position, ...(place.positions ?? [])])
+      sceneStats.getVisitsForPositions([place.base_position, ...(place.positions ?? [])]),
+      withRealmsDetail ? hotScenes.getRealms(place.base_position) : Promise.resolve(undefined)
     ])
-    return { ...place, user_count, user_visits }
+    return { ...place, user_count, user_visits, ...(realms ? { realms_detail: realms } : {}) }
   }
 
-  async function getPlace(id: string, user?: string): Promise<AggregatePlace> {
+  async function getPlace(id: string, user?: string, withRealmsDetail = false): Promise<AggregatePlace> {
     // Place ids are uuids; a non-uuid can't exist (and would crash the uuid cast).
     if (!isPlaceId(id)) throw new PlaceNotFoundError(id)
     const place = await placesRepository.findByIdWithAggregates(pg, id, user)
     if (!place) {
       throw new PlaceNotFoundError(id)
     }
-    return decorate(place)
+    return decorate(place, withRealmsDetail)
   }
 
   async function getPlaces(filters: PlaceListFilters): Promise<PlaceListResult> {
@@ -45,6 +47,7 @@ export async function createPlacesComponent(
     // Legacy `owner` semantics: match places the wallet owns OR operates (owned +
     // estate + rented parcels), resolved via Catalyst. Empty → exact-owner match only.
     const operatedPositions = filters.owner ? await catalystClient.getOperatedPositions(filters.owner) : undefined
+    const withRealms = !!filters.withRealmsDetail
 
     // most_active is sorted by realtime connected-user count (not a DB column), so the active
     // rows are fetched, decorated with their live count, sorted here, then paginated — matching
@@ -53,7 +56,7 @@ export async function createPlacesComponent(
       const mostActivePositions = await hotScenes.getActivePositions()
       const activeFilters = { ...filters, operatedPositions, mostActivePositions, limit: undefined, offset: undefined }
       const rows = await placesRepository.findWithAggregates(pg, activeFilters)
-      const decorated = await Promise.all(rows.map(decorate))
+      const decorated = await Promise.all(rows.map((place) => decorate(place, withRealms)))
       decorated.sort((a, b) => (b.user_count ?? 0) - (a.user_count ?? 0))
       const start = Math.max(filters.offset ?? 0, 0)
       const limit = filters.limit ?? MAX_IDS
@@ -65,7 +68,7 @@ export async function createPlacesComponent(
       placesRepository.findWithAggregates(pg, effectiveFilters),
       placesRepository.count(pg, effectiveFilters)
     ])
-    const data = await Promise.all(rows.map(decorate))
+    const data = await Promise.all(rows.map((place) => decorate(place, withRealms)))
     return { data, total }
   }
 
@@ -74,11 +77,12 @@ export async function createPlacesComponent(
     if (!validIds.length) return { data: [], total: 0 }
     // Legacy POST /api/places applies the same order/limit/offset/search as the GET list,
     // and reports `total` as the number of requested ids present (including disabled).
+    const withRealms = !!filters.withRealmsDetail
     const [rows, total] = await Promise.all([
       placesRepository.findWithAggregates(pg, { ...filters, ids: validIds, limit: filters.limit ?? MAX_IDS }),
       placesRepository.countByIds(pg, validIds)
     ])
-    const data = await Promise.all(rows.map(decorate))
+    const data = await Promise.all(rows.map((place) => decorate(place, withRealms)))
     return { data, total }
   }
 
@@ -86,12 +90,5 @@ export async function createPlacesComponent(
     return placesRepository.findByIds(pg, ids.filter(isPlaceId).slice(0, MAX_IDS))
   }
 
-  async function getPlaceCategories(id: string): Promise<string[]> {
-    // A malformed id can't be a place (404, discovery's kept choice); a valid-but-unknown id
-    // returns [] from the join (legacy returned 200 with no categories for it).
-    if (!isPlaceId(id)) throw new PlaceNotFoundError(id)
-    return placesRepository.findCategoriesById(pg, id)
-  }
-
-  return { getPlace, getPlaces, getPlacesByIds, getPlacesStatus, getPlaceCategories }
+  return { getPlace, getPlaces, getPlacesByIds, getPlacesStatus }
 }

@@ -1,6 +1,6 @@
 import type { HandlerContextWithPath, HTTPResponse } from '../../types'
 import { BadRequestError, UnauthorizedError } from '../../types/errors'
-import { resolveEntityType, isPlaceId } from '../../logic/entity-id'
+import { resolveEntityType } from '../../logic/entity-id'
 
 export type InteractionSummary = {
   likes: number
@@ -31,7 +31,10 @@ export async function refreshedSummary(
   }
 }
 
-/** Legacy `PATCH /api/places/:entity_id/likes` and `/api/worlds/:world_id/likes`. */
+/**
+ * Legacy `PATCH /api/places/:entity_id/likes`. `:entity_id` is polymorphic — a place UUID or a
+ * world identifier — so this one route also covers world likes (the client keys a world on its id).
+ */
 export async function updateLikesHandler(
   context: Pick<
     HandlerContextWithPath<'interactions' | 'places' | 'worlds'>,
@@ -42,13 +45,7 @@ export async function updateLikesHandler(
   const user = context.verification?.auth?.toLowerCase()
   if (!user) throw new UnauthorizedError('Authentication required')
 
-  const params = context.params as Record<string, string>
-  const isWorldsRoute = 'world_id' in params
-  const entityId = params.entity_id ?? params.world_id
-  // The worlds route rejects a place UUID: place interactions belong to /api/places/:entity_id.
-  if (isWorldsRoute && isPlaceId(entityId)) {
-    throw new BadRequestError('Invalid world ID. Use /api/places/:entity_id/likes for a place')
-  }
+  const entityId = (context.params as Record<string, string>).entity_id
   const entityType = resolveEntityType(entityId)
 
   let body: { like?: unknown }
@@ -57,8 +54,8 @@ export async function updateLikesHandler(
   } catch {
     throw new BadRequestError('Invalid JSON body')
   }
-  // Legacy `/api/places/:entity_id/likes` treats a missing `like` as `true`; the worlds route requires it.
-  if (body.like === undefined && !isWorldsRoute) body.like = true
+  // Legacy treats a missing `like` as `true`.
+  if (body.like === undefined) body.like = true
   if (!(body.like === null || typeof body.like === 'boolean')) {
     throw new BadRequestError('Body must contain a boolean or null "like"')
   }
@@ -80,7 +77,7 @@ export async function updateLikesHandler(
   }
 }
 
-/** Legacy `PATCH /api/places/:entity_id/favorites` and `/api/worlds/:world_id/favorites`. */
+/** Legacy `PATCH /api/places/:entity_id/favorites`. `:entity_id` resolves a place UUID or a world id. */
 export async function updateFavoritesHandler(
   context: Pick<
     HandlerContextWithPath<'interactions' | 'places' | 'worlds'>,
@@ -91,12 +88,7 @@ export async function updateFavoritesHandler(
   const user = context.verification?.auth?.toLowerCase()
   if (!user) throw new UnauthorizedError('Authentication required')
 
-  const params = context.params as Record<string, string>
-  const isWorldsRoute = 'world_id' in params
-  const entityId = params.entity_id ?? params.world_id
-  if (isWorldsRoute && isPlaceId(entityId)) {
-    throw new BadRequestError('Invalid world ID. Use /api/places/:entity_id/favorites for a place')
-  }
+  const entityId = (context.params as Record<string, string>).entity_id
   const entityType = resolveEntityType(entityId)
 
   let body: { favorites?: unknown }

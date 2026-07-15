@@ -1,5 +1,5 @@
 import type { HandlerContextWithPath, HTTPResponse } from '../../types'
-import type { Place, World } from '../../types/entities'
+import type { Place } from '../../types/entities'
 import { BadRequestError, UnauthorizedError } from '../../types/errors'
 
 async function readBody<T extends Record<string, unknown>>(context: {
@@ -46,22 +46,7 @@ export async function updatePlaceHighlightHandler(
   return { status: 200, body: { ok: true, data } }
 }
 
-/** Legacy `PUT /api/places/:place_id/disable` (signed admin). */
-export async function updatePlaceDisabledHandler(
-  context: Pick<
-    HandlerContextWithPath<'moderation', '/api/places/:place_id/disable'>,
-    'components' | 'params' | 'request'
-  >
-): Promise<HTTPResponse<Place>> {
-  const body = await readBody<{ disabled?: unknown }>(context)
-  if (typeof body.disabled !== 'boolean') throw new BadRequestError('disabled must be a boolean')
-  // A moderation disable always records reason 'moderation' (legacy forced it); a client-supplied
-  // reason is ignored so this route can't stamp opt_out/undeployment semantics on a moderated place.
-  const data = await context.components.moderation.setPlaceDisabled(context.params.place_id, body.disabled)
-  return { status: 200, body: { ok: true, data } }
-}
-
-/** Legacy `PUT /api/places/:place_id/ranking` (data-team bearer). */
+/** Legacy `PUT /api/places/:place_id/ranking` (data-team or admin bearer). */
 export async function updatePlaceRankingHandler(
   context: Pick<
     HandlerContextWithPath<'moderation', '/api/places/:place_id/ranking'>,
@@ -76,51 +61,17 @@ export async function updatePlaceRankingHandler(
   return { status: 200, body: { ok: true, data } }
 }
 
-/** Legacy `PUT /api/worlds/:world_id/rating` (signed admin). */
-export async function updateWorldRatingHandler(
+/** Legacy `PUT /api/places/:place_id/disable` (signed admin or admin bearer). */
+export async function updatePlaceDisabledHandler(
   context: Pick<
-    HandlerContextWithPath<'moderation', '/api/worlds/:world_id/rating'>,
-    'components' | 'params' | 'request' | 'verification'
-  >
-): Promise<HTTPResponse<World>> {
-  const moderator = context.verification?.auth?.toLowerCase()
-  if (!moderator) throw new UnauthorizedError('Authentication required')
-  const body = await readBody<{ rating?: string; comment?: string }>(context)
-  if (!body.rating) throw new BadRequestError('rating is required')
-
-  const data = await context.components.moderation.setWorldRating(
-    context.params.world_id,
-    body.rating,
-    moderator,
-    body.comment
-  )
-  return { status: 200, body: { ok: true, data } }
-}
-
-/** Legacy `PUT /api/worlds/:world_id/highlight` (signed admin). */
-export async function updateWorldHighlightHandler(
-  context: Pick<
-    HandlerContextWithPath<'moderation', '/api/worlds/:world_id/highlight'>,
+    HandlerContextWithPath<'moderation', '/api/places/:place_id/disable'>,
     'components' | 'params' | 'request'
   >
-): Promise<HTTPResponse<World>> {
-  const body = await readBody<{ highlighted?: unknown }>(context)
-  if (typeof body.highlighted !== 'boolean') throw new BadRequestError('highlighted must be a boolean')
-  const data = await context.components.moderation.setWorldHighlight(context.params.world_id, body.highlighted)
-  return { status: 200, body: { ok: true, data } }
-}
-
-/** Legacy `PUT /api/worlds/:world_id/ranking` (data-team bearer). */
-export async function updateWorldRankingHandler(
-  context: Pick<
-    HandlerContextWithPath<'moderation', '/api/worlds/:world_id/ranking'>,
-    'components' | 'params' | 'request'
-  >
-): Promise<HTTPResponse<World>> {
-  const body = await readBody<{ ranking?: number | null }>(context)
-  if (body.ranking !== null && typeof body.ranking !== 'number') {
-    throw new BadRequestError('ranking must be a number or null')
-  }
-  const data = await context.components.moderation.setWorldRanking(context.params.world_id, body.ranking)
+): Promise<HTTPResponse<Place>> {
+  const body = await readBody<{ disabled?: unknown }>(context)
+  if (typeof body.disabled !== 'boolean') throw new BadRequestError('disabled must be a boolean')
+  // A moderation disable always records reason 'moderation' (legacy forced it); a client-supplied
+  // reason is ignored so this route can't stamp opt_out/undeployment semantics on a moderated place.
+  const data = await context.components.moderation.setPlaceDisabled(context.params.place_id, body.disabled)
   return { status: 200, body: { ok: true, data } }
 }

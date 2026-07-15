@@ -26,6 +26,7 @@ function parseFilters(params: URLSearchParams, user?: string): PlaceListFilters 
     sdk: params.get('sdk') ?? undefined,
     order_by: orderBy,
     order: params.get('order') === 'asc' ? 'asc' : ('desc' as OrderDirection),
+    withRealmsDetail: params.get('with_realms_detail') === 'true',
     limit: intParam(params, 'limit'),
     offset: intParam(params, 'offset'),
     user
@@ -46,29 +47,18 @@ export async function getPlaceListHandler(
 
 /** Legacy `GET /api/places/:place_id` — a single place with aggregates. */
 export async function getPlaceHandler(
-  context: Pick<HandlerContextWithPath<'places', '/api/places/:place_id'>, 'components' | 'params' | 'verification'>
+  context: Pick<
+    HandlerContextWithPath<'places', '/api/places/:place_id'>,
+    'components' | 'params' | 'url' | 'verification'
+  >
 ): Promise<HTTPResponse<AggregatePlace>> {
   const { places } = context.components
   const user = context.verification?.auth?.toLowerCase()
+  const withRealmsDetail = context.url.searchParams.get('with_realms_detail') === 'true'
 
-  const data = await places.getPlace(context.params.place_id, user)
+  const data = await places.getPlace(context.params.place_id, user, withRealmsDetail)
 
   return { status: 200, body: { ok: true, data } }
-}
-
-/**
- * Legacy `GET /api/places/:place_id/categories` — the place's category slugs, read from the
- * authoritative `place_categories` join. A valid-uuid-but-unknown place returns `{ categories: [] }`
- * (200), matching legacy; only a malformed id is rejected.
- */
-export async function getPlaceCategoriesHandler(
-  context: Pick<HandlerContextWithPath<'places', '/api/places/:place_id/categories'>, 'components' | 'params'>
-): Promise<HTTPResponse<{ categories: string[] }>> {
-  const { places } = context.components
-
-  const categories = await places.getPlaceCategories(context.params.place_id)
-
-  return { status: 200, body: { ok: true, data: { categories } } }
 }
 
 async function readIds(context: { request: { json: () => Promise<unknown> } }): Promise<string[]> {

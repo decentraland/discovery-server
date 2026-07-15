@@ -1,5 +1,4 @@
 import type { HandlerContextWithPath, HTTPResponse } from '../../types'
-import type { Destination } from '../../types/entities'
 import type { OrderDirection, PlaceListOrderBy } from '../../adapters/places-repository'
 import { multiParam as multi, intParam, positionsParam } from './query-params'
 
@@ -72,40 +71,4 @@ export async function getMapHandler(
 
   // `total` is the full match count from the component (may exceed the returned page), not data.length.
   return { status: 200, body: { ok: true, data: map, total } }
-}
-
-/**
- * Legacy `GET /api/map/places` — the unified places+worlds list for the map, with
- * realtime connected-user counts. Backed by the destinations UNION feed.
- */
-export async function getMapPlacesHandler(
-  context: Pick<HandlerContextWithPath<'destinations', '/api/map/places'>, 'components' | 'url' | 'verification'>
-): Promise<HTTPResponse<Destination[]>> {
-  const { destinations } = context.components
-  const params = context.url.searchParams
-  const user = context.verification?.auth?.toLowerCase()
-
-  const orderBy = parseOrderBy(params)
-  const { data, total } = await destinations.getDestinations(
-    {
-      positions: positionsParam(params),
-      worldNames: multi(params, 'names') ?? multi(params, 'world_names'),
-      categories: multi(params, 'categories'),
-      search: params.get('search') ?? undefined,
-      only_favorites: params.get('only_favorites') === 'true',
-      only_highlighted: params.get('only_highlighted') === 'true',
-      owner: params.get('owner') ?? undefined,
-      creator_address: params.get('creator_address') ?? undefined,
-      sdk: params.get('sdk') ?? undefined,
-      // most_active isn't a destinations sort key (deferred); fall back to the default there.
-      order_by: orderBy === 'most_active' ? undefined : orderBy,
-      order: parseOrder(params),
-      limit: Math.min(intParam(params, 'limit') ?? MAP_MAX_LIMIT, MAP_MAX_LIMIT),
-      offset: intParam(params, 'offset'),
-      user
-    },
-    { withConnectedUsers: true }
-  )
-
-  return { status: 200, body: { ok: true, data, total } }
 }
