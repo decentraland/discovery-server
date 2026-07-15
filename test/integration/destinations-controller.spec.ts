@@ -1,0 +1,175 @@
+import SQL from 'sql-template-strings'
+import { test } from '../components'
+
+test('when discovering destinations', function ({ components }) {
+  describe('and both places and worlds exist', () => {
+    let placeId: string
+
+    beforeEach(async () => {
+      await components.pg.query(SQL`DELETE FROM events`)
+      await components.pg.query(SQL`DELETE FROM places`)
+      await components.pg.query(SQL`DELETE FROM worlds`)
+      const place = await components.placesRepository.insert(components.pg, { title: 'Plaza', base_position: '0,0' })
+      placeId = place.id
+      await components.worldsRepository.upsert(components.pg, {
+        id: 'my-world.dcl.eth',
+        world_name: 'my-world.dcl.eth',
+        title: 'My World',
+        show_in_places: true
+      })
+      // A world only surfaces in destinations when it has an enabled place (legacy parity).
+      await components.pg.query(SQL`
+        INSERT INTO places (id, title, base_position, positions, world, world_id, deployed_at, disabled)
+        VALUES (gen_random_uuid(), 'My World', '0,0', '{"0,0"}', true, 'my-world.dcl.eth', now(), false)`)
+      // Reset the live-events snapshot to match the freshly-reset DB (no live/next events).
+      await components.liveEvents.refresh()
+    })
+
+    it('should return a unified list of places and worlds with their kind', async () => {
+      const response = await components.localFetch.fetch('/api/destinations')
+      const body = await response.json()
+
+      expect(response.status).toBe(200)
+      expect(body.total).toBe(2)
+      const kinds = body.data.map((d: { kind: string }) => d.kind).sort()
+      expect(kinds).toEqual(['place', 'world'])
+    })
+
+    it('should filter to a single kind when requested', async () => {
+      const response = await components.localFetch.fetch('/v1/destinations?kinds=world')
+      const body = await response.json()
+
+      expect(body.data).toHaveLength(1)
+      expect(body.data[0]).toEqual(expect.objectContaining({ kind: 'world', world_name: 'my-world.dcl.eth' }))
+    })
+
+    it('should decorate destinations with a connected-user count when requested', async () => {
+      const response = await components.localFetch.fetch('/api/destinations?with_connected_users=true')
+      const body = await response.json()
+
+      // hotScenes/worldsLiveData are unconfigured in tests, so counts resolve to 0 but the field is present.
+      expect(body.data.every((d: { user_count?: number }) => d.user_count === 0)).toBe(true)
+    })
+
+    describe('and a live event exists at the place', () => {
+      beforeEach(async () => {
+        await components.pg.query(SQL`
+          INSERT INTO events (name, start_at, finish_at, duration, "user", approved, place_id, next_start_at, next_finish_at)
+          VALUES ('Live', now() - interval '10 minutes', now() + interval '1 hour', 3600000, '0xowner', true,
+                  ${placeId}, now() - interval '10 minutes', now() + interval '1 hour')`)
+        await components.liveEvents.refresh()
+      })
+
+      it('should decorate destinations with live-event flags when requested', async () => {
+        const response = await components.localFetch.fetch('/api/destinations?with_live_events=true')
+        const body = await response.json()
+
+        const place = body.data.find((d: { id: string }) => d.id === placeId)
+        const world = body.data.find((d: { kind: string }) => d.kind === 'world')
+        expect(place.live_event).toBe(true)
+        expect(world.live_event).toBe(false)
+      })
+    })
+  })
+
+  describe('and requesting by both positions and world_names together', () => {
+    let placeId: string
+
+    beforeEach(async () => {
+      await components.pg.query(SQL`DELETE FROM places`)
+      await components.pg.query(SQL`DELETE FROM worlds`)
+      const place = await components.placesRepository.insert(components.pg, {
+        title: 'Plaza',
+        base_position: '3,3',
+        positions: ['3,3']
+      })
+      placeId = place.id
+      await components.worldsRepository.upsert(components.pg, {
+        id: 'w.dcl.eth',
+        world_name: 'w.dcl.eth',
+        show_in_places: true
+      })
+      await components.pg.query(SQL`
+        INSERT INTO places (id, title, base_position, positions, world, world_id, deployed_at, disabled)
+        VALUES (gen_random_uuid(), 'W', '9,9', '{"9,9"}', true, 'w.dcl.eth', now(), false)`)
+    })
+
+    it('should return the matching place AND world, not an empty set', async () => {
+      const response = await components.localFetch.fetch('/api/destinations', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ positions: ['3,3'], world_names: ['w.dcl.eth'] })
+      })
+      const body = await response.json()
+
+      const ids = body.data.map((d: { id: string }) => d.id).sort()
+      expect(ids).toEqual([placeId, 'w.dcl.eth'].sort())
+    })
+  })
+
+  describe('and requesting destinations by ids', () => {
+    let placeId: string
+
+    beforeEach(async () => {
+      await components.pg.query(SQL`DELETE FROM places`)
+      await components.pg.query(SQL`DELETE FROM worlds`)
+      const place = await components.placesRepository.insert(components.pg, { title: 'Plaza', base_position: '5,5' })
+      placeId = place.id
+    })
+
+    it('should return only the requested destinations', async () => {
+      const response = await components.localFetch.fetch('/api/destinations', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ ids: [placeId] })
+      })
+      const body = await response.json()
+
+      expect(response.status).toBe(200)
+      expect(body.data).toHaveLength(1)
+      expect(body.data[0].id).toBe(placeId)
+    })
+
+    it('should return an empty set when every requested id is invalid, not the full list', async () => {
+      const response = await components.localFetch.fetch('/api/destinations', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ ids: ['not-a-uuid'] })
+      })
+      const body = await response.json()
+
+      expect(response.status).toBe(200)
+      expect(body.data).toEqual([])
+    })
+  })
+
+  describe('and filtering to SDK7 destinations with only_sdk7', () => {
+    let sdk7Id: string
+
+    beforeEach(async () => {
+      await components.pg.query(SQL`DELETE FROM places`)
+      await components.pg.query(SQL`DELETE FROM worlds`)
+      const sdk7 = await components.placesRepository.insert(components.pg, {
+        title: 'SDK7',
+        base_position: '7,7',
+        positions: ['7,7'],
+        sdk: '7'
+      })
+      sdk7Id = sdk7.id
+      await components.placesRepository.insert(components.pg, {
+        title: 'SDK6',
+        base_position: '6,6',
+        positions: ['6,6'],
+        sdk: '6'
+      })
+    })
+
+    it('should return only the SDK7 places', async () => {
+      const response = await components.localFetch.fetch('/api/destinations?only_sdk7=true&kinds=place')
+      const body = await response.json()
+
+      expect(response.status).toBe(200)
+      expect(body.data.map((d: { id: string }) => d.id)).toEqual([sdk7Id])
+    })
+  })
+})

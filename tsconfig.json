@@ -2,19 +2,26 @@
   "compilerOptions": {
     "strict": true,
     "outDir": "dist",
+    "rootDir": "src",
     "target": "es2020",
     "module": "commonjs",
     "moduleResolution": "node",
     "sourceMap": true,
+    "declaration": false,
+    "esModuleInterop": true,
+    "resolveJsonModule": true,
+    "skipLibCheck": true,
     "experimentalDecorators": true,
+    "emitDecoratorMetadata": true,
     "pretty": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
     "noFallthroughCasesInSwitch": true,
     "noImplicitReturns": true,
     "noImplicitAny": true,
     "noImplicitThis": true,
     "forceConsistentCasingInFileNames": true
   },
-  "include": [
-    "src"
-  ]
+  "include": ["src"],
+  "exclude": ["node_modules", "dist"]
 }

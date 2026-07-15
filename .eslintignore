@@ -1,0 +1,6 @@
+dist
+coverage
+node_modules
+src/migrations
+scripts
+*.config.js

@@ -1,0 +1,28 @@
+# Integration-test dependencies: Postgres for the DB, LocalStack for S3/SQS/SNS.
+services:
+  postgres:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: discovery
+    ports:
+      - '${TEST_POSTGRES_PORT:-5432}:5432'
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U postgres']
+      interval: 2s
+      timeout: 5s
+      retries: 15
+
+  localstack:
+    image: localstack/localstack:3
+    environment:
+      SERVICES: s3,sqs,sns
+      DEFAULT_REGION: us-east-1
+    ports:
+      - '${TEST_LOCALSTACK_PORT:-4566}:4566'
+    healthcheck:
+      test: ['CMD-SHELL', 'awslocal sqs list-queues || exit 1']
+      interval: 5s
+      timeout: 5s
+      retries: 15

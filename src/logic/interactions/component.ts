@@ -1,0 +1,58 @@
+import type { AppComponents } from '../../types'
+import type { FavoriteCommand, IInteractionsComponent, LikeCommand } from './types'
+
+/**
+ * Shared like/favorite orchestration for any entity (place, world, or event).
+ * Each command opens a transaction so the interaction row and the entity's
+ * denormalized aggregates (Wilson like_score / favorites count) always move
+ * together. Snapshot voting-power weighting is supplied by the caller via
+ * `userActivity` (resolved through the snapshot adapter).
+ */
+export async function createInteractionsComponent(
+  components: Pick<AppComponents, 'pg' | 'interactionsRepository' | 'snapshotClient' | 'logs'>
+): Promise<IInteractionsComponent> {
+  const { pg, interactionsRepository, snapshotClient } = components
+
+  // VP weights like_rate/like_score. Callers may pass it; otherwise fetch it from Snapshot.
+  async function resolveActivity(command: { user: string; userActivity?: number }): Promise<number> {
+    return command.userActivity ?? (await snapshotClient.getVotingPower(command.user))
+  }
+
+  // Canonicalize the entity id: worlds.id is CHECK-lowercased and uuid::text is
+  // lowercase, so the write must use the same form the read/recompute paths do.
+  async function setLike(command: LikeCommand): Promise<void> {
+    const userActivity = await resolveActivity(command)
+    const entityId = command.entityId.toLowerCase()
+    await pg.withTransaction(async (tx) => {
+      // Lock the entity first so a concurrent like/favorite can't recompute the
+      // aggregates from a stale snapshot and lose this write.
+      await interactionsRepository.lockEntity(tx, command.entityType, entityId)
+      await interactionsRepository.setLike(tx, {
+        entityId,
+        entityType: command.entityType,
+        user: command.user,
+        userActivity,
+        like: command.like
+      })
+      await interactionsRepository.recomputeLikes(tx, command.entityType, entityId)
+    })
+  }
+
+  async function setFavorite(command: FavoriteCommand): Promise<void> {
+    const userActivity = await resolveActivity(command)
+    const entityId = command.entityId.toLowerCase()
+    await pg.withTransaction(async (tx) => {
+      await interactionsRepository.lockEntity(tx, command.entityType, entityId)
+      await interactionsRepository.setFavorite(tx, {
+        entityId,
+        entityType: command.entityType,
+        user: command.user,
+        userActivity,
+        favorite: command.favorite
+      })
+      await interactionsRepository.recomputeFavorites(tx, command.entityType, entityId)
+    })
+  }
+
+  return { setLike, setFavorite }
+}

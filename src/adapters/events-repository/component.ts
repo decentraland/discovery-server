@@ -1,0 +1,307 @@
+import SQL, { SQLStatement } from 'sql-template-strings'
+import type { Queryable } from '../pg'
+import type { Event } from '../../types/entities'
+import type { CreateEventRow, EventListFilters, IEventsRepository, UpdateEventRow } from './types'
+
+// Legacy events list default + max page size (much larger than the places default) — kept for
+// parity so unpaginated consumers aren't silently truncated.
+const DEFAULT_LIMIT = 500
+const MAX_LIMIT = 500
+const MIN_SEARCH_LENGTH = 2
+
+// Whitelisted updatable columns (identifier is safe to inline; values parameterized).
+const UPDATABLE_COLUMNS: Array<keyof UpdateEventRow> = [
+  'name',
+  'image',
+  'image_vertical',
+  'description',
+  'start_at',
+  'finish_at',
+  'duration',
+  'all_day',
+  'next_start_at',
+  'next_finish_at',
+  'recurrent',
+  'recurrent_frequency',
+  'recurrent_setpos',
+  'recurrent_monthday',
+  'recurrent_weekday_mask',
+  'recurrent_month_mask',
+  'recurrent_interval',
+  'recurrent_count',
+  'recurrent_until',
+  'recurrent_dates',
+  'x',
+  'y',
+  'server',
+  'world',
+  'estate_id',
+  'estate_name',
+  'scene_name',
+  'place_id',
+  'world_id',
+  'community_id',
+  'url',
+  'user_name',
+  'contact',
+  'details',
+  'approved',
+  'rejected',
+  'approved_by',
+  'rejected_by',
+  'rejection_reason',
+  'highlighted',
+  'total_attendees',
+  'latest_attendees',
+  'categories',
+  'schedules',
+  'deleted_by_user',
+  'deleted_by_admin',
+  'deleted_by',
+  'deleted_at',
+  'deleted_reason'
+]
+
+/** Owns SQL for the `events` table. */
+export function createEventsRepository(): IEventsRepository {
+  function buildWhere(filters: EventListFilters): SQLStatement {
+    const where = SQL`TRUE`
+    // Deleted visibility: hide by default; `deleted` (admin) can select only-deleted / only-live.
+    if (filters.deleted === true) {
+      where.append(SQL` AND e.deleted_at IS NOT NULL`)
+    } else if (!filters.includeDeleted || filters.deleted === false) {
+      where.append(SQL` AND e.deleted_at IS NULL`)
+    }
+    if (filters.ownedBy) {
+      // A wallet's own events across every status (bypasses the approval visibility clause).
+      where.append(SQL` AND e."user" = ${filters.ownedBy.toLowerCase()}`)
+    } else if (!filters.includeUnapproved) {
+      // An explicit admin approved/rejected selector replaces the default visibility clause;
+      // otherwise `?rejected=true` would AND with "approved-or-mine" and match nothing.
+      const hasModerationSelector = filters.approved !== undefined || filters.rejected !== undefined
+      if (!hasModerationSelector) {
+        // Approved+non-rejected are public; a viewer also sees their own pending/rejected events.
+        if (filters.viewer) {
+          where.append(
+            SQL` AND ((e.approved IS true AND e.rejected IS false) OR e."user" = ${filters.viewer.toLowerCase()})`
+          )
+        } else {
+          where.append(SQL` AND e.approved IS true AND e.rejected IS false`)
+        }
+      }
+    }
+    // Admin precise moderation selectors. `approved`/`rejected` are NOT NULL booleans, so `=`
+    // is correct; `col IS $param` is invalid SQL (the IS predicate needs a literal true/false).
+    if (filters.approved !== undefined) where.append(SQL` AND e.approved = ${filters.approved}`)
+    if (filters.rejected !== undefined) where.append(SQL` AND e.rejected = ${filters.rejected}`)
+    if (filters.search && filters.search.length >= MIN_SEARCH_LENGTH) {
+      where.append(SQL` AND e.textsearch @@ websearch_to_tsquery('english', ${filters.search})`)
+    }
+    // Legacy OR-combines placeIds and communityId when both are present (a search may ask for
+    // "events at these places OR in this community"); otherwise each filter applies alone.
+    if (filters.placeIds?.length && filters.communityId) {
+      where.append(SQL` AND (e.place_id = ANY(${filters.placeIds}::uuid[]) OR e.community_id = ${filters.communityId})`)
+    } else if (filters.placeIds?.length) {
+      where.append(SQL` AND e.place_id = ANY(${filters.placeIds}::uuid[])`)
+    }
+    if (filters.worldNames?.length) {
+      where.append(SQL` AND e.world_id = ANY(${filters.worldNames.map((n) => n.toLowerCase())})`)
+    }
+    if (filters.positions?.length) {
+      // Match any (x, y) in the set. Coordinates are validated integers (safe to inline).
+      const pairs = filters.positions
+        .map((p) => p.split(',').map((n) => parseInt(n, 10)))
+        .filter(([x, y]) => Number.isInteger(x) && Number.isInteger(y))
+      if (pairs.length) {
+        const clause = SQL`(`
+        pairs.forEach(([x, y], i) => {
+          if (i > 0) clause.append(SQL` OR `)
+          clause.append(SQL`(e.x = ${x} AND e.y = ${y})`)
+        })
+        clause.append(SQL`)`)
+        where.append(SQL` AND `).append(clause)
+      }
+    }
+    if (filters.communityId && !filters.placeIds?.length) {
+      where.append(SQL` AND e.community_id = ${filters.communityId}`)
+    }
+    if (filters.creator) {
+      where.append(SQL` AND e."user" = ${filters.creator.toLowerCase()}`)
+    }
+    if (filters.attendee) {
+      where.append(SQL` AND EXISTS (
+        SELECT 1 FROM event_attendees a WHERE a.event_id = e.id AND a."user" = ${filters.attendee.toLowerCase()}
+      )`)
+    }
+    if (filters.highlighted === true) where.append(SQL` AND e.highlighted IS true`)
+    if (filters.world === true) where.append(SQL` AND e.world IS true`)
+    else if (filters.world === false) where.append(SQL` AND e.world IS false`)
+    if (filters.schedule) where.append(SQL` AND ${filters.schedule}::uuid = ANY(e.schedules)`)
+    if (filters.estateId) where.append(SQL` AND e.estate_id = ${filters.estateId}`)
+    if (filters.from) where.append(SQL` AND e.next_start_at >= ${filters.from}`)
+    if (filters.to) where.append(SQL` AND e.next_start_at < ${filters.to}`)
+    if (filters.list === 'live') {
+      where.append(SQL` AND e.next_start_at <= now() AND e.next_finish_at >= now()`)
+    } else if (filters.list === 'upcoming') {
+      where.append(SQL` AND e.next_start_at > now()`)
+    } else if (filters.list === 'active') {
+      // Legacy default: hide events whose current occurrence has already finished.
+      where.append(SQL` AND e.next_finish_at > now()`)
+    }
+    return where
+  }
+
+  async function create(client: Queryable, row: CreateEventRow): Promise<Event> {
+    const result = await client.query<Event>(SQL`
+      INSERT INTO events (
+        name, image, image_vertical, description, start_at, finish_at, duration, all_day,
+        next_start_at, next_finish_at, recurrent, recurrent_frequency, recurrent_setpos, recurrent_monthday,
+        recurrent_weekday_mask, recurrent_month_mask, recurrent_interval, recurrent_count, recurrent_until,
+        recurrent_dates, x, y, server, world, estate_id, estate_name, scene_name, place_id, world_id,
+        community_id, url, "user", user_name, contact, details, approved, rejected, approved_by, rejected_by,
+        rejection_reason, highlighted, total_attendees, latest_attendees, categories, schedules
+      ) VALUES (
+        ${row.name}, ${row.image}, ${row.image_vertical}, ${row.description}, ${row.start_at}, ${row.finish_at},
+        ${row.duration}, ${row.all_day}, ${row.next_start_at}, ${row.next_finish_at}, ${row.recurrent},
+        ${row.recurrent_frequency}, ${row.recurrent_setpos}, ${row.recurrent_monthday}, ${row.recurrent_weekday_mask},
+        ${row.recurrent_month_mask}, ${row.recurrent_interval}, ${row.recurrent_count}, ${row.recurrent_until},
+        ${row.recurrent_dates}, ${row.x}, ${row.y}, ${row.server}, ${row.world}, ${row.estate_id}, ${row.estate_name},
+        ${row.scene_name}, ${row.place_id}, ${row.world_id}, ${row.community_id}, ${row.url}, ${row.user.toLowerCase()},
+        ${row.user_name}, ${row.contact}, ${row.details}, ${row.approved}, ${row.rejected}, ${row.approved_by},
+        ${row.rejected_by}, ${row.rejection_reason}, ${row.highlighted}, ${row.total_attendees},
+        ${row.latest_attendees}, ${row.categories}, ${row.schedules}
+      )
+      RETURNING *`)
+    return result.rows[0]
+  }
+
+  async function findById(client: Queryable, id: string): Promise<Event | null> {
+    const result = await client.query<Event>(SQL`SELECT * FROM events WHERE id = ${id}`)
+    return result.rows[0] ?? null
+  }
+
+  async function update(client: Queryable, id: string, patch: UpdateEventRow): Promise<Event | null> {
+    const query = SQL`UPDATE events SET updated_at = now()`
+    for (const column of UPDATABLE_COLUMNS) {
+      if (column in patch) {
+        query.append(`, "${column}" = `).append(SQL`${patch[column] as unknown}`)
+      }
+    }
+    query.append(SQL` WHERE id = ${id} RETURNING *`)
+    const result = await client.query<Event>(query)
+    return result.rows[0] ?? null
+  }
+
+  async function list(client: Queryable, filters: EventListFilters): Promise<Event[]> {
+    if (filters.search && filters.search.length < MIN_SEARCH_LENGTH) return []
+    const limit = Math.min(filters.limit ?? DEFAULT_LIMIT, MAX_LIMIT)
+    const offset = Math.max(filters.offset ?? 0, 0)
+    const searching = !!filters.search && filters.search.length >= MIN_SEARCH_LENGTH
+
+    const query = SQL`SELECT e.* FROM events e WHERE `
+    query.append(buildWhere(filters))
+    const direction = filters.order === 'desc' ? SQL` DESC` : SQL` ASC`
+    query.append(SQL` ORDER BY `)
+    // When searching, best relevance match first (legacy parity), then the chronological order.
+    // Ranking is an ORDER BY expression (not a selected column) so it never leaks into the row.
+    if (searching) {
+      query.append(SQL`ts_rank_cd(e.textsearch, websearch_to_tsquery('english', ${filters.search})) DESC, `)
+    }
+    query
+      .append(SQL`e.next_start_at`)
+      .append(direction)
+      // e.id is a unique tie-breaker so pagination is stable when next_start_at ties (or is NULL).
+      .append(SQL` NULLS LAST, e.id LIMIT ${limit} OFFSET ${offset}`)
+    const result = await client.query<Event>(query)
+    return result.rows
+  }
+
+  async function count(client: Queryable, filters: EventListFilters): Promise<number> {
+    if (filters.search && filters.search.length < MIN_SEARCH_LENGTH) return 0
+    const query = SQL`SELECT count(*) AS total FROM events e WHERE `
+    query.append(buildWhere(filters))
+    const result = await client.query<{ total: string }>(query)
+    return Number(result.rows[0]?.total ?? 0)
+  }
+
+  async function getLiveEntityIds(client: Queryable): Promise<{ placeIds: string[]; worldIds: string[] }> {
+    const result = await client.query<{ place_id: string | null; world_id: string | null }>(SQL`
+      SELECT DISTINCT place_id, world_id FROM events
+      WHERE approved IS true AND rejected IS false AND deleted_at IS NULL
+        AND next_start_at <= now() AND next_finish_at >= now()`)
+    const placeIds = result.rows.map((r) => r.place_id).filter((id): id is string => !!id)
+    const worldIds = result.rows.map((r) => r.world_id).filter((id): id is string => !!id)
+    return { placeIds, worldIds }
+  }
+
+  async function getAllNextEvents(
+    client: Queryable
+  ): Promise<Record<string, { id: string; name: string; next_start_at: string }>> {
+    // Earliest still-upcoming approved event per place/world across the whole table
+    // (DISTINCT ON the entity). Returned as a global map for the live-events cache to hold.
+    const result = await client.query<{ entity_id: string; id: string; name: string; next_start_at: string }>(SQL`
+      SELECT DISTINCT ON (entity_id) entity_id, id, name, next_start_at FROM (
+        SELECT place_id::text AS entity_id, id, name, next_start_at FROM events
+          WHERE approved IS true AND rejected IS false AND deleted_at IS NULL
+            AND next_start_at > now() AND place_id IS NOT NULL
+        UNION ALL
+        SELECT world_id AS entity_id, id, name, next_start_at FROM events
+          WHERE approved IS true AND rejected IS false AND deleted_at IS NULL
+            AND next_start_at > now() AND world_id IS NOT NULL
+      ) upcoming
+      ORDER BY entity_id, next_start_at ASC`)
+    const byEntity: Record<string, { id: string; name: string; next_start_at: string }> = {}
+    for (const row of result.rows) {
+      byEntity[row.entity_id] = { id: row.id, name: row.name, next_start_at: row.next_start_at }
+    }
+    return byEntity
+  }
+
+  async function findRecurrentNeedingUpdate(client: Queryable, limit: number, graceMs = 0): Promise<Event[]> {
+    // The grace delays advancing a just-finished occurrence so the per-minute notify crons
+    // (started/ended) get a cycle to capture it before next_start_at/next_finish_at move on.
+    const result = await client.query<Event>(SQL`
+      SELECT * FROM events
+      WHERE recurrent IS true
+        AND rejected IS false
+        AND deleted_at IS NULL
+        AND finish_at > now()
+        AND (next_finish_at IS NULL OR next_finish_at <= now() - ${graceMs} * interval '1 millisecond')
+      ORDER BY next_finish_at ASC NULLS FIRST
+      LIMIT ${limit}`)
+    return result.rows
+  }
+
+  async function findInStartWindow(client: Queryable, sinceMs: number, untilMs: number): Promise<Event[]> {
+    const result = await client.query<Event>(SQL`
+      SELECT * FROM events
+      WHERE approved IS true AND deleted_at IS NULL
+        AND next_start_at > to_timestamp(${sinceMs} / 1000.0)
+        AND next_start_at <= to_timestamp(${untilMs} / 1000.0)
+      ORDER BY next_start_at ASC`)
+    return result.rows
+  }
+
+  async function findInFinishWindow(client: Queryable, sinceMs: number, untilMs: number): Promise<Event[]> {
+    const result = await client.query<Event>(SQL`
+      SELECT * FROM events
+      WHERE approved IS true AND deleted_at IS NULL
+        AND next_finish_at > to_timestamp(${sinceMs} / 1000.0)
+        AND next_finish_at <= to_timestamp(${untilMs} / 1000.0)
+      ORDER BY next_finish_at ASC`)
+    return result.rows
+  }
+
+  return {
+    create,
+    findById,
+    update,
+    list,
+    count,
+    getLiveEntityIds,
+    getAllNextEvents,
+    findRecurrentNeedingUpdate,
+    findInStartWindow,
+    findInFinishWindow
+  }
+}

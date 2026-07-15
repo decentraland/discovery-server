@@ -1,0 +1,2863 @@
+openapi: 3.1.0
+
+info:
+  title: Discovery Server API
+  version: 1.0.0
+  description: >-
+    Merged Decentraland places + events discovery service. A single server that
+    replaces the legacy `places` and `events` backends and adds the unified
+    `/v1/*` discovery layer (destinations = places + worlds in one shape).
+
+
+    Successful JSON responses use the envelope `{ ok: true, data: <T>, total?: number }`;
+    errors use `{ ok: false, error: string, message?: string }`. A handful of routes
+    return non-JSON payloads (link-preview HTML, sitemap XML, health text).
+
+servers:
+  - url: https://places.decentraland.org
+    description: Places hostname (production). Routes to the merged discovery server.
+  - url: https://events.decentraland.org
+    description: >-
+      Events hostname (production). Both `places.decentraland.org` and
+      `events.decentraland.org` resolve to the same merged discovery server, so
+      every path below is reachable under either hostname.
+
+tags:
+  - name: status
+    description: Health and version.
+  - name: categories
+    description: Place/world and event category listings.
+  - name: places
+    description: Genesis-city places (parcels/estates).
+  - name: worlds
+    description: Decentraland Worlds.
+  - name: events
+    description: Events (one-off and recurrent), search, creation and moderation.
+  - name: attendees
+    description: Per-event attendance.
+  - name: schedules
+    description: Curated event schedules (collections).
+  - name: profiles
+    description: Per-wallet profile settings and authorization permissions.
+  - name: destinations
+    description: Unified places + worlds discovery entities.
+  - name: map
+    description: Map feeds (genesis city + unified places/worlds).
+  - name: moderation
+    description: Admin/data-team place & world moderation (rating, highlight, disable, ranking).
+  - name: reports
+    description: Content-moderation report upload URLs.
+  - name: posters
+    description: Event poster uploads.
+  - name: social
+    description: Open Graph link-preview HTML for place/world share pages.
+  - name: sitemap
+    description: Event and schedule sitemaps (XML).
+  - name: v1
+    description: >-
+      The unified `/v1/*` discovery surface (destinations, events, categories).
+      Successor to the deprecated legacy `/api/*` discovery routes.
+
+security:
+  - {}
+
+paths:
+  /ping:
+    get:
+      tags: [status]
+      summary: Liveness probe
+      description: Returns the plain-text string `pong`.
+      security:
+        - {}
+      responses:
+        '200':
+          description: Service is alive.
+          content:
+            text/plain:
+              schema:
+                type: string
+                example: pong
+
+  /api/status:
+    get:
+      tags: [status]
+      summary: Service status (commit hash, version, time)
+      security:
+        - {}
+      responses:
+        '200':
+          description: Current build/version info.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatusResponse'
+
+  /api/categories:
+    get:
+      tags: [categories]
+      summary: List place/world categories (legacy)
+      deprecated: true
+      description: >-
+        Active place/world categories with entity counts and English labels.
+        Deprecated: use `GET /v1/categories?target=destinations` instead.
+      security:
+        - {}
+      parameters:
+        - name: target
+          in: query
+          description: Legacy scope selector.
+          schema:
+            type: string
+            enum: [places, worlds]
+        - name: only_places
+          in: query
+          schema:
+            type: boolean
+        - name: only_worlds
+          in: query
+          schema:
+            type: boolean
+      responses:
+        '200':
+          description: Category list.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CategoryListResponse'
+
+  /api/events/categories:
+    get:
+      tags: [categories]
+      summary: List event categories (legacy)
+      deprecated: true
+      description: >-
+        Active event category (tag) names. Deprecated: use
+        `GET /v1/categories?target=events` instead.
+      security:
+        - {}
+      responses:
+        '200':
+          description: Event category names.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StringListResponse'
+
+  /api/schedules:
+    get:
+      tags: [schedules]
+      summary: List currently-active schedules
+      security:
+        - {}
+      responses:
+        '200':
+          description: Active schedules.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ScheduleListResponse'
+    post:
+      tags: [schedules]
+      summary: Create a curated schedule
+      description: >-
+        Requires a signed-fetch request from a wallet holding the
+        `edit_any_schedule` permission (or an admin wallet).
+      security:
+        - signedFetch: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateScheduleInput'
+      responses:
+        '201':
+          description: Created schedule.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ScheduleResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /api/schedules/{schedule_id}:
+    parameters:
+      - $ref: '#/components/parameters/ScheduleId'
+    get:
+      tags: [schedules]
+      summary: Get a schedule by id
+      security:
+        - {}
+      responses:
+        '200':
+          description: The schedule.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ScheduleResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    patch:
+      tags: [schedules]
+      summary: Update a schedule
+      description: >-
+        Requires a signed-fetch request from a wallet holding the
+        `edit_any_schedule` permission (or an admin wallet).
+      security:
+        - signedFetch: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateScheduleInput'
+      responses:
+        '200':
+          description: Updated schedule.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ScheduleResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/events:
+    get:
+      tags: [events]
+      summary: List events (legacy)
+      deprecated: true
+      description: >-
+        Filtered, paginated event list. Deprecated: use `GET /v1/events`.
+        Auth is optional-signed; a valid admin `Bearer` unlocks the admin view
+        (`allow_pending`, `allow_deleted`, `approved`, `rejected`, `deleted`).
+        `only_attendee=true` / `owner=true` require an authenticated wallet.
+      security:
+        - {}
+        - signedFetch: []
+        - adminBearer: []
+      parameters:
+        - $ref: '#/components/parameters/EventSearch'
+        - $ref: '#/components/parameters/EventPositions'
+        - $ref: '#/components/parameters/EventPosition'
+        - $ref: '#/components/parameters/EventWorldNames'
+        - $ref: '#/components/parameters/EventFrom'
+        - $ref: '#/components/parameters/EventTo'
+        - $ref: '#/components/parameters/EventOnlyAttendee'
+        - $ref: '#/components/parameters/EventOwner'
+        - $ref: '#/components/parameters/EventHighlighted'
+        - $ref: '#/components/parameters/EventWorld'
+        - $ref: '#/components/parameters/EventOrder'
+        - $ref: '#/components/parameters/EventSchedule'
+        - $ref: '#/components/parameters/EventEstateId'
+        - $ref: '#/components/parameters/EventList'
+        - $ref: '#/components/parameters/EventCommunityId'
+        - $ref: '#/components/parameters/EventCreator'
+        - $ref: '#/components/parameters/EventWithConnectedUsers'
+        - $ref: '#/components/parameters/EventAllowPending'
+        - $ref: '#/components/parameters/EventAllowDeleted'
+        - $ref: '#/components/parameters/EventApproved'
+        - $ref: '#/components/parameters/EventRejected'
+        - $ref: '#/components/parameters/EventDeleted'
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Offset'
+      responses:
+        '200':
+          description: Matching events.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EventListResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    post:
+      tags: [events]
+      summary: Create an event
+      description: Requires a signed-fetch request. The authenticated wallet becomes the event owner.
+      security:
+        - signedFetch: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateEventPayload'
+      responses:
+        '200':
+          description: Created event.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EventResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/events/search:
+    post:
+      tags: [events]
+      summary: Search events (legacy)
+      description: >-
+        Same query-string filters as `GET /api/events`, plus body-driven
+        `placeIds` and `communityId`. Auth matches `GET /api/events`.
+      security:
+        - {}
+        - signedFetch: []
+        - adminBearer: []
+      parameters:
+        - $ref: '#/components/parameters/EventSearch'
+        - $ref: '#/components/parameters/EventPositions'
+        - $ref: '#/components/parameters/EventWorldNames'
+        - $ref: '#/components/parameters/EventFrom'
+        - $ref: '#/components/parameters/EventTo'
+        - $ref: '#/components/parameters/EventOnlyAttendee'
+        - $ref: '#/components/parameters/EventOwner'
+        - $ref: '#/components/parameters/EventHighlighted'
+        - $ref: '#/components/parameters/EventWorld'
+        - $ref: '#/components/parameters/EventOrder'
+        - $ref: '#/components/parameters/EventSchedule'
+        - $ref: '#/components/parameters/EventEstateId'
+        - $ref: '#/components/parameters/EventList'
+        - $ref: '#/components/parameters/EventWithConnectedUsers'
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Offset'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                placeIds:
+                  type: array
+                  items:
+                    type: string
+                communityId:
+                  type: string
+      responses:
+        '200':
+          description: Matching events.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EventListResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/events/attending:
+    get:
+      tags: [events]
+      summary: Events the authenticated user attends
+      security:
+        - signedFetch: []
+      responses:
+        '200':
+          description: Attended events.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EventListResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/events/{event_id}:
+    parameters:
+      - $ref: '#/components/parameters/EventId'
+    get:
+      tags: [events]
+      summary: Get a single event
+      description: >-
+        Optional-signed. The signed wallet's attendance is reflected in
+        `attending`; a valid admin `Bearer` grants the admin view.
+      security:
+        - {}
+        - signedFetch: []
+        - adminBearer: []
+      responses:
+        '200':
+          description: The event, decorated with the caller's attendance.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EventWithAttendanceResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    patch:
+      tags: [events]
+      summary: Update an event
+      description: >-
+        Owner/editor (or admin wallet / admin `Bearer`). Moderation fields
+        (`approved`, `rejected`, `rejection_reason`, `highlighted`) are only
+        applied for admins/permitted wallets. Requires an authenticated actor.
+      security:
+        - signedFetch: []
+        - adminBearer: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateEventPayload'
+      responses:
+        '200':
+          description: Updated event.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EventResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      tags: [events]
+      summary: Soft-delete an event
+      description: Owner, admin wallet, or admin `Bearer`. Requires an authenticated actor.
+      security:
+        - signedFetch: []
+        - adminBearer: []
+      parameters:
+        - name: actor
+          in: query
+          description: Overrides the recorded actor identity (admin automation).
+          schema:
+            type: string
+      responses:
+        '200':
+          description: The event was soft-deleted.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeleteEventResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/events/{event_id}/attendees:
+    parameters:
+      - $ref: '#/components/parameters/EventId'
+    get:
+      tags: [attendees]
+      summary: List event attendees
+      security:
+        - {}
+      responses:
+        '200':
+          description: Attendee list.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AttendeeListResponse'
+    post:
+      tags: [attendees]
+      summary: Mark the authenticated user as attending
+      security:
+        - signedFetch: []
+      responses:
+        '200':
+          description: Updated attendee list.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AttendeeListResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    delete:
+      tags: [attendees]
+      summary: Remove the authenticated user's attendance
+      security:
+        - signedFetch: []
+      responses:
+        '200':
+          description: Updated attendee list.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AttendeeListResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/places:
+    get:
+      tags: [places]
+      summary: List places
+      description: Filtered, paginated place list. Optional-signed (decorates the caller's like/favorite state).
+      security:
+        - {}
+        - signedFetch: []
+      parameters:
+        - $ref: '#/components/parameters/Search'
+        - $ref: '#/components/parameters/Positions'
+        - $ref: '#/components/parameters/Categories'
+        - $ref: '#/components/parameters/Names'
+        - $ref: '#/components/parameters/OnlyHighlighted'
+        - $ref: '#/components/parameters/OnlyFavorites'
+        - $ref: '#/components/parameters/Owner'
+        - name: creator_address
+          in: query
+          schema:
+            type: string
+        - name: sdk
+          in: query
+          schema:
+            type: string
+        - $ref: '#/components/parameters/PlaceOrderBy'
+        - $ref: '#/components/parameters/Order'
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Offset'
+      responses:
+        '200':
+          description: Matching places.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlaceListResponse'
+    post:
+      tags: [places]
+      summary: Get places by ids
+      description: 'Optional-signed. Body is an array of ids or `{ ids: string[] }`.'
+      security:
+        - {}
+        - signedFetch: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/IdsBody'
+      responses:
+        '200':
+          description: Places for the given ids.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlaceListResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /api/places/status:
+    post:
+      tags: [places]
+      summary: Get place status rows by ids
+      description: 'Public. Returns minimal status rows (no aggregates). Body is an array of ids or `{ ids: string[] }`.'
+      security:
+        - {}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/IdsBody'
+      responses:
+        '200':
+          description: Status rows for the given ids.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlaceStatusListResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /api/places/{place_id}:
+    parameters:
+      - $ref: '#/components/parameters/PlaceId'
+    get:
+      tags: [places]
+      summary: Get a single place
+      description: Optional-signed (decorates the caller's like/favorite state).
+      security:
+        - {}
+        - signedFetch: []
+      responses:
+        '200':
+          description: The place with aggregates.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlaceResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/places/{place_id}/categories:
+    parameters:
+      - $ref: '#/components/parameters/PlaceId'
+    get:
+      tags: [places]
+      summary: Get a place's category slugs
+      security:
+        - {}
+      responses:
+        '200':
+          description: The place's categories.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlaceCategoriesResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/places/{entity_id}/likes:
+    parameters:
+      - name: entity_id
+        in: path
+        required: true
+        description: Place id.
+        schema:
+          type: string
+    patch:
+      tags: [places]
+      summary: Like/dislike a place (legacy)
+      deprecated: true
+      description: >-
+        Deprecated: use `PATCH /v1/destinations/{id}/like`. `like: true` = like,
+        `false` = dislike, `null` = clear.
+      security:
+        - signedFetch: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LegacyLikeBody'
+      responses:
+        '200':
+          description: Refreshed interaction summary.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InteractionSummaryResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/places/{entity_id}/favorites:
+    parameters:
+      - name: entity_id
+        in: path
+        required: true
+        description: Place id.
+        schema:
+          type: string
+    patch:
+      tags: [places]
+      summary: Favorite/unfavorite a place (legacy)
+      deprecated: true
+      description: 'Deprecated: use `PATCH /v1/destinations/{id}/favorite`.'
+      security:
+        - signedFetch: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LegacyFavoritesBody'
+      responses:
+        '200':
+          description: Refreshed interaction summary.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InteractionSummaryResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/places/{place_id}/rating:
+    parameters:
+      - $ref: '#/components/parameters/PlaceId'
+    put:
+      tags: [moderation]
+      summary: Set a place's content rating
+      description: Admin only — a signed admin wallet OR the service admin `Bearer` token.
+      security:
+        - signedFetch: []
+        - adminBearer: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [rating]
+              properties:
+                rating:
+                  type: string
+                comment:
+                  type: string
+      responses:
+        '200':
+          description: Updated place.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlaceModerationResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /api/places/{place_id}/highlight:
+    parameters:
+      - $ref: '#/components/parameters/PlaceId'
+    put:
+      tags: [moderation]
+      summary: Highlight/unhighlight a place
+      description: Admin only — a signed admin wallet OR the service admin `Bearer` token. Defaults to highlighted unless `highlighted:false`.
+      security:
+        - signedFetch: []
+        - adminBearer: []
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                highlighted:
+                  type: boolean
+      responses:
+        '200':
+          description: Updated place.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlaceModerationResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /api/places/{place_id}/disable:
+    parameters:
+      - $ref: '#/components/parameters/PlaceId'
+    put:
+      tags: [moderation]
+      summary: Disable/enable a place
+      description: Admin only — a signed admin wallet OR the service admin `Bearer` token. Defaults to disabled unless `disabled:false`.
+      security:
+        - signedFetch: []
+        - adminBearer: []
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                disabled:
+                  type: boolean
+      responses:
+        '200':
+          description: Updated place.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlaceModerationResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /api/places/{place_id}/ranking:
+    parameters:
+      - $ref: '#/components/parameters/PlaceId'
+    put:
+      tags: [moderation]
+      summary: Set a place's ranking (data team)
+      description: >-
+        Data-team only — requires the `DATA_TEAM_AUTH_TOKEN` `Bearer`. This route
+        is only mounted when that token is configured.
+      security:
+        - dataTeamBearer: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ranking]
+              properties:
+                ranking:
+                  type: number
+      responses:
+        '200':
+          description: Updated place.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlaceModerationResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/map:
+    get:
+      tags: [map]
+      summary: Genesis-city map feed
+      description: >-
+        Genesis-city places keyed by base position, with realtime `user_count`
+        and 30-day `user_visits`. Optional-signed. `limit` is capped at 500.
+      security:
+        - {}
+        - signedFetch: []
+      parameters:
+        - $ref: '#/components/parameters/Positions'
+        - $ref: '#/components/parameters/Categories'
+        - $ref: '#/components/parameters/OnlyFavorites'
+        - $ref: '#/components/parameters/OnlyHighlighted'
+        - $ref: '#/components/parameters/MapLimit'
+        - $ref: '#/components/parameters/Offset'
+      responses:
+        '200':
+          description: Places keyed by base position.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MapResponse'
+
+  /api/map/places:
+    get:
+      tags: [map]
+      summary: Unified map places+worlds feed
+      description: >-
+        The unified places+worlds list for the map, always decorated with
+        realtime connected-user counts. Optional-signed. `limit` is capped at 500.
+      security:
+        - {}
+        - signedFetch: []
+      parameters:
+        - $ref: '#/components/parameters/Search'
+        - $ref: '#/components/parameters/Positions'
+        - $ref: '#/components/parameters/Names'
+        - $ref: '#/components/parameters/WorldNames'
+        - $ref: '#/components/parameters/Categories'
+        - $ref: '#/components/parameters/OnlyHighlighted'
+        - $ref: '#/components/parameters/MapLimit'
+        - $ref: '#/components/parameters/Offset'
+      responses:
+        '200':
+          description: Destinations for the map.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DestinationListResponse'
+
+  /api/report:
+    post:
+      tags: [reports]
+      summary: Create a content-moderation report upload URL
+      description: Requires a signed-fetch request. Returns a presigned S3 PUT URL for the report payload.
+      security:
+        - signedFetch: []
+      responses:
+        '200':
+          description: Presigned upload URL.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UrlResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/poster:
+    post:
+      tags: [posters]
+      summary: Upload a horizontal event poster
+      description: Requires a signed-fetch request. `multipart/form-data` with a `poster` file field.
+      security:
+        - signedFetch: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                poster:
+                  type: string
+                  format: binary
+      responses:
+        '200':
+          description: Uploaded poster URL.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UrlResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/poster-vertical:
+    post:
+      tags: [posters]
+      summary: Upload a vertical event poster
+      description: Requires a signed-fetch request. `multipart/form-data` with a `poster` file field.
+      security:
+        - signedFetch: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                poster:
+                  type: string
+                  format: binary
+      responses:
+        '200':
+          description: Uploaded poster URL.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UrlResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /places/place/:
+    get:
+      tags: [social]
+      summary: Open Graph link-preview HTML for a place
+      description: Returns an HTML page with OG meta tags for a place share link.
+      security:
+        - {}
+      parameters:
+        - name: id
+          in: query
+          schema:
+            type: string
+        - name: position
+          in: query
+          description: Base position `"x,y"`.
+          schema:
+            type: string
+      responses:
+        '200':
+          description: HTML preview page.
+          content:
+            text/html:
+              schema:
+                type: string
+
+  /places/world/:
+    get:
+      tags: [social]
+      summary: Open Graph link-preview HTML for a world
+      description: Returns an HTML page with OG meta tags for a world share link.
+      security:
+        - {}
+      parameters:
+        - name: id
+          in: query
+          schema:
+            type: string
+        - name: name
+          in: query
+          description: World name.
+          schema:
+            type: string
+      responses:
+        '200':
+          description: HTML preview page.
+          content:
+            text/html:
+              schema:
+                type: string
+
+  /events/sitemap.xml:
+    get:
+      tags: [sitemap]
+      summary: Sitemap index (XML)
+      security:
+        - {}
+      responses:
+        '200':
+          description: Sitemap index.
+          content:
+            application/xml:
+              schema:
+                type: string
+
+  /events/sitemap.static.xml:
+    get:
+      tags: [sitemap]
+      summary: Static sitemap (XML)
+      security:
+        - {}
+      responses:
+        '200':
+          description: Static sitemap.
+          content:
+            application/xml:
+              schema:
+                type: string
+
+  /events/sitemap.events.xml:
+    get:
+      tags: [sitemap]
+      summary: Events sitemap page (XML)
+      security:
+        - {}
+      parameters:
+        - name: page
+          in: query
+          description: 1-based page number (defaults to 1).
+          schema:
+            type: integer
+            minimum: 1
+      responses:
+        '200':
+          description: Events sitemap page.
+          content:
+            application/xml:
+              schema:
+                type: string
+
+  /events/sitemap.schedules.xml:
+    get:
+      tags: [sitemap]
+      summary: Schedules sitemap (XML)
+      security:
+        - {}
+      responses:
+        '200':
+          description: Schedules sitemap.
+          content:
+            application/xml:
+              schema:
+                type: string
+
+  /api/destinations:
+    get:
+      tags: [destinations]
+      summary: List destinations (legacy)
+      deprecated: true
+      description: >-
+        Unified places+worlds discovery list. Deprecated: use `GET /v1/destinations`.
+        Optional-signed.
+      security:
+        - {}
+        - signedFetch: []
+      parameters:
+        - $ref: '#/components/parameters/Search'
+        - $ref: '#/components/parameters/Categories'
+        - $ref: '#/components/parameters/Positions'
+        - $ref: '#/components/parameters/WorldNames'
+        - $ref: '#/components/parameters/Names'
+        - name: ids
+          in: query
+          description: Fetch specific destinations by id (place uuid or world id); repeated or comma-separated.
+          required: false
+          schema:
+            type: array
+            items:
+              type: string
+          style: form
+          explode: true
+        - $ref: '#/components/parameters/OnlyHighlighted'
+        - $ref: '#/components/parameters/OnlyFavorites'
+        - $ref: '#/components/parameters/Owner'
+        - $ref: '#/components/parameters/Kinds'
+        - $ref: '#/components/parameters/DestinationOrderBy'
+        - $ref: '#/components/parameters/Order'
+        - $ref: '#/components/parameters/With'
+        - $ref: '#/components/parameters/WithLiveEvents'
+        - $ref: '#/components/parameters/WithConnectedUsers'
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Offset'
+      responses:
+        '200':
+          description: Matching destinations.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DestinationListResponse'
+    post:
+      tags: [destinations]
+      summary: Get destinations by ids/positions/world_names (legacy)
+      deprecated: true
+      description: 'Deprecated: use `POST /v1/destinations/batch`. Optional-signed.'
+      security:
+        - {}
+        - signedFetch: []
+      parameters:
+        - $ref: '#/components/parameters/With'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DestinationBatchBody'
+      responses:
+        '200':
+          description: Matching destinations.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DestinationListResponse'
+
+  /v1/destinations:
+    get:
+      tags: [destinations, v1]
+      summary: List destinations
+      description: Unified places+worlds discovery list. Optional-signed.
+      security:
+        - {}
+        - signedFetch: []
+      parameters:
+        - $ref: '#/components/parameters/Search'
+        - $ref: '#/components/parameters/Categories'
+        - $ref: '#/components/parameters/Positions'
+        - $ref: '#/components/parameters/WorldNames'
+        - $ref: '#/components/parameters/Names'
+        - name: ids
+          in: query
+          description: Fetch specific destinations by id (place uuid or world id); repeated or comma-separated.
+          required: false
+          schema:
+            type: array
+            items:
+              type: string
+          style: form
+          explode: true
+        - $ref: '#/components/parameters/OnlyHighlighted'
+        - $ref: '#/components/parameters/OnlyFavorites'
+        - $ref: '#/components/parameters/Owner'
+        - $ref: '#/components/parameters/Kinds'
+        - $ref: '#/components/parameters/DestinationOrderBy'
+        - $ref: '#/components/parameters/Order'
+        - $ref: '#/components/parameters/With'
+        - $ref: '#/components/parameters/WithLiveEvents'
+        - $ref: '#/components/parameters/WithConnectedUsers'
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Offset'
+      responses:
+        '200':
+          description: Matching destinations.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DestinationListResponse'
+
+  /v1/destinations/{id}/events:
+    parameters:
+      - $ref: '#/components/parameters/DestinationId'
+    get:
+      tags: [destinations, v1]
+      summary: List a destination's events
+      description: Events at the destination, live occurrences first then upcoming, both by soonest start. Optional-signed.
+      security:
+        - {}
+        - signedFetch: []
+      responses:
+        '200':
+          description: The destination's events.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EventListResponse'
+
+  /v1/destinations/{id}/favorites:
+    parameters:
+      - $ref: '#/components/parameters/DestinationId'
+    put:
+      tags: [destinations, v1]
+      summary: Favorite a destination
+      description: Favorites the destination for the authenticated caller (idempotent).
+      security:
+        - signedFetch: []
+      responses:
+        '200':
+          description: Refreshed interaction summary.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InteractionSummaryResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    delete:
+      tags: [destinations, v1]
+      summary: Remove a destination favorite
+      description: Removes the authenticated caller's favorite (idempotent).
+      security:
+        - signedFetch: []
+      responses:
+        '200':
+          description: Refreshed interaction summary.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InteractionSummaryResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /v1/destinations/{id}/likes:
+    parameters:
+      - $ref: '#/components/parameters/DestinationId'
+    put:
+      tags: [destinations, v1]
+      summary: Like or dislike a destination
+      description: '`like: true` = like, `false` = dislike. Clearing the vote is a DELETE.'
+      security:
+        - signedFetch: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [like]
+              additionalProperties: false
+              properties:
+                like:
+                  type: boolean
+      responses:
+        '200':
+          description: Refreshed interaction summary.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InteractionSummaryResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    delete:
+      tags: [destinations, v1]
+      summary: Clear a destination like/dislike
+      description: Removes the authenticated caller's like/dislike (idempotent).
+      security:
+        - signedFetch: []
+      responses:
+        '200':
+          description: Refreshed interaction summary.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InteractionSummaryResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /v1/destinations/{id}:
+    parameters:
+      - $ref: '#/components/parameters/DestinationId'
+    get:
+      tags: [destinations, v1]
+      summary: Get a single destination
+      description: Optional-signed. Optionally decorated via `with`.
+      security:
+        - {}
+        - signedFetch: []
+      parameters:
+        - $ref: '#/components/parameters/With'
+      responses:
+        '200':
+          description: The destination.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DestinationResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /v1/events:
+    get:
+      tags: [events, v1]
+      summary: List events
+      description: >-
+        Same filters and auth as `GET /api/events` (optional-signed + admin `Bearer`
+        for the admin view). Successor to the deprecated legacy `GET /api/events`.
+      security:
+        - {}
+        - signedFetch: []
+        - adminBearer: []
+      parameters:
+        - $ref: '#/components/parameters/EventSearch'
+        - $ref: '#/components/parameters/EventPositions'
+        - $ref: '#/components/parameters/EventPosition'
+        - $ref: '#/components/parameters/EventWorldNames'
+        - $ref: '#/components/parameters/EventFrom'
+        - $ref: '#/components/parameters/EventTo'
+        - $ref: '#/components/parameters/EventOnlyAttendee'
+        - $ref: '#/components/parameters/EventOwner'
+        - $ref: '#/components/parameters/EventHighlighted'
+        - $ref: '#/components/parameters/EventWorld'
+        - $ref: '#/components/parameters/EventOrder'
+        - $ref: '#/components/parameters/EventSchedule'
+        - $ref: '#/components/parameters/EventEstateId'
+        - $ref: '#/components/parameters/EventList'
+        - $ref: '#/components/parameters/EventCommunityId'
+        - $ref: '#/components/parameters/EventCreator'
+        - $ref: '#/components/parameters/EventWithConnectedUsers'
+        - $ref: '#/components/parameters/EventAllowPending'
+        - $ref: '#/components/parameters/EventAllowDeleted'
+        - $ref: '#/components/parameters/EventApproved'
+        - $ref: '#/components/parameters/EventRejected'
+        - $ref: '#/components/parameters/EventDeleted'
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Offset'
+      responses:
+        '200':
+          description: Matching events.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EventListResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /v1/events/{event_id}:
+    parameters:
+      - $ref: '#/components/parameters/EventId'
+    get:
+      tags: [events, v1]
+      summary: Get a single event with its destination
+      description: The event plus its `destination_id` and a decorated `destination` summary. Optional-signed + admin `Bearer`.
+      security:
+        - {}
+        - signedFetch: []
+        - adminBearer: []
+      responses:
+        '200':
+          description: The event with destination context.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/V1EventResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /v1/categories:
+    get:
+      tags: [categories, v1]
+      summary: List categories
+      description: Unified category listing. Successor to the deprecated `GET /api/categories` and `GET /api/events/categories`.
+      security:
+        - {}
+      parameters:
+        - name: target
+          in: query
+          description: Which category set to return (defaults to `destinations`).
+          schema:
+            type: string
+            enum: [destinations, events]
+            default: destinations
+      responses:
+        '200':
+          description: >-
+            Categories. For `target=destinations`, a list of `Category` objects;
+            for `target=events`, a list of category name strings.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/V1CategoriesResponse'
+
+  /api/worlds:
+    get:
+      tags: [worlds]
+      summary: List worlds
+      description: Filtered, paginated world list. Optional-signed. Default ordering is `most_active`.
+      security:
+        - {}
+        - signedFetch: []
+      parameters:
+        - $ref: '#/components/parameters/Search'
+        - $ref: '#/components/parameters/Names'
+        - $ref: '#/components/parameters/Categories'
+        - $ref: '#/components/parameters/Owner'
+        - $ref: '#/components/parameters/OnlyHighlighted'
+        - $ref: '#/components/parameters/OnlyFavorites'
+        - $ref: '#/components/parameters/WorldOrderBy'
+        - $ref: '#/components/parameters/Order'
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Offset'
+      responses:
+        '200':
+          description: Matching worlds.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorldListResponse'
+
+  /api/world_names:
+    get:
+      tags: [worlds]
+      summary: List world names shown in places
+      security:
+        - {}
+      responses:
+        '200':
+          description: World names.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StringListResponse'
+
+  /api/worlds/{world_id}:
+    parameters:
+      - $ref: '#/components/parameters/WorldId'
+    get:
+      tags: [worlds]
+      summary: Get a single world
+      description: Optional-signed (decorates the caller's like/favorite state).
+      security:
+        - {}
+        - signedFetch: []
+      responses:
+        '200':
+          description: The world with aggregates.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorldResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/worlds/{world_id}/likes:
+    parameters:
+      - $ref: '#/components/parameters/WorldId'
+    patch:
+      tags: [worlds]
+      summary: Like/dislike a world (legacy)
+      deprecated: true
+      description: 'Deprecated: use `PATCH /v1/destinations/{id}/like`.'
+      security:
+        - signedFetch: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LegacyLikeBody'
+      responses:
+        '200':
+          description: Refreshed interaction summary.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InteractionSummaryResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/worlds/{world_id}/favorites:
+    parameters:
+      - $ref: '#/components/parameters/WorldId'
+    patch:
+      tags: [worlds]
+      summary: Favorite/unfavorite a world (legacy)
+      deprecated: true
+      description: 'Deprecated: use `PATCH /v1/destinations/{id}/favorite`.'
+      security:
+        - signedFetch: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LegacyFavoritesBody'
+      responses:
+        '200':
+          description: Refreshed interaction summary.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InteractionSummaryResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/worlds/{world_id}/rating:
+    parameters:
+      - $ref: '#/components/parameters/WorldId'
+    put:
+      tags: [moderation]
+      summary: Set a world's content rating
+      description: Admin only — a signed admin wallet OR the service admin `Bearer` token.
+      security:
+        - signedFetch: []
+        - adminBearer: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [rating]
+              properties:
+                rating:
+                  type: string
+                comment:
+                  type: string
+      responses:
+        '200':
+          description: Updated world.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorldModerationResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /api/worlds/{world_id}/highlight:
+    parameters:
+      - $ref: '#/components/parameters/WorldId'
+    put:
+      tags: [moderation]
+      summary: Highlight/unhighlight a world
+      description: Admin only — a signed admin wallet OR the service admin `Bearer` token. Defaults to highlighted unless `highlighted:false`.
+      security:
+        - signedFetch: []
+        - adminBearer: []
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                highlighted:
+                  type: boolean
+      responses:
+        '200':
+          description: Updated world.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorldModerationResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /api/worlds/{world_id}/ranking:
+    parameters:
+      - $ref: '#/components/parameters/WorldId'
+    put:
+      tags: [moderation]
+      summary: Set a world's ranking (data team)
+      description: >-
+        Data-team only — requires the `DATA_TEAM_AUTH_TOKEN` `Bearer`. This route
+        is only mounted when that token is configured.
+      security:
+        - dataTeamBearer: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ranking]
+              properties:
+                ranking:
+                  type: number
+      responses:
+        '200':
+          description: Updated world.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorldModerationResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/profiles/settings:
+    get:
+      tags: [profiles]
+      summary: List all profiles that have permissions
+      description: Requires a signed-fetch request from an admin wallet or a holder of `edit_any_profile`.
+      security:
+        - signedFetch: []
+      responses:
+        '200':
+          description: Profiles with permissions.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProfileSettingsListResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /api/profiles/me/settings:
+    get:
+      tags: [profiles]
+      summary: Get the authenticated wallet's settings
+      security:
+        - signedFetch: []
+      responses:
+        '200':
+          description: The caller's settings.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProfileSettingsResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    patch:
+      tags: [profiles]
+      summary: Update the authenticated wallet's settings
+      description: >-
+        Accepted for backwards compatibility but has no updatable field
+        (permissions are never self-service), so it returns the caller's current
+        settings unchanged.
+      security:
+        - signedFetch: []
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: The caller's (unchanged) settings.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProfileSettingsResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/profiles/{profile_id}/settings:
+    parameters:
+      - name: profile_id
+        in: path
+        required: true
+        description: The target wallet address.
+        schema:
+          type: string
+    get:
+      tags: [profiles]
+      summary: Get another wallet's settings
+      description: Requires a signed-fetch request from an admin wallet or a holder of `edit_any_profile`.
+      security:
+        - signedFetch: []
+      responses:
+        '200':
+          description: The target wallet's settings.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProfileSettingsResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    patch:
+      tags: [profiles]
+      summary: Set a wallet's permissions
+      description: Requires a signed-fetch request from an admin wallet or a holder of `edit_any_profile`.
+      security:
+        - signedFetch: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [permissions]
+              properties:
+                permissions:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/ProfilePermission'
+      responses:
+        '200':
+          description: The updated settings.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProfileSettingsResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+components:
+  securitySchemes:
+    signedFetch:
+      type: apiKey
+      in: header
+      name: x-identity-auth-chain-0
+      description: >-
+        Decentraland ADR-44 signed-fetch. The request carries an AuthChain across
+        several custom headers — `x-identity-auth-chain-0`, `x-identity-auth-chain-1`,
+        `x-identity-auth-chain-2`, `x-identity-timestamp`, `x-identity-metadata` —
+        which the server verifies to recover the caller's wallet address. Requests
+        signed by scenes (`signer: decentraland-kernel-scene`) are rejected. On
+        optional-signed routes the headers may be omitted (the request is treated
+        as anonymous); on required routes their absence or an invalid signature
+        yields 401. Only the first header is modelled here; all are required together.
+    adminBearer:
+      type: http
+      scheme: bearer
+      description: >-
+        Service admin bearer token (`API_ADMIN_TOKEN`, plus the legacy
+        `LEGACY_PLACES_ADMIN_AUTH_TOKEN` / `LEGACY_EVENTS_ADMIN_AUTH_TOKEN`
+        rotation aliases). Used on moderation routes (as an alternative to a signed
+        admin wallet) and to unlock the admin event view/moderation.
+    dataTeamBearer:
+      type: http
+      scheme: bearer
+      description: >-
+        Data-team bearer token (`DATA_TEAM_AUTH_TOKEN`) for the place/world ranking
+        routes. Those routes are only mounted when the token is configured.
+
+  parameters:
+    Limit:
+      name: limit
+      in: query
+      description: Page size (non-negative integer).
+      schema:
+        type: integer
+        minimum: 0
+    Offset:
+      name: offset
+      in: query
+      description: Number of items to skip (non-negative integer).
+      schema:
+        type: integer
+        minimum: 0
+    MapLimit:
+      name: limit
+      in: query
+      description: Page size (non-negative integer, capped at 500).
+      schema:
+        type: integer
+        minimum: 0
+        maximum: 500
+    Order:
+      name: order
+      in: query
+      description: Sort direction.
+      schema:
+        type: string
+        enum: [asc, desc]
+    Search:
+      name: search
+      in: query
+      schema:
+        type: string
+    Positions:
+      name: positions
+      in: query
+      description: Repeatable and/or comma-separated base positions `"x,y"`.
+      style: form
+      explode: true
+      schema:
+        type: array
+        items:
+          type: string
+    Categories:
+      name: categories
+      in: query
+      description: Repeatable and/or comma-separated category slugs.
+      style: form
+      explode: true
+      schema:
+        type: array
+        items:
+          type: string
+    Names:
+      name: names
+      in: query
+      description: Repeatable and/or comma-separated names (worlds).
+      style: form
+      explode: true
+      schema:
+        type: array
+        items:
+          type: string
+    WorldNames:
+      name: world_names
+      in: query
+      description: Repeatable and/or comma-separated world names.
+      style: form
+      explode: true
+      schema:
+        type: array
+        items:
+          type: string
+    OnlyHighlighted:
+      name: only_highlighted
+      in: query
+      schema:
+        type: boolean
+    OnlyFavorites:
+      name: only_favorites
+      in: query
+      description: Only entities the caller has favorited (requires auth to be meaningful).
+      schema:
+        type: boolean
+    Owner:
+      name: owner
+      in: query
+      description: Filter by owner wallet address.
+      schema:
+        type: string
+    Kinds:
+      name: kinds
+      in: query
+      description: Restrict destinations to specific kinds.
+      style: form
+      explode: true
+      schema:
+        type: array
+        items:
+          type: string
+          enum: [place, world]
+    With:
+      name: with
+      in: query
+      description: Repeatable and/or comma-separated decoration flags.
+      style: form
+      explode: true
+      schema:
+        type: array
+        items:
+          type: string
+          enum: [live_events, connected_users, next_event]
+    WithLiveEvents:
+      name: with_live_events
+      in: query
+      description: Decorate with a live-event flag (alias for `with=live_events`).
+      schema:
+        type: boolean
+    WithConnectedUsers:
+      name: with_connected_users
+      in: query
+      description: Decorate with realtime connected-user counts (alias for `with=connected_users`).
+      schema:
+        type: boolean
+    PlaceOrderBy:
+      name: order_by
+      in: query
+      schema:
+        type: string
+        enum: [like_score, updated_at, created_at, most_active]
+    WorldOrderBy:
+      name: order_by
+      in: query
+      description: Defaults to `most_active`.
+      schema:
+        type: string
+        enum: [like_score, updated_at, created_at, most_active]
+        default: most_active
+    DestinationOrderBy:
+      name: order_by
+      in: query
+      schema:
+        type: string
+        enum: [like_score, updated_at, created_at]
+    PlaceId:
+      name: place_id
+      in: path
+      required: true
+      description: Place id.
+      schema:
+        type: string
+    WorldId:
+      name: world_id
+      in: path
+      required: true
+      description: World id.
+      schema:
+        type: string
+    EventId:
+      name: event_id
+      in: path
+      required: true
+      description: Event id.
+      schema:
+        type: string
+    ScheduleId:
+      name: schedule_id
+      in: path
+      required: true
+      description: Schedule id.
+      schema:
+        type: string
+    DestinationId:
+      name: id
+      in: path
+      required: true
+      description: Destination id (a place id or a world id).
+      schema:
+        type: string
+    EventSearch:
+      name: search
+      in: query
+      schema:
+        type: string
+    EventPositions:
+      name: positions
+      in: query
+      description: Repeatable `"x,y"` base positions (not comma-split).
+      style: form
+      explode: true
+      schema:
+        type: array
+        items:
+          type: string
+    EventPosition:
+      name: position
+      in: query
+      description: A single `"x,y"` base position (takes precedence over `positions`).
+      schema:
+        type: string
+    EventWorldNames:
+      name: world_names
+      in: query
+      style: form
+      explode: true
+      schema:
+        type: array
+        items:
+          type: string
+    EventFrom:
+      name: from
+      in: query
+      description: Lower bound on `next_start_at` (ISO date-time).
+      schema:
+        type: string
+    EventTo:
+      name: to
+      in: query
+      description: Upper bound on `next_start_at` (ISO date-time).
+      schema:
+        type: string
+    EventOnlyAttendee:
+      name: only_attendee
+      in: query
+      description: Only events the authenticated caller attends (requires auth).
+      schema:
+        type: boolean
+    EventOwner:
+      name: owner
+      in: query
+      description: Only the authenticated caller's own events, across every status (requires auth).
+      schema:
+        type: boolean
+    EventHighlighted:
+      name: highlighted
+      in: query
+      schema:
+        type: boolean
+    EventWorld:
+      name: world
+      in: query
+      description: true = worlds only, false = non-worlds only, omitted = both.
+      schema:
+        type: boolean
+    EventOrder:
+      name: order
+      in: query
+      description: Sort direction on `next_start_at` (default asc).
+      schema:
+        type: string
+        enum: [asc, desc]
+    EventSchedule:
+      name: schedule
+      in: query
+      description: Only events referencing this schedule (collection) id.
+      schema:
+        type: string
+    EventEstateId:
+      name: estate_id
+      in: query
+      schema:
+        type: string
+    EventList:
+      name: list
+      in: query
+      description: >-
+        Time window. `live` = happening now; `upcoming` = future; `active` (default)
+        = not yet finished; `all` = no time filter. The deprecated value `highlight`
+        maps to `active` + `highlighted=true`.
+      schema:
+        type: string
+        enum: [live, upcoming, active, all, highlight]
+        default: active
+    EventCommunityId:
+      name: community_id
+      in: query
+      schema:
+        type: string
+    EventCreator:
+      name: creator
+      in: query
+      schema:
+        type: string
+    EventWithConnectedUsers:
+      name: with_connected_users
+      in: query
+      description: Decorate each event with the realtime connected addresses at its scene/world.
+      schema:
+        type: boolean
+    EventAllowPending:
+      name: allow_pending
+      in: query
+      description: Admin only — include pending/rejected (unapproved) events.
+      schema:
+        type: boolean
+    EventAllowDeleted:
+      name: allow_deleted
+      in: query
+      description: Admin only — include soft-deleted events.
+      schema:
+        type: boolean
+    EventApproved:
+      name: approved
+      in: query
+      description: Admin only — tri-state precise moderation selector.
+      schema:
+        type: boolean
+    EventRejected:
+      name: rejected
+      in: query
+      description: Admin only — tri-state precise moderation selector.
+      schema:
+        type: boolean
+    EventDeleted:
+      name: deleted
+      in: query
+      description: Admin only — tri-state precise moderation selector.
+      schema:
+        type: boolean
+
+  responses:
+    BadRequest:
+      description: Malformed or semantically invalid request input.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiError'
+    Unauthorized:
+      description: Missing or invalid authentication (signature or token).
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiError'
+    Forbidden:
+      description: Authenticated but not permitted to perform the action.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiError'
+    NotFound:
+      description: The referenced entity does not exist.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiError'
+
+  schemas:
+    ApiSuccess:
+      type: object
+      description: Base success envelope. `data` is added by each concrete response schema.
+      required: [ok]
+      properties:
+        ok:
+          type: boolean
+          const: true
+        total:
+          type: integer
+          description: Total matching count (list endpoints only).
+
+    ApiError:
+      type: object
+      description: Error envelope.
+      required: [ok, error]
+      properties:
+        ok:
+          type: boolean
+          const: false
+        error:
+          type: string
+          description: Short error name/kind (e.g. the ServiceError subclass name).
+        message:
+          type: string
+          description: Human-readable detail (omitted on 500).
+
+    Place:
+      type: object
+      properties:
+        id: { type: string }
+        title: { type: [string, 'null'] }
+        description: { type: [string, 'null'] }
+        image: { type: [string, 'null'] }
+        owner: { type: [string, 'null'] }
+        creator_address: { type: [string, 'null'] }
+        positions:
+          type: array
+          items: { type: string }
+        base_position: { type: string }
+        contact_name: { type: [string, 'null'] }
+        contact_email: { type: [string, 'null'] }
+        content_rating: { type: string }
+        likes: { type: integer }
+        dislikes: { type: integer }
+        favorites: { type: integer }
+        like_rate: { type: [number, 'null'] }
+        like_score: { type: [number, 'null'] }
+        ranking: { type: [number, 'null'] }
+        highlighted: { type: boolean }
+        highlighted_image: { type: [string, 'null'] }
+        disabled: { type: boolean }
+        disabled_at: { type: [string, 'null'] }
+        disabled_reason: { type: [string, 'null'] }
+        world: { type: boolean }
+        world_name: { type: [string, 'null'] }
+        world_id: { type: [string, 'null'] }
+        deployed_at: { type: string }
+        categories:
+          type: array
+          items: { type: string }
+        sdk: { type: [string, 'null'] }
+        created_at: { type: string }
+        updated_at: { type: string }
+
+    AggregatePlace:
+      allOf:
+        - $ref: '#/components/schemas/Place'
+        - type: object
+          description: A place decorated with the requesting user's like/favorite state.
+          properties:
+            user_like: { type: boolean }
+            user_dislike: { type: boolean }
+            user_favorite: { type: boolean }
+            user_count:
+              type: integer
+              description: Realtime connected users (from hot-scenes), when available.
+            user_visits:
+              type: integer
+              description: 30-day unique visitors (from scene-stats), when available.
+
+    PlaceStatus:
+      type: object
+      description: Minimal status row returned by the by-ids status endpoint.
+      properties:
+        id: { type: string }
+        disabled: { type: boolean }
+        world: { type: boolean }
+        world_name: { type: [string, 'null'] }
+        base_position: { type: string }
+
+    World:
+      type: object
+      properties:
+        id: { type: string }
+        world_name: { type: string }
+        title: { type: [string, 'null'] }
+        description: { type: [string, 'null'] }
+        image: { type: [string, 'null'] }
+        content_rating: { type: string }
+        categories:
+          type: array
+          items: { type: string }
+        owner: { type: [string, 'null'] }
+        show_in_places: { type: boolean }
+        single_player: { type: boolean }
+        skybox_time: { type: [number, 'null'] }
+        is_private: { type: boolean }
+        likes: { type: integer }
+        dislikes: { type: integer }
+        favorites: { type: integer }
+        like_rate: { type: [number, 'null'] }
+        like_score: { type: [number, 'null'] }
+        highlighted: { type: boolean }
+        highlighted_image: { type: [string, 'null'] }
+        ranking: { type: [number, 'null'] }
+        created_at: { type: string }
+        updated_at: { type: string }
+        contact_name: { type: [string, 'null'] }
+        contact_email: { type: [string, 'null'] }
+        creator_address: { type: [string, 'null'] }
+        sdk: { type: [string, 'null'] }
+        deployed_at: { type: [string, 'null'] }
+
+    AggregateWorld:
+      allOf:
+        - $ref: '#/components/schemas/World'
+        - type: object
+          properties:
+            user_like: { type: boolean }
+            user_dislike: { type: boolean }
+            user_favorite: { type: boolean }
+            user_count:
+              type: integer
+              description: Realtime connected users (from worlds-live-data), when available.
+
+    Destination:
+      type: object
+      description: A unified discovery entity — a place or a world in one shape.
+      properties:
+        id: { type: string }
+        kind:
+          type: string
+          enum: [place, world]
+        title: { type: [string, 'null'] }
+        description: { type: [string, 'null'] }
+        image: { type: [string, 'null'] }
+        base_position: { type: [string, 'null'] }
+        world_name: { type: [string, 'null'] }
+        categories:
+          type: array
+          items: { type: string }
+        likes: { type: integer }
+        dislikes: { type: integer }
+        favorites: { type: integer }
+        like_rate: { type: [number, 'null'] }
+        like_score: { type: [number, 'null'] }
+        highlighted: { type: boolean }
+        user_like: { type: boolean }
+        user_dislike: { type: boolean }
+        user_favorite: { type: boolean }
+        live_event:
+          type: boolean
+          description: Decorated when `with=live_events`.
+        user_count:
+          type: integer
+          description: Realtime connected users, decorated when `with=connected_users`.
+        user_visits:
+          type: integer
+          description: 30-day unique visitors (places only; 0 for worlds).
+        next_event:
+          description: The next upcoming event at this destination (decorated when `with=next_event`).
+          type: [object, 'null']
+          properties:
+            id: { type: string }
+            name: { type: string }
+            next_start_at: { type: string }
+
+    Event:
+      type: object
+      description: >-
+        An event. Date fields (`start_at`, `finish_at`, `next_start_at`,
+        `next_finish_at`, `recurrent_until`, `recurrent_dates`, `deleted_at`,
+        `created_at`, `updated_at`) are serialized as ISO date-time strings.
+      properties:
+        id: { type: string }
+        name: { type: string }
+        image: { type: [string, 'null'] }
+        image_vertical: { type: [string, 'null'] }
+        description: { type: [string, 'null'] }
+        start_at: { type: string, format: date-time }
+        finish_at: { type: string, format: date-time }
+        duration: { type: integer }
+        all_day: { type: boolean }
+        next_start_at: { type: [string, 'null'], format: date-time }
+        next_finish_at: { type: [string, 'null'], format: date-time }
+        recurrent: { type: boolean }
+        recurrent_frequency: { type: [string, 'null'] }
+        recurrent_setpos: { type: [integer, 'null'] }
+        recurrent_monthday: { type: [integer, 'null'] }
+        recurrent_weekday_mask: { type: integer }
+        recurrent_month_mask: { type: integer }
+        recurrent_interval: { type: integer }
+        recurrent_count: { type: [integer, 'null'] }
+        recurrent_until: { type: [string, 'null'], format: date-time }
+        recurrent_dates:
+          type: array
+          items: { type: string, format: date-time }
+        x: { type: integer }
+        y: { type: integer }
+        server: { type: [string, 'null'] }
+        world: { type: boolean }
+        estate_id: { type: [string, 'null'] }
+        estate_name: { type: [string, 'null'] }
+        scene_name: { type: [string, 'null'] }
+        place_id: { type: [string, 'null'] }
+        world_id: { type: [string, 'null'] }
+        community_id: { type: [string, 'null'] }
+        url: { type: [string, 'null'] }
+        user: { type: string }
+        user_name: { type: [string, 'null'] }
+        contact: { type: [string, 'null'] }
+        details: { type: [string, 'null'] }
+        approved: { type: boolean }
+        rejected: { type: boolean }
+        approved_by: { type: [string, 'null'] }
+        rejected_by: { type: [string, 'null'] }
+        rejection_reason: { type: [string, 'null'] }
+        highlighted: { type: boolean }
+        total_attendees: { type: integer }
+        latest_attendees:
+          type: array
+          items: { type: string }
+        categories:
+          type: array
+          items: { type: string }
+        schedules:
+          type: array
+          items: { type: string }
+        deleted_by_user: { type: boolean }
+        deleted_by_admin: { type: boolean }
+        deleted_by: { type: [string, 'null'] }
+        deleted_at: { type: [string, 'null'], format: date-time }
+        deleted_reason: { type: [string, 'null'] }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+        connected_addresses:
+          type: array
+          description: Present only when the list was requested `with_connected_users=true`.
+          items: { type: string }
+
+    EventWithAttendance:
+      allOf:
+        - $ref: '#/components/schemas/Event'
+        - type: object
+          properties:
+            attending:
+              type: boolean
+              description: Whether the requesting wallet attends this event.
+
+    V1Event:
+      allOf:
+        - $ref: '#/components/schemas/EventWithAttendance'
+        - type: object
+          properties:
+            destination_id:
+              type: [string, 'null']
+              description: The event's world_id or place_id.
+            destination:
+              description: A decorated destination summary, or null.
+              oneOf:
+                - $ref: '#/components/schemas/Destination'
+                - type: 'null'
+
+    EventAttendee:
+      type: object
+      properties:
+        event_id: { type: string }
+        user: { type: string }
+        user_name: { type: [string, 'null'] }
+        created_at: { type: string, format: date-time }
+
+    Schedule:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        description: { type: [string, 'null'] }
+        image: { type: [string, 'null'] }
+        theme: { type: [string, 'null'] }
+        background:
+          type: array
+          items: { type: string }
+        active: { type: boolean }
+        active_since: { type: string }
+        active_until: { type: string }
+        created_at: { type: string }
+        updated_at: { type: string }
+
+    ProfilePermission:
+      type: string
+      description: Authorization grants stored per wallet.
+      enum:
+        - approve_own_event
+        - approve_any_event
+        - edit_any_event
+        - edit_any_schedule
+        - edit_any_profile
+        - test_any_notification
+
+    ProfileSettings:
+      type: object
+      properties:
+        user: { type: string }
+        permissions:
+          type: array
+          items:
+            $ref: '#/components/schemas/ProfilePermission'
+
+    Category:
+      type: object
+      description: A place/world category with its entity count and English label.
+      properties:
+        name: { type: string }
+        count: { type: integer }
+        i18n:
+          type: object
+          properties:
+            en: { type: string }
+
+    InteractionSummary:
+      type: object
+      description: Refreshed like/favorite counts and the caller's own state after a mutation.
+      properties:
+        likes: { type: integer }
+        dislikes: { type: integer }
+        favorites: { type: integer }
+        user_like: { type: boolean }
+        user_dislike: { type: boolean }
+        user_favorite: { type: boolean }
+
+    MapPlace:
+      type: object
+      description: Thin per-place projection for the genesis-city map feed.
+      properties:
+        id: { type: string }
+        base_position: { type: string }
+        title: { type: [string, 'null'] }
+        description: { type: [string, 'null'] }
+        image: { type: [string, 'null'] }
+        contact_name: { type: [string, 'null'] }
+        categories:
+          type: array
+          items: { type: string }
+        user_favorite: { type: boolean }
+        user_like: { type: boolean }
+        user_dislike: { type: boolean }
+        user_count: { type: integer }
+        user_visits: { type: integer }
+
+    Status:
+      type: object
+      properties:
+        commitHash: { type: string }
+        version: { type: string }
+        time: { type: integer }
+
+    CreateEventPayload:
+      type: object
+      required: [name, start_at]
+      properties:
+        name: { type: string }
+        description: { type: [string, 'null'] }
+        image: { type: [string, 'null'] }
+        image_vertical: { type: [string, 'null'] }
+        contact: { type: [string, 'null'] }
+        details: { type: [string, 'null'] }
+        url: { type: [string, 'null'] }
+        start_at: { type: string, format: date-time }
+        finish_at: { type: string, format: date-time }
+        duration: { type: integer }
+        all_day: { type: boolean }
+        x: { type: integer }
+        y: { type: integer }
+        server: { type: [string, 'null'] }
+        world: { type: boolean }
+        estate_id: { type: [string, 'null'] }
+        estate_name: { type: [string, 'null'] }
+        scene_name: { type: [string, 'null'] }
+        community_id: { type: [string, 'null'] }
+        categories:
+          type: array
+          items: { type: string }
+        schedules:
+          type: array
+          items: { type: string }
+        user_name: { type: [string, 'null'] }
+        recurrent: { type: boolean }
+        recurrent_frequency: { type: [string, 'null'] }
+        recurrent_interval: { type: integer }
+        recurrent_count: { type: [integer, 'null'] }
+        recurrent_until: { type: [string, 'null'], format: date-time }
+        recurrent_weekday_mask: { type: integer }
+        recurrent_month_mask: { type: integer }
+        recurrent_setpos: { type: [integer, 'null'] }
+        recurrent_monthday: { type: [integer, 'null'] }
+
+    UpdateEventPayload:
+      allOf:
+        - $ref: '#/components/schemas/CreateEventPayload'
+        - type: object
+          description: >-
+            All create fields are optional on update. Moderation fields are only
+            applied for admins / permitted wallets. `actor` overrides the recorded
+            moderator identity (admin automation).
+          properties:
+            approved: { type: boolean }
+            rejected: { type: boolean }
+            rejection_reason: { type: [string, 'null'] }
+            highlighted: { type: boolean }
+            actor: { type: string }
+
+    CreateScheduleInput:
+      type: object
+      required: [name, active_since, active_until]
+      properties:
+        name: { type: string }
+        description: { type: [string, 'null'] }
+        image: { type: [string, 'null'] }
+        theme: { type: [string, 'null'] }
+        background:
+          type: array
+          items: { type: string }
+        active: { type: boolean }
+        active_since: { type: string }
+        active_until: { type: string }
+
+    UpdateScheduleInput:
+      type: object
+      description: Partial patch — any subset of the schedule's editable fields.
+      properties:
+        name: { type: string }
+        description: { type: [string, 'null'] }
+        image: { type: [string, 'null'] }
+        theme: { type: [string, 'null'] }
+        background:
+          type: array
+          items: { type: string }
+        active: { type: boolean }
+        active_since: { type: string }
+        active_until: { type: string }
+
+    IdsBody:
+      description: An array of ids, or an object wrapping them under `ids`.
+      oneOf:
+        - type: array
+          items: { type: string }
+        - type: object
+          required: [ids]
+          properties:
+            ids:
+              type: array
+              items: { type: string }
+
+    DestinationBatchBody:
+      type: object
+      description: At least one selector; all are optional. Ignored if the body is absent/invalid.
+      properties:
+        ids:
+          type: array
+          items: { type: string }
+        positions:
+          type: array
+          items: { type: string }
+        world_names:
+          type: array
+          items: { type: string }
+
+    LegacyLikeBody:
+      type: object
+      required: [like]
+      properties:
+        like:
+          type: [boolean, 'null']
+          description: true = like, false = dislike, null = clear.
+
+    LegacyFavoritesBody:
+      type: object
+      required: [favorites]
+      properties:
+        favorites:
+          type: boolean
+
+    # ---- Response envelopes ----
+
+    StatusResponse:
+      allOf:
+        - $ref: '#/components/schemas/ApiSuccess'
+        - type: object
+          required: [data]
+          properties:
+            data:
+              $ref: '#/components/schemas/Status'
+
+    StringListResponse:
+      allOf:
+        - $ref: '#/components/schemas/ApiSuccess'
+        - type: object
+          required: [data]
+          properties:
+            data:
+              type: array
+              items: { type: string }
+
+    CategoryListResponse:
+      allOf:
+        - $ref: '#/components/schemas/ApiSuccess'
+        - type: object
+          required: [data]
+          properties:
+            data:
+              type: array
+              items:
+                $ref: '#/components/schemas/Category'
+
+    V1CategoriesResponse:
+      allOf:
+        - $ref: '#/components/schemas/ApiSuccess'
+        - type: object
+          required: [data]
+          properties:
+            data:
+              oneOf:
+                - type: array
+                  items:
+                    $ref: '#/components/schemas/Category'
+                - type: array
+                  items: { type: string }
+
+    ScheduleResponse:
+      allOf:
+        - $ref: '#/components/schemas/ApiSuccess'
+        - type: object
+          required: [data]
+          properties:
+            data:
+              $ref: '#/components/schemas/Schedule'
+
+    ScheduleListResponse:
+      allOf:
+        - $ref: '#/components/schemas/ApiSuccess'
+        - type: object
+          required: [data]
+          properties:
+            data:
+              type: array
+              items:
+                $ref: '#/components/schemas/Schedule'
+
+    EventResponse:
+      allOf:
+        - $ref: '#/components/schemas/ApiSuccess'
+        - type: object
+          required: [data]
+          properties:
+            data:
+              $ref: '#/components/schemas/Event'
+
+    EventWithAttendanceResponse:
+      allOf:
+        - $ref: '#/components/schemas/ApiSuccess'
+        - type: object
+          required: [data]
+          properties:
+            data:
+              $ref: '#/components/schemas/EventWithAttendance'
+
+    EventListResponse:
+      allOf:
+        - $ref: '#/components/schemas/ApiSuccess'
+        - type: object
+          required: [data]
+          properties:
+            data:
+              type: array
+              items:
+                $ref: '#/components/schemas/Event'
+
+    V1EventResponse:
+      allOf:
+        - $ref: '#/components/schemas/ApiSuccess'
+        - type: object
+          required: [data]
+          properties:
+            data:
+              $ref: '#/components/schemas/V1Event'
+
+    DeleteEventResponse:
+      allOf:
+        - $ref: '#/components/schemas/ApiSuccess'
+        - type: object
+          required: [data]
+          properties:
+            data:
+              type: object
+              properties:
+                id: { type: string }
+
+    AttendeeListResponse:
+      allOf:
+        - $ref: '#/components/schemas/ApiSuccess'
+        - type: object
+          required: [data]
+          properties:
+            data:
+              type: array
+              items:
+                $ref: '#/components/schemas/EventAttendee'
+
+    PlaceResponse:
+      allOf:
+        - $ref: '#/components/schemas/ApiSuccess'
+        - type: object
+          required: [data]
+          properties:
+            data:
+              $ref: '#/components/schemas/AggregatePlace'
+
+    PlaceListResponse:
+      allOf:
+        - $ref: '#/components/schemas/ApiSuccess'
+        - type: object
+          required: [data]
+          properties:
+            data:
+              type: array
+              items:
+                $ref: '#/components/schemas/AggregatePlace'
+
+    PlaceStatusListResponse:
+      allOf:
+        - $ref: '#/components/schemas/ApiSuccess'
+        - type: object
+          required: [data]
+          properties:
+            data:
+              type: array
+              items:
+                $ref: '#/components/schemas/PlaceStatus'
+
+    PlaceCategoriesResponse:
+      allOf:
+        - $ref: '#/components/schemas/ApiSuccess'
+        - type: object
+          required: [data]
+          properties:
+            data:
+              type: object
+              properties:
+                categories:
+                  type: array
+                  items: { type: string }
+
+    PlaceModerationResponse:
+      allOf:
+        - $ref: '#/components/schemas/ApiSuccess'
+        - type: object
+          required: [data]
+          properties:
+            data:
+              $ref: '#/components/schemas/Place'
+
+    WorldModerationResponse:
+      allOf:
+        - $ref: '#/components/schemas/ApiSuccess'
+        - type: object
+          required: [data]
+          properties:
+            data:
+              $ref: '#/components/schemas/World'
+
+    WorldResponse:
+      allOf:
+        - $ref: '#/components/schemas/ApiSuccess'
+        - type: object
+          required: [data]
+          properties:
+            data:
+              $ref: '#/components/schemas/AggregateWorld'
+
+    WorldListResponse:
+      allOf:
+        - $ref: '#/components/schemas/ApiSuccess'
+        - type: object
+          required: [data]
+          properties:
+            data:
+              type: array
+              items:
+                $ref: '#/components/schemas/AggregateWorld'
+
+    DestinationResponse:
+      allOf:
+        - $ref: '#/components/schemas/ApiSuccess'
+        - type: object
+          required: [data]
+          properties:
+            data:
+              $ref: '#/components/schemas/Destination'
+
+    DestinationListResponse:
+      allOf:
+        - $ref: '#/components/schemas/ApiSuccess'
+        - type: object
+          required: [data]
+          properties:
+            data:
+              type: array
+              items:
+                $ref: '#/components/schemas/Destination'
+
+    InteractionSummaryResponse:
+      allOf:
+        - $ref: '#/components/schemas/ApiSuccess'
+        - type: object
+          required: [data]
+          properties:
+            data:
+              $ref: '#/components/schemas/InteractionSummary'
+
+    MapResponse:
+      allOf:
+        - $ref: '#/components/schemas/ApiSuccess'
+        - type: object
+          required: [data]
+          properties:
+            data:
+              type: object
+              description: Places keyed by base position.
+              additionalProperties:
+                $ref: '#/components/schemas/MapPlace'
+
+    ProfileSettingsResponse:
+      allOf:
+        - $ref: '#/components/schemas/ApiSuccess'
+        - type: object
+          required: [data]
+          properties:
+            data:
+              $ref: '#/components/schemas/ProfileSettings'
+
+    ProfileSettingsListResponse:
+      allOf:
+        - $ref: '#/components/schemas/ApiSuccess'
+        - type: object
+          required: [data]
+          properties:
+            data:
+              type: array
+              items:
+                $ref: '#/components/schemas/ProfileSettings'
+
+    UrlResponse:
+      allOf:
+        - $ref: '#/components/schemas/ApiSuccess'
+        - type: object
+          required: [data]
+          properties:
+            data:
+              type: object
+              properties:
+                url: { type: string }

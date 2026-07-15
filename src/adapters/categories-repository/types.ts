@@ -1,0 +1,38 @@
+import type { Queryable } from '../pg'
+
+export type CategoryScope = 'all' | 'places' | 'worlds'
+
+export type CategoryWithCount = {
+  name: string
+  count: number
+}
+
+export type EventCategory = {
+  name: string
+  active: boolean
+  created_at: Date
+  updated_at: Date
+}
+
+export interface ICategoriesRepository {
+  /** Active place/world category names. */
+  findActivePlaceCategories(client: Queryable): Promise<string[]>
+  /**
+   * Active place/world categories with the count of matching (non-disabled)
+   * entities, optionally scoped to only places or only worlds. Mirrors the
+   * legacy `CategoryModel.findActiveCategoriesWithPlaces`.
+   */
+  findActivePlaceCategoriesWithCounts(client: Queryable, scope?: CategoryScope): Promise<CategoryWithCount[]>
+  /** Active event categories (tags) with metadata (name, active, timestamps). */
+  findActiveEventCategories(client: Queryable): Promise<EventCategory[]>
+  /**
+   * Replace a place's category assignments: rewrite the `place_categories` join rows and the
+   * denormalized `places.categories` array to exactly `categoryNames` (already validated).
+   */
+  setPlaceCategories(client: Queryable, placeId: string, categoryNames: string[]): Promise<void>
+  /**
+   * Reconcile the `poi` category so exactly the places at `basePositions` carry
+   * it (pivot + denormalized array). Returns how many places now hold it.
+   */
+  reconcilePoiCategory(client: Queryable, basePositions: string[]): Promise<number>
+}
