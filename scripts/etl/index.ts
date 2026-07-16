@@ -51,9 +51,14 @@ async function main(): Promise<void> {
     throw new Error('PLACES_SOURCE_DB_URL, EVENTS_SOURCE_DB_URL and PG_COMPONENT_PSQL_CONNECTION_STRING are required')
   }
 
+  // Open the source pools read-only (`default_transaction_read_only`, set in the connection
+  // startup packet) so the ETL can never write to the live legacy places/events databases —
+  // any write errors out (read_only_sql_transaction) instead of touching them. The target pool
+  // stays writable. Point the source URLs at a read replica to also keep read load off the primary.
+  const readOnly = { options: '-c default_transaction_read_only=on' }
   const pools: EtlPools = {
-    placesSource: new Pool({ connectionString: placesUrl }),
-    eventsSource: new Pool({ connectionString: eventsUrl }),
+    placesSource: new Pool({ connectionString: placesUrl, ...readOnly }),
+    eventsSource: new Pool({ connectionString: eventsUrl, ...readOnly }),
     target: new Pool({ connectionString: targetUrl })
   }
 
