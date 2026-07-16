@@ -278,4 +278,84 @@ test('when migrating legacy data with the ETL', function ({ components }) {
       expect(result.rows[0]).toEqual({ entity_id: '11111111-1111-1111-1111-111111111111', update_rating: 'R' })
     })
   })
+
+  describe('and re-running the interaction load after a source like is deleted', () => {
+    const KEPT = '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
+    const GONE = '0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'
+    const PLACE_ID = '11111111-1111-1111-1111-111111111111'
+
+    beforeEach(async () => {
+      await components.pg.query(`
+        CREATE TABLE legacy_places.user_likes (
+          entity_id char(36), "user" char(42), user_activity integer, "like" boolean,
+          created_at timestamptz DEFAULT now(), updated_at timestamptz DEFAULT now())`)
+      await components.pg.query(`
+        INSERT INTO legacy_places.user_likes (entity_id, "user", user_activity, "like")
+        VALUES ('${PLACE_ID}', '${KEPT}', 150, true), ('${PLACE_ID}', '${GONE}', 150, true)`)
+      await migrateWorlds(pools)
+      await migratePlaces(pools)
+      await migrateUserLikes(pools)
+      // Simulate an unlike in the source, then re-run the (full) interaction load.
+      await components.pg.query(`DELETE FROM legacy_places.user_likes WHERE "user" = '${GONE}'`)
+      await migrateUserLikes(pools)
+    })
+
+    it('should remove the target like whose source row was deleted', async () => {
+      const result = await components.pg.query<{ user: string }>(`SELECT "user" FROM user_likes ORDER BY "user"`)
+      expect(result.rows.map((r) => r.user)).toEqual([KEPT])
+    })
+  })
+
+  describe('and re-running the attendee load after a source attendee is deleted', () => {
+    const EVENT_ID = '33333333-3333-3333-3333-333333333333'
+    const KEPT = '0xaaa'
+    const GONE = '0xbbb'
+
+    beforeEach(async () => {
+      await components.pg.query(`
+        CREATE TABLE legacy_places.events (
+          id uuid PRIMARY KEY, name text, image text, image_vertical text, description text,
+          start_at timestamptz, finish_at timestamptz, duration integer, all_day boolean,
+          next_start_at timestamptz, next_finish_at timestamptz, recurrent boolean, recurrent_frequency text,
+          recurrent_setpos integer, recurrent_monthday integer, recurrent_weekday_mask integer,
+          recurrent_month_mask integer, recurrent_interval integer, recurrent_count integer,
+          recurrent_until timestamptz, recurrent_dates timestamptz[], x integer, y integer, server text,
+          world boolean, estate_id text, estate_name text, scene_name text, place_id text, community_id text,
+          url text, "user" text, user_name text, contact text, details text, approved boolean, rejected boolean,
+          approved_by text, rejected_by text, rejection_reason text, highlighted boolean, total_attendees integer,
+          latest_attendees text[], categories text[], schedules text[], textsearch tsvector, deleted_by_user boolean,
+          deleted_by_admin boolean, deleted_by text, deleted_at timestamptz, deleted_reason text,
+          created_at timestamptz DEFAULT now(), updated_at timestamptz DEFAULT now())`)
+      await components.pg.query(`
+        CREATE TABLE legacy_places.event_attendees (
+          event_id uuid, "user" text, user_name text, created_at timestamptz DEFAULT now())`)
+      await components.pg.query(`
+        INSERT INTO legacy_places.events (id, name, start_at, finish_at, duration, all_day, recurrent,
+          recurrent_weekday_mask, recurrent_month_mask, recurrent_interval, recurrent_dates, "user", approved,
+          rejected, world, highlighted, total_attendees, latest_attendees, categories, schedules,
+          deleted_by_user, deleted_by_admin, next_start_at, next_finish_at)
+        VALUES ('${EVENT_ID}', 'Party', now(), now() + interval '1 hour', 3600000, false, false, 0, 0, 1, '{}',
+          '0xowner', true, false, false, false, 0, '{}', '{}', '{}', false, false, now(), now() + interval '1 hour')`)
+      await components.pg.query(`
+        INSERT INTO legacy_places.event_attendees (event_id, "user", user_name)
+        VALUES ('${EVENT_ID}', '${KEPT}', 'A'), ('${EVENT_ID}', '${GONE}', 'B')`)
+      await migrateEvents(pools)
+      await migrateEventAttendees(pools)
+      // Simulate an unattend in the source, then re-run.
+      await components.pg.query(`DELETE FROM legacy_places.event_attendees WHERE "user" = '${GONE}'`)
+      await migrateEventAttendees(pools)
+    })
+
+    it('should remove the attendee whose source row was deleted', async () => {
+      const result = await components.pg.query<{ user: string }>(`SELECT "user" FROM event_attendees`)
+      expect(result.rows.map((r) => r.user)).toEqual([KEPT])
+    })
+
+    it('should recompute total_attendees down to the reconciled count', async () => {
+      const result = await components.pg.query<{ total_attendees: number }>(
+        `SELECT total_attendees FROM events WHERE id = '${EVENT_ID}'`
+      )
+      expect(result.rows[0].total_attendees).toBe(1)
+    })
+  })
 })

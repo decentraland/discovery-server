@@ -53,6 +53,34 @@ function sinceClause(options: EtlOptions): { where: string; params: string[] } {
   return options.since ? { where: ' WHERE updated_at > $1', params: [options.since] } : { where: '', params: [] }
 }
 
+/**
+ * Reconcile hard-deletes for a fully-reloaded child table: remove target rows whose
+ * (colA, colB) key isn't in the freshly-upserted source set, so unlike / unfavorite /
+ * unattend in the source propagate (the loaders only ever INSERT/UPDATE otherwise).
+ * Safe ONLY for tables read in full — the interaction/attendee loaders never use `--since`.
+ * Keys go through a temp table for a single hash anti-join, so it scales to the full
+ * attendee volume in one statement. Skipped when the source set is empty, so a transient
+ * empty read can never wipe the table. Returns the number of stale rows removed.
+ */
+async function reconcileDeletes(
+  client: PoolClient,
+  table: string,
+  colA: string,
+  colB: string,
+  keysA: string[],
+  keysB: string[]
+): Promise<number> {
+  if (keysA.length === 0) return 0
+  await client.query('CREATE TEMP TABLE _live_keys (a text NOT NULL, b text NOT NULL) ON COMMIT DROP')
+  await client.query('INSERT INTO _live_keys (a, b) SELECT * FROM unnest($1::text[], $2::text[])', [keysA, keysB])
+  const res = await client.query(
+    `DELETE FROM ${table} t
+     WHERE NOT EXISTS (SELECT 1 FROM _live_keys k WHERE k.a = t."${colA}"::text AND k.b = t."${colB}"::text)`
+  )
+  await client.query('DROP TABLE _live_keys')
+  return res.rowCount ?? 0
+}
+
 /** Classify a legacy entity_id (place UUID vs world name) for likes/favorites. */
 export function classifyEntity(entityId: string): 'place' | 'world' {
   return UUID_RE.test(entityId.trim()) ? 'place' : 'world'
@@ -365,17 +393,26 @@ export async function migrateEventAttendees(pools: EtlPools, options: EtlOptions
   let loaded = 0
   if (!options.dryRun) {
     await withTargetTx(pools, async (client) => {
+      const keyEvent: string[] = []
+      const keyUser: string[] = []
       for (const a of rows) {
-        if (!eventIds.has(String(a.event_id).toLowerCase())) continue
+        const eid = String(a.event_id).toLowerCase()
+        if (!eventIds.has(eid)) continue
+        const uid = String(a.user).toLowerCase()
         await client.query(
           `INSERT INTO event_attendees (event_id, "user", user_name, created_at)
            VALUES ($1::uuid, $2, $3, $4)
            ON CONFLICT (event_id, "user") DO UPDATE SET user_name = EXCLUDED.user_name`,
-          [String(a.event_id).toLowerCase(), String(a.user).toLowerCase(), a.user_name, a.created_at]
+          [eid, uid, a.user_name, a.created_at]
         )
+        keyEvent.push(eid)
+        keyUser.push(uid)
         loaded++
       }
-      // Recompute denormalized counters from the loaded attendee rows (fixes legacy drift).
+      // Drop attendees that were removed in the source (unattend), then recompute counters
+      // from the reconciled rows so total_attendees / latest_attendees stay accurate.
+      const removed = await reconcileDeletes(client, 'event_attendees', 'event_id', 'user', keyEvent, keyUser)
+      if (removed) console.log(`  event_attendees: ${removed} stale row(s) removed (unattended in source)`)
       await client.query(`
         UPDATE events e SET
           total_attendees = coalesce(agg.cnt, 0),
@@ -403,8 +440,11 @@ export async function migrateUserLikes(pools: EtlPools, options: EtlOptions = {}
   if (!options.dryRun) {
     const worldPlaceMap = await loadWorldPlaceMap(pools)
     await withTargetTx(pools, async (client) => {
+      const keyEntity: string[] = []
+      const keyUser: string[] = []
       for (const l of rows) {
         const { entityId, entityType } = repointEntity(l.entity_id, worldPlaceMap)
+        const uid = String(l.user).toLowerCase()
         await client.query(
           `INSERT INTO user_likes (entity_id, entity_type, "user", user_activity, "like", created_at, updated_at)
            VALUES ($1,$2,$3,$4,$5,$6,$7)
@@ -412,10 +452,15 @@ export async function migrateUserLikes(pools: EtlPools, options: EtlOptions = {}
              SET "like" = EXCLUDED."like", user_activity = EXCLUDED.user_activity,
                  entity_type = EXCLUDED.entity_type, updated_at = EXCLUDED.updated_at
              WHERE EXCLUDED.updated_at >= user_likes.updated_at`,
-          [entityId, entityType, String(l.user).toLowerCase(), l.user_activity, l.like, l.created_at, l.updated_at]
+          [entityId, entityType, uid, l.user_activity, l.like, l.created_at, l.updated_at]
         )
+        keyEntity.push(entityId)
+        keyUser.push(uid)
         loaded++
       }
+      // Reconcile unlikes: drop target rows no longer present in the source.
+      const removed = await reconcileDeletes(client, 'user_likes', 'entity_id', 'user', keyEntity, keyUser)
+      if (removed) console.log(`  user_likes: ${removed} stale row(s) removed (unliked in source)`)
     })
   }
   return { table: 'user_likes', source: rows.length, loaded }
@@ -432,8 +477,11 @@ export async function migrateUserFavorites(pools: EtlPools, options: EtlOptions 
   if (!options.dryRun) {
     const worldPlaceMap = await loadWorldPlaceMap(pools)
     await withTargetTx(pools, async (client) => {
+      const keyEntity: string[] = []
+      const keyUser: string[] = []
       for (const f of rows) {
         const { entityId, entityType } = repointEntity(f.entity_id, worldPlaceMap)
+        const uid = String(f.user).toLowerCase()
         await client.query(
           `INSERT INTO user_favorites (entity_id, entity_type, "user", user_activity, created_at)
            VALUES ($1,$2,$3,$4,$5)
@@ -441,10 +489,15 @@ export async function migrateUserFavorites(pools: EtlPools, options: EtlOptions 
              SET user_activity = EXCLUDED.user_activity, entity_type = EXCLUDED.entity_type,
                  created_at = EXCLUDED.created_at
              WHERE EXCLUDED.created_at >= user_favorites.created_at`,
-          [entityId, entityType, String(f.user).toLowerCase(), f.user_activity, f.created_at]
+          [entityId, entityType, uid, f.user_activity, f.created_at]
         )
+        keyEntity.push(entityId)
+        keyUser.push(uid)
         loaded++
       }
+      // Reconcile unfavorites: drop target rows no longer present in the source.
+      const removed = await reconcileDeletes(client, 'user_favorites', 'entity_id', 'user', keyEntity, keyUser)
+      if (removed) console.log(`  user_favorites: ${removed} stale row(s) removed (unfavorited in source)`)
     })
   }
   return { table: 'user_favorites', source: rows.length, loaded }
