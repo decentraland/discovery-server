@@ -620,4 +620,123 @@ describe('when creating an event', () => {
       expect(components.notifications.notifyEventDeleted).not.toHaveBeenCalled()
     })
   })
+
+  describe('and reading an event whose stored description contains client-rendered markup', () => {
+    let result: any
+
+    beforeEach(async () => {
+      components.eventsRepository.findById.mockResolvedValue({
+        id: '11111111-1111-4111-8111-111111111111',
+        user: '0xowner',
+        name: 'Party',
+        description:
+          'Join <link="decentraland://?position=0,0">here</link> and <link="https://decentraland.org">site</link>',
+        approved: true,
+        rejected: false,
+        deleted_at: null
+      })
+      const events = await createEventsComponent(components)
+      result = await events.getEvent('11111111-1111-4111-8111-111111111111', '0xowner')
+    })
+
+    it('should strip the unsafe link and keep the safe one in the response', () => {
+      expect(result.description).toBe('Join here and <link="https://decentraland.org">site</link>')
+    })
+  })
+
+  describe('and editing the content of an already-approved event', () => {
+    beforeEach(() => {
+      components.eventsRepository.findById.mockResolvedValue({
+        id: '11111111-1111-4111-8111-111111111111',
+        user: '0xowner',
+        name: 'Party',
+        description: 'Original description',
+        image: 'https://img.png',
+        approved: true,
+        rejected: false,
+        highlighted: true,
+        x: 0,
+        y: 0,
+        server: null,
+        world_id: null,
+        community_id: null,
+        categories: []
+      })
+      components.eventsRepository.update.mockImplementation(async (_c: unknown, _id: string, patch: any) => ({
+        id: '11111111-1111-4111-8111-111111111111',
+        user: '0xowner',
+        name: 'Party',
+        approved: true,
+        community_id: null,
+        ...patch
+      }))
+    })
+
+    describe('and the editor is the owner without approval permission', () => {
+      beforeEach(async () => {
+        const events = await createEventsComponent(components)
+        await events.updateEvent(
+          '11111111-1111-4111-8111-111111111111',
+          { description: 'Sneaky <link="file:///etc/passwd">x</link> edit' },
+          '0xowner',
+          {}
+        )
+      })
+
+      it('should re-queue the event for moderation by clearing approval and the feature flag', () => {
+        expect(components.eventsRepository.update).toHaveBeenCalledWith(
+          components.pg,
+          '11111111-1111-4111-8111-111111111111',
+          expect.objectContaining({ approved: false, approved_by: null, highlighted: false })
+        )
+      })
+    })
+
+    describe('and the owner re-submits the identical description', () => {
+      beforeEach(async () => {
+        const events = await createEventsComponent(components)
+        await events.updateEvent(
+          '11111111-1111-4111-8111-111111111111',
+          { description: 'Original description' },
+          '0xowner',
+          {}
+        )
+      })
+
+      it('should keep the event approved since no content actually changed', () => {
+        const patch = components.eventsRepository.update.mock.calls[0][2]
+        expect(patch.approved).toBeUndefined()
+      })
+    })
+
+    describe('and the owner edits only a scheduling/control field', () => {
+      beforeEach(async () => {
+        const events = await createEventsComponent(components)
+        await events.updateEvent('11111111-1111-4111-8111-111111111111', { all_day: true }, '0xowner', {})
+      })
+
+      it('should keep the event approved', () => {
+        const patch = components.eventsRepository.update.mock.calls[0][2]
+        expect(patch.approved).toBeUndefined()
+      })
+    })
+
+    describe('and the editor is a moderator who can approve', () => {
+      beforeEach(async () => {
+        components.profiles.hasAnyPermission.mockResolvedValue(true)
+        const events = await createEventsComponent(components)
+        await events.updateEvent(
+          '11111111-1111-4111-8111-111111111111',
+          { description: 'Moderator-reviewed <link="file:///etc/passwd">x</link> edit' },
+          '0xMOD',
+          {}
+        )
+      })
+
+      it('should keep the event approved since the moderator edit is itself a review', () => {
+        const patch = components.eventsRepository.update.mock.calls[0][2]
+        expect(patch.approved).toBeUndefined()
+      })
+    })
+  })
 })

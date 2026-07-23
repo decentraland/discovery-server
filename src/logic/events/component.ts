@@ -5,6 +5,7 @@ import type { EventListFilters, CreateEventRow, UpdateEventRow } from '../../ada
 import { AllowedInputFrequencies, MAX_RECURRENT_PAST_ITERATIONS } from '../recurrence'
 import type { RecurrentEventInput } from '../recurrence'
 import { isPlaceId } from '../entity-id'
+import { sanitizeDescription } from '../content-sanitization'
 import { EventNotFoundError, EventUnauthorizedActionError, EventValidationError } from './errors'
 import type { CreateEventPayload, EventWithAttendance, IEventsComponent, UpdateEventPayload } from './types'
 
@@ -31,6 +32,43 @@ const RECURRENCE_KEYS: Array<keyof UpdateEventPayload> = [
   'recurrent_until',
   'recurrent_count'
 ]
+
+// Public, creator-editable content fields taken straight from the request payload whose change
+// re-opens moderation (name, description, image, image_vertical, categories). Scheduling/control
+// fields (recurrence, all_day) are excluded — they don't alter what content is shown.
+const MODERATED_PATCH_CONTENT_KEYS: Array<keyof UpdateEventPayload> = [
+  'name',
+  'description',
+  'image',
+  'image_vertical',
+  'categories'
+]
+
+// Location identity fields resolved server-side into the update row; a change to any of them
+// moves where the event points and re-opens moderation. Compared against the resolved values
+// (not the raw payload) so `world` name → boolean/`world_id` resolution is handled correctly.
+const MODERATED_LOCATION_KEYS: Array<keyof Event> = ['x', 'y', 'server', 'world_id']
+
+/**
+ * Whether a moderated content field's incoming value differs from what the event currently holds.
+ * The description is compared through the same sanitizer the API exposes, so a client
+ * round-tripping already-sanitized text isn't mistaken for an edit; an empty/absent name is
+ * ignored (matching the update apply guard); arrays (categories) compare by value.
+ */
+function isModeratedContentChanged(key: keyof UpdateEventPayload, next: unknown, current: unknown): boolean {
+  if (key === 'name') {
+    return typeof next === 'string' && next.length > 0 && next !== current
+  }
+  if (key === 'description') {
+    return sanitizeDescription(next as string | null | undefined) !== sanitizeDescription(current as string | null)
+  }
+  if (Array.isArray(next) || Array.isArray(current)) {
+    const a = (Array.isArray(next) ? next : []).map(String).sort()
+    const b = (Array.isArray(current) ? current : []).map(String).sort()
+    return a.length !== b.length || a.some((value, index) => value !== b[index])
+  }
+  return next !== current
+}
 
 /**
  * Event orchestration. Recurrence is materialized in-process via the recurrence
@@ -140,6 +178,9 @@ export async function createEventsComponent(
       !!nextStart && now >= new Date(nextStart).getTime() && now < new Date(nextStart).getTime() + event.duration
     return {
       ...rest,
+      // Strip client-rendered TMP markup (e.g. `<link="decentraland://…">`) from the
+      // user-authored description on every read path so it can't reach Application.OpenURL.
+      description: sanitizeDescription(event.description),
       ...(isOwner ? { contact, details } : {}),
       user_name: foundationAddresses.has(event.user) ? 'Decentraland Foundation' : event.user_name,
       place_id: event.place_id ?? event.world_id,
@@ -565,6 +606,25 @@ export async function createEventsComponent(
     // when not rejecting.
     if (canHighlight && patch.rejected !== true && patch.highlighted !== undefined) {
       update.highlighted = patch.highlighted
+    }
+
+    // Re-queue an already-approved event for moderation whenever its public content or location
+    // changes, unless the actor can approve (their edit is itself a review). Closes the
+    // edit-after-approval bypass where an owner gets a benign event approved and then edits in
+    // content that would otherwise stay live without re-review. Content is compared against the
+    // raw payload; location against the resolved `update` values (set only on a location edit).
+    const patchRecord = patch as Record<string, unknown>
+    const eventRecord = event as unknown as Record<string, unknown>
+    const contentChanged = MODERATED_PATCH_CONTENT_KEYS.some(
+      (key) => key in patch && isModeratedContentChanged(key, patchRecord[key], eventRecord[key])
+    )
+    const locationChanged = MODERATED_LOCATION_KEYS.some(
+      (key) => key in update && (update as Record<string, unknown>)[key] !== eventRecord[key]
+    )
+    if (event.approved && !canApprove && (contentChanged || locationChanged)) {
+      update.approved = false
+      update.approved_by = null
+      update.highlighted = false
     }
 
     const updated = await eventsRepository.update(pg, id, update)

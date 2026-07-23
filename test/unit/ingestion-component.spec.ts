@@ -256,6 +256,134 @@ describe('when ingesting deployment events', () => {
     })
   })
 
+  describe('and a genesis scene description contains client-rendered markup', () => {
+    let scene: any
+
+    beforeEach(async () => {
+      const event: any = {
+        entity: {
+          type: 'scene',
+          pointers: ['5,5'],
+          timestamp: 1_700_000_000_000,
+          content: [],
+          metadata: {
+            scene: { base: '5,5', parcels: ['5,5'] },
+            display: {
+              title: 'Scene',
+              description:
+                'Join <link="decentraland://?position=0,0">here</link> and <link="https://decentraland.org">site</link>'
+            }
+          }
+        }
+      }
+      const ingestion = await createIngestionComponent(components)
+      await ingestion.processCatalystDeployment(event)
+      scene = components.placesRepository.insertScene.mock.calls[0][1]
+    })
+
+    it('should strip the unsafe link and keep the safe one in the stored description', () => {
+      expect(scene.description).toBe('Join here and <link="https://decentraland.org">site</link>')
+    })
+  })
+
+  describe('and a genesis scene navmapThumbnail is a verbatim https url with breakout characters', () => {
+    let scene: any
+
+    beforeEach(async () => {
+      const event: any = {
+        entity: {
+          type: 'scene',
+          pointers: ['6,6'],
+          timestamp: 1_700_000_000_000,
+          content: [],
+          metadata: {
+            scene: { base: '6,6', parcels: ['6,6'] },
+            display: { title: 'Scene', navmapThumbnail: 'https://a"><script>alert(1)</script><meta name="x' }
+          }
+        }
+      }
+      const ingestion = await createIngestionComponent(components)
+      await ingestion.processCatalystDeployment(event)
+      scene = components.placesRepository.insertScene.mock.calls[0][1]
+    })
+
+    it('should drop the payload and fall back to the generated parcel image', () => {
+      expect(scene.image).toBe('https://land/6/6.png')
+    })
+  })
+
+  describe('and a genesis scene navmapThumbnail is a valid external https url', () => {
+    let scene: any
+
+    beforeEach(async () => {
+      const event: any = {
+        entity: {
+          type: 'scene',
+          pointers: ['7,7'],
+          timestamp: 1_700_000_000_000,
+          content: [],
+          metadata: {
+            scene: { base: '7,7', parcels: ['7,7'] },
+            display: { title: 'Scene', navmapThumbnail: 'https://cdn.decentraland.org/thumb.png' }
+          }
+        }
+      }
+      const ingestion = await createIngestionComponent(components)
+      await ingestion.processCatalystDeployment(event)
+      scene = components.placesRepository.insertScene.mock.calls[0][1]
+    })
+
+    it('should preserve the external thumbnail url as the image', () => {
+      expect(scene.image).toBe('https://cdn.decentraland.org/thumb.png')
+    })
+  })
+
+  describe('and a world settings-changed event provides a thumbnailUrl with breakout characters', () => {
+    let input: any
+
+    beforeEach(async () => {
+      const ingestion = await createIngestionComponent(components)
+      await ingestion.processWorldSettingsChanged({
+        metadata: { worldName: 'my-world.dcl.eth', thumbnailUrl: 'https://a"><script>alert(1)</script><meta name="x' }
+      })
+      input = components.worldsRepository.upsert.mock.calls[0][1]
+    })
+
+    it('should store a null image so the crafted value is never persisted', () => {
+      expect(input.image).toBeNull()
+    })
+  })
+
+  describe('and a world settings-changed event omits thumbnailUrl', () => {
+    let input: any
+
+    beforeEach(async () => {
+      const ingestion = await createIngestionComponent(components)
+      await ingestion.processWorldSettingsChanged({ metadata: { worldName: 'my-world.dcl.eth', title: 'My World' } })
+      input = components.worldsRepository.upsert.mock.calls[0][1]
+    })
+
+    it('should leave the image unset on the upsert so an existing one is preserved', () => {
+      expect(input.image).toBeUndefined()
+    })
+  })
+
+  describe('and a world settings-changed description contains client-rendered markup', () => {
+    let input: any
+
+    beforeEach(async () => {
+      const ingestion = await createIngestionComponent(components)
+      await ingestion.processWorldSettingsChanged({
+        metadata: { worldName: 'my-world.dcl.eth', description: 'a <link="file:///etc/passwd">x</link> b' }
+      })
+      input = components.worldsRepository.upsert.mock.calls[0][1]
+    })
+
+    it('should strip the unsafe markup from the stored description', () => {
+      expect(input.description).toBe('a x b')
+    })
+  })
+
   describe('and a scenes-undeployment event arrives', () => {
     it('should disable the world places at the undeployed base positions', async () => {
       const ingestion = await createIngestionComponent(components)

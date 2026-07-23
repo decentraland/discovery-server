@@ -4,6 +4,7 @@ import type { Place } from '../../types/entities'
 import type { ScenePlaceInput } from '../../adapters/places-repository'
 import type { SceneEntity } from '../../adapters/catalyst-client'
 import type { UpsertWorldInput } from '../../adapters/worlds-repository'
+import { sanitizeDescription, sanitizeImageUrl } from '../content-sanitization'
 import type {
   IIngestionComponent,
   IngestionResult,
@@ -120,6 +121,10 @@ export async function createIngestionComponent(
       const file = content?.find((entry) => entry.file === thumbnail)
       thumbnail =
         !file || UNWANTED_THUMBNAIL_HASHES.includes(file.hash) ? null : `${contentServerUrl}/contents/${file.hash}`
+    } else if (thumbnail) {
+      // A verbatim `https://` navmapThumbnail is attacker-controlled and stored as-is; keep it
+      // only if it is a safe http(s) URL so it can't inject markup into API responses / OG HTML.
+      thumbnail = sanitizeImageUrl(thumbnail)
     }
     if (!thumbnail && isWorld) return DEFAULT_WORLD_THUMBNAIL
     if (!thumbnail) {
@@ -169,7 +174,9 @@ export async function createIngestionComponent(
       base_position: base,
       positions,
       title: rawTitle ? rawTitle.slice(0, 50) : 'Untitled',
-      description: metadata.display?.description || null,
+      // Strip client-rendered TMP markup (e.g. `<link="decentraland://…">`) from the
+      // creator-authored description before storing, so it can't reach Application.OpenURL.
+      description: sanitizeDescription(metadata.display?.description),
       image: resolveImage(metadata, entity.content, base, isWorld),
       owner: metadata.owner?.toLowerCase() || null,
       creator_address: metadata.creator?.toLowerCase() || null,
@@ -273,7 +280,8 @@ export async function createIngestionComponent(
       id: worldId,
       world_name: worldName,
       title: metadata.display?.title?.slice(0, 50),
-      description: metadata.display?.description ?? undefined,
+      // Worlds render in the same TMP client UI, so the same markup rules apply.
+      description: sanitizeDescription(metadata.display?.description) ?? undefined,
       content_rating: normalizeRating(metadata.policy?.contentRating),
       categories: metadata.tags,
       show_in_places: !optOut,
@@ -332,8 +340,11 @@ export async function createIngestionComponent(
       id,
       world_name: worldName,
       title: metadata.title,
-      description: metadata.description,
-      image: metadata.thumbnailUrl,
+      // Preserve upsert's "omitted means do not update" contract: only sanitize (and, for an
+      // unsafe value, clear) when the field was actually provided, so a settings event that
+      // omits it never wipes the stored value.
+      description: metadata.description === undefined ? undefined : sanitizeDescription(metadata.description),
+      image: metadata.thumbnailUrl === undefined ? undefined : sanitizeImageUrl(metadata.thumbnailUrl),
       content_rating: contentRating,
       categories: metadata.categories,
       show_in_places: metadata.showInPlaces,
