@@ -255,6 +255,28 @@ describe('when running the notification crons', () => {
     })
   })
 
+  describe('and the event description contains client-rendered markup', () => {
+    let event: any
+
+    beforeEach(() => {
+      event = {
+        id: 'e1',
+        user: '0xowner',
+        name: 'Party',
+        description: 'Join <link="decentraland://?position=0,0">here</link> now',
+        image: 'img'
+      }
+    })
+
+    it('should strip the unsafe markup from the notification description', async () => {
+      const notifications = await createNotificationsComponent(components)
+      await notifications.notifyEventApproved(event)
+
+      const published = publish.mock.calls[0][0]
+      expect(published[0].metadata.description).toBe('Join here now')
+    })
+  })
+
   describe('and fanning a community-event notification out on approval', () => {
     let event: any
 

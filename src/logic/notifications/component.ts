@@ -2,6 +2,7 @@ import { Events } from '@dcl/schemas'
 import type { AppComponents } from '../../types'
 import type { Event } from '../../types/entities'
 import type { PublishableEvents } from '../../adapters/sns-publisher'
+import { sanitizeDescription } from '../content-sanitization'
 import type { INotificationsComponent } from './types'
 
 const UPCOMING_WINDOW_MS = 60 * 60 * 1000
@@ -17,6 +18,12 @@ const MAX_LOOKBACK_MS = 24 * 60 * 60 * 1000
 const NOTIFICATION_DESCRIPTION_MAX = 1000
 
 const truncate = (text: string, max: number): string => (text.length > max ? text.slice(0, max) : text)
+
+// Notification payloads are read straight from stored event rows (bypassing the API `serialize`
+// sanitizer), so strip client-rendered TMP markup here too before embedding the description —
+// otherwise a `<link="decentraland://…">` could reach a notification consumer's client.
+const describeForNotification = (description: string | null): string =>
+  truncate(sanitizeDescription(description) ?? '', NOTIFICATION_DESCRIPTION_MAX)
 
 /**
  * The three SNS notification crons. Each is idempotent via a per-type cursor in
@@ -99,7 +106,7 @@ export async function createNotificationsComponent(
             startsAt: (event.next_start_at ?? event.start_at).toISOString(),
             endsAt: (event.next_finish_at ?? event.finish_at).toISOString(),
             title: event.name,
-            description: truncate(event.description ?? '', NOTIFICATION_DESCRIPTION_MAX),
+            description: describeForNotification(event.description),
             attendee: attendee.user
           }
         } as never)
@@ -141,7 +148,7 @@ export async function createNotificationsComponent(
             image: event.image ?? '',
             link: link(event),
             title: event.name,
-            description: truncate(event.description ?? '', NOTIFICATION_DESCRIPTION_MAX),
+            description: describeForNotification(event.description),
             attendee: recipient,
             ...(event.community_id ? { communityId: event.community_id } : {})
           }
@@ -182,7 +189,7 @@ export async function createNotificationsComponent(
   const moderationMetadata = (event: Event) => ({
     host: event.user,
     title: event.name,
-    description: truncate(event.description ?? '', NOTIFICATION_DESCRIPTION_MAX),
+    description: describeForNotification(event.description),
     image: event.image ?? ''
   })
 

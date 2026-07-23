@@ -5,7 +5,7 @@ import type { EventListFilters, CreateEventRow, UpdateEventRow } from '../../ada
 import { AllowedInputFrequencies, MAX_RECURRENT_PAST_ITERATIONS } from '../recurrence'
 import type { RecurrentEventInput } from '../recurrence'
 import { isPlaceId } from '../entity-id'
-import { sanitizeDescription } from '../content-sanitization'
+import { sanitizeDescription, sanitizeImageUrl } from '../content-sanitization'
 import { EventNotFoundError, EventUnauthorizedActionError, EventValidationError } from './errors'
 import type { CreateEventPayload, EventWithAttendance, IEventsComponent, UpdateEventPayload } from './types'
 
@@ -34,13 +34,17 @@ const RECURRENCE_KEYS: Array<keyof UpdateEventPayload> = [
 ]
 
 // Public, creator-editable content fields taken straight from the request payload whose change
-// re-opens moderation (name, description, image, image_vertical, categories). Scheduling/control
-// fields (recurrence, all_day) are excluded — they don't alter what content is shown.
+// re-opens moderation (name, description, image, image_vertical, url, categories).
+// Scheduling/control fields (recurrence, all_day) are excluded — they don't alter what content
+// is shown. `url` is included so a benign approved event can't be re-pointed at a hostile link
+// without re-review; it stays re-moderation (human review) rather than a hard scheme reject,
+// since an event url can legitimately be a deep link.
 const MODERATED_PATCH_CONTENT_KEYS: Array<keyof UpdateEventPayload> = [
   'name',
   'description',
   'image',
   'image_vertical',
+  'url',
   'categories'
 ]
 
@@ -61,6 +65,10 @@ function isModeratedContentChanged(key: keyof UpdateEventPayload, next: unknown,
   }
   if (key === 'description') {
     return sanitizeDescription(next as string | null | undefined) !== sanitizeDescription(current as string | null)
+  }
+  if (key === 'image' || key === 'image_vertical') {
+    // Compare through the sanitizer so a client round-tripping the normalized value isn't an edit.
+    return sanitizeImageUrl(next as string | null | undefined) !== sanitizeImageUrl(current as string | null)
   }
   if (Array.isArray(next) || Array.isArray(current)) {
     const a = (Array.isArray(next) ? next : []).map(String).sort()
@@ -147,9 +155,13 @@ export async function createEventsComponent(
     estate_name: string | null
     scene_name: string | null
   }> {
+    // Reject a non-http(s) / internal-host / breakout client image so it is never stored or
+    // served; a rejected value falls back to the world default or the Land-derived image, just
+    // as an omitted image would.
+    const requestedImage = sanitizeImageUrl(payload.image)
     if (isWorld) {
       return {
-        image: payload.image ?? `${eventsBaseUrl}/images/event-default.jpg`,
+        image: requestedImage ?? `${eventsBaseUrl}/images/event-default.jpg`,
         estate_id: payload.estate_id ?? null,
         estate_name: payload.estate_name ?? null,
         scene_name: payload.scene_name ?? null
@@ -157,12 +169,12 @@ export async function createEventsComponent(
     }
     const x = toCoordinate(payload.x)
     const y = toCoordinate(payload.y)
-    // Only hit Land for the metadata the caller didn't already supply.
-    const needsTile = !payload.image || !payload.estate_id || !payload.estate_name
+    // Only hit Land for the metadata the caller didn't already supply (a safe image counts).
+    const needsTile = !requestedImage || !payload.estate_id || !payload.estate_name
     const tile = needsTile ? await landClient.getTile(x, y) : null
     const estate_id = payload.estate_id ?? tile?.estateId ?? null
     const estate_name = payload.estate_name ?? tile?.name ?? null
-    const image = payload.image ?? (estate_id ? landClient.getEstateImage(estate_id) : landClient.getParcelImage(x, y))
+    const image = requestedImage ?? (estate_id ? landClient.getEstateImage(estate_id) : landClient.getParcelImage(x, y))
     return { image, estate_id, estate_name, scene_name: payload.scene_name ?? estate_name }
   }
 
@@ -370,7 +382,7 @@ export async function createEventsComponent(
     const row: CreateEventRow = {
       name: payload.name,
       image: presentation.image,
-      image_vertical: payload.image_vertical ?? null,
+      image_vertical: sanitizeImageUrl(payload.image_vertical),
       description: payload.description ?? null,
       start_at: props.start_at,
       finish_at: props.finish_at,
@@ -466,6 +478,11 @@ export async function createEventsComponent(
     for (const key of CONTENT_KEYS) {
       if (key in patch) (update as Record<string, unknown>)[key] = patch[key]
     }
+
+    // Reject unsafe client-supplied image URLs on update. When the location changes, the branch
+    // below overrides `image` with a re-derived (already-sanitized) value.
+    if ('image' in patch) update.image = sanitizeImageUrl(patch.image)
+    if ('image_vertical' in patch) update.image_vertical = sanitizeImageUrl(patch.image_vertical)
 
     // Timing / recurrence: recompute the materialized window from the merged rule.
     if (RECURRENCE_KEYS.some((key) => key in patch)) {

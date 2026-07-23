@@ -110,6 +110,18 @@ describe('when sanitizing a description', () => {
     })
   })
 
+  describe('and a link points at a fully-qualified internal host (trailing dot)', () => {
+    let result: string | null
+
+    beforeEach(() => {
+      result = sanitizeDescription('a <link="http://localhost./">x</link> b <link="http://router.local./">y</link> c')
+    })
+
+    it('should strip hosts whose trailing dot would otherwise bypass the check', () => {
+      expect(result).toBe('a x b y c')
+    })
+  })
+
   describe('and a link points at a public host', () => {
     let result: string | null
 
@@ -201,6 +213,42 @@ describe('when sanitizing an image url', () => {
 
     beforeEach(() => {
       result = sanitizeImageUrl('javascript:alert(document.domain)')
+    })
+
+    it('should return null', () => {
+      expect(result).toBeNull()
+    })
+  })
+
+  describe('and it points at the cloud-metadata host', () => {
+    let result: string | null
+
+    beforeEach(() => {
+      result = sanitizeImageUrl('https://169.254.169.254/latest/meta-data/')
+    })
+
+    it('should return null', () => {
+      expect(result).toBeNull()
+    })
+  })
+
+  describe('and it points at a private host', () => {
+    let result: string | null
+
+    beforeEach(() => {
+      result = sanitizeImageUrl('https://10.0.0.1/thumb.png')
+    })
+
+    it('should return null', () => {
+      expect(result).toBeNull()
+    })
+  })
+
+  describe('and it points at a fully-qualified localhost (trailing dot)', () => {
+    let result: string | null
+
+    beforeEach(() => {
+      result = sanitizeImageUrl('https://localhost./thumb.png')
     })
 
     it('should return null', () => {

@@ -202,13 +202,57 @@ describe('when creating an event', () => {
     it('should keep a client-supplied image', async () => {
       const events = await createEventsComponent(components)
       await events.createEvent(
-        { name: 'P', start_at: new Date(Date.now() + 3600_000).toISOString(), x: 5, y: 6, image: 'https://custom.png' },
+        {
+          name: 'P',
+          start_at: new Date(Date.now() + 3600_000).toISOString(),
+          x: 5,
+          y: 6,
+          image: 'https://cdn.example.org/custom.png'
+        },
         '0xU'
       )
 
       expect(components.eventsRepository.create).toHaveBeenCalledWith(
         components.pg,
-        expect.objectContaining({ image: 'https://custom.png' })
+        expect.objectContaining({ image: 'https://cdn.example.org/custom.png' })
+      )
+    })
+
+    it('should reject an unsafe client image and fall back to the parcel map', async () => {
+      const events = await createEventsComponent(components)
+      await events.createEvent(
+        {
+          name: 'P',
+          start_at: new Date(Date.now() + 3600_000).toISOString(),
+          x: 5,
+          y: 6,
+          image: 'https://a"><script>alert(1)</script><meta name="x'
+        },
+        '0xU'
+      )
+
+      expect(components.eventsRepository.create).toHaveBeenCalledWith(
+        components.pg,
+        expect.objectContaining({ image: 'https://land/parcels/5/6.png' })
+      )
+    })
+
+    it('should reject an unsafe client image_vertical', async () => {
+      const events = await createEventsComponent(components)
+      await events.createEvent(
+        {
+          name: 'P',
+          start_at: new Date(Date.now() + 3600_000).toISOString(),
+          x: 5,
+          y: 6,
+          image_vertical: 'javascript:alert(1)'
+        },
+        '0xU'
+      )
+
+      expect(components.eventsRepository.create).toHaveBeenCalledWith(
+        components.pg,
+        expect.objectContaining({ image_vertical: null })
       )
     })
   })
@@ -736,6 +780,46 @@ describe('when creating an event', () => {
       it('should keep the event approved since the moderator edit is itself a review', () => {
         const patch = components.eventsRepository.update.mock.calls[0][2]
         expect(patch.approved).toBeUndefined()
+      })
+    })
+
+    describe('and the owner changes the public url', () => {
+      beforeEach(async () => {
+        const events = await createEventsComponent(components)
+        await events.updateEvent(
+          '11111111-1111-4111-8111-111111111111',
+          { url: 'https://malicious.example/redirect' },
+          '0xowner',
+          {}
+        )
+      })
+
+      it('should re-queue the event for moderation by clearing approval', () => {
+        expect(components.eventsRepository.update).toHaveBeenCalledWith(
+          components.pg,
+          '11111111-1111-4111-8111-111111111111',
+          expect.objectContaining({ approved: false, approved_by: null, highlighted: false })
+        )
+      })
+    })
+
+    describe('and the owner changes the image', () => {
+      beforeEach(async () => {
+        const events = await createEventsComponent(components)
+        await events.updateEvent(
+          '11111111-1111-4111-8111-111111111111',
+          { image: 'https://cdn.example.org/new.png' },
+          '0xowner',
+          {}
+        )
+      })
+
+      it('should re-queue the event for moderation by clearing approval', () => {
+        expect(components.eventsRepository.update).toHaveBeenCalledWith(
+          components.pg,
+          '11111111-1111-4111-8111-111111111111',
+          expect.objectContaining({ approved: false, approved_by: null, highlighted: false })
+        )
       })
     })
   })

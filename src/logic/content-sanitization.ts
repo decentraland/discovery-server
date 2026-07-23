@@ -38,7 +38,11 @@ const INTERNAL_HOST_SUFFIXES = [
 // lowercased + WHATWG-normalized by `new URL`, so obfuscated IPv4 forms (decimal/hex/octal/
 // short) arrive as canonical dotted quads and can't slip past.
 function isInternalLinkHost(hostname: string): boolean {
-  const host = hostname.startsWith('[') && hostname.endsWith(']') ? hostname.slice(1, -1) : hostname
+  const unbracketed = hostname.startsWith('[') && hostname.endsWith(']') ? hostname.slice(1, -1) : hostname
+  // A trailing dot is the fully-qualified form of the same host (`localhost.`, `router.local.`)
+  // and resolves identically, so normalize it away before the single-label / suffix checks —
+  // otherwise `localhost.` reads as a dotted, non-reserved name and slips through.
+  const host = unbracketed.replace(/\.+$/, '')
 
   const ipv4 = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(host)
   if (ipv4) {
@@ -127,20 +131,24 @@ export function sanitizeDescription(description: string | null | undefined): str
 }
 
 /**
- * Validate that a creator/user-supplied image URL is a safe absolute http(s) URL and return it
- * normalized, or null when it isn't parseable as such. Scene `navmapThumbnail` / world
- * `thumbnailUrl` values are attacker-controlled and were stored verbatim; parsing through `URL`
- * rejects non-URL payloads and percent-encodes any HTML-breakout characters (`"`, `<`, `>`), so
- * the stored value can never carry raw markup into API responses / social HTML.
+ * Validate that a creator/user-supplied image URL is a safe absolute http(s) URL to a public
+ * host and return it normalized, or null otherwise. Scene `navmapThumbnail` / world
+ * `thumbnailUrl` / event image values are attacker-controlled and were stored verbatim; parsing
+ * through `URL` rejects non-URL payloads and percent-encodes any HTML-breakout characters
+ * (`"`, `<`, `>`), so the stored value can never carry raw markup into API responses / social
+ * HTML. The same public-host rule the TMP links use is applied, so an image pointed at an
+ * internal / loopback / cloud-metadata host (which a client/crawler/downstream fetcher would
+ * otherwise be aimed at) is rejected too.
  *
  * @param value - The raw image/thumbnail URL (nullable).
- * @returns The normalized http(s) URL, or null when it is not a safe absolute http(s) URL.
+ * @returns The normalized http(s) URL, or null when it is not a safe absolute http(s) public URL.
  */
 export function sanitizeImageUrl(value: string | null | undefined): string | null {
   if (!value) return null
   try {
     const url = new URL(value)
     if (url.protocol !== 'https:' && url.protocol !== 'http:') return null
+    if (isInternalLinkHost(url.hostname.toLowerCase())) return null
     return url.toString()
   } catch {
     return null
