@@ -1,6 +1,7 @@
 import type { AppComponents } from '../../types'
 import type { AggregateWorld } from '../../types/entities'
 import type { WorldListFilters } from '../../adapters/worlds-repository'
+import { sanitizeDescription, sanitizeImageUrl } from '../content-sanitization'
 import type { IWorldsComponent, WorldListResult } from './types'
 import { WorldNotFoundError } from './errors'
 
@@ -15,7 +16,14 @@ export async function createWorldsComponent(
   const { pg, worldsRepository, worldsLiveData } = components
 
   async function decorate(world: AggregateWorld): Promise<AggregateWorld> {
-    return { ...world, user_count: await worldsLiveData.getUserCount(world.world_name) }
+    // Defense-in-depth at the read boundary: rows written before ingestion sanitization existed
+    // (or imported raw by the ETL) can still carry unsafe TMP markup / breakout image URLs.
+    return {
+      ...world,
+      description: sanitizeDescription(world.description),
+      image: sanitizeImageUrl(world.image),
+      user_count: await worldsLiveData.getUserCount(world.world_name)
+    }
   }
 
   async function getWorld(id: string, user?: string): Promise<AggregateWorld> {

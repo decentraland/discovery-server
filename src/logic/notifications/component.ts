@@ -2,7 +2,7 @@ import { Events } from '@dcl/schemas'
 import type { AppComponents } from '../../types'
 import type { Event } from '../../types/entities'
 import type { PublishableEvents } from '../../adapters/sns-publisher'
-import { sanitizeDescription } from '../content-sanitization'
+import { sanitizeDescription, sanitizeImageUrl } from '../content-sanitization'
 import type { INotificationsComponent } from './types'
 
 const UPCOMING_WINDOW_MS = 60 * 60 * 1000
@@ -101,7 +101,7 @@ export async function createNotificationsComponent(
           timestamp: now,
           metadata: {
             name: event.name,
-            image: event.image ?? '',
+            image: sanitizeImageUrl(event.image) ?? '',
             link: link(event),
             startsAt: (event.next_start_at ?? event.start_at).toISOString(),
             endsAt: (event.next_finish_at ?? event.finish_at).toISOString(),
@@ -145,7 +145,7 @@ export async function createNotificationsComponent(
           timestamp: now,
           metadata: {
             name: event.name,
-            image: event.image ?? '',
+            image: sanitizeImageUrl(event.image) ?? '',
             link: link(event),
             title: event.name,
             description: describeForNotification(event.description),
@@ -190,7 +190,7 @@ export async function createNotificationsComponent(
     host: event.user,
     title: event.name,
     description: describeForNotification(event.description),
-    image: event.image ?? ''
+    image: sanitizeImageUrl(event.image) ?? ''
   })
 
   // Publish a single lifecycle notification, swallowing errors so a notification failure
@@ -261,7 +261,7 @@ export async function createNotificationsComponent(
               title: 'Community Event Added',
               description,
               name: event.name,
-              image: event.image ?? '',
+              image: sanitizeImageUrl(event.image) ?? '',
               communityId: community.id,
               communityName: community.name,
               communityThumbnail: community.thumbnailRaw,

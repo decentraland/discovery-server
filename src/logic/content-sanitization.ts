@@ -12,7 +12,11 @@
 // tag name that begins with a letter, up to the next `>` (`<link="…">`, `</link>`, `<b>`,
 // `<color=#fff>`). A bare `<` in prose ("5 < 10") is left untouched because it isn't
 // immediately followed by a letter or slash, so plain text and Markdown survive intact.
-const MARKUP_TAG_REGEX = /<\/?[a-zA-Z][^<>]*>/g
+// The body is `[^>]*` (not `[^<>]*`) so a malformed opener that embeds a nested tag —
+// `<link="javascript:…"<b>` — is captured as one span up to the first `>` and rejected whole,
+// rather than being left as an unmatched `<link…` fragment that a later strip could
+// re-assemble into a live unsafe link (fail-closed).
+const MARKUP_TAG_REGEX = /<\/?[a-zA-Z][^>]*>/g
 
 // A TMP `<link=…>` / `<link="…">` opening tag (capturing the optionally quoted target) and
 // its matching `</link>` closing tag. The opening pattern only matches a *clean* single-value

@@ -1,5 +1,6 @@
 /* eslint-disable no-console */
 import type { Pool, PoolClient } from 'pg'
+import { sanitizeDescription, sanitizeImageUrl } from '../../src/logic/content-sanitization'
 
 /**
  * One-off ETL from the legacy places + events Postgres databases into the
@@ -114,7 +115,7 @@ export async function migrateWorlds(pools: EtlPools, options: EtlOptions = {}): 
              highlighted_image = EXCLUDED.highlighted_image, ranking = EXCLUDED.ranking,
              updated_at = EXCLUDED.updated_at`,
           [
-            String(w.id).toLowerCase(), w.world_name, w.title, w.description, w.image, w.content_rating, w.categories,
+            String(w.id).toLowerCase(), w.world_name, w.title, sanitizeDescription(w.description), sanitizeImageUrl(w.image), w.content_rating, w.categories,
             w.owner, w.show_in_places, w.single_player, w.skybox_time, w.is_private, w.likes, w.dislikes, w.favorites,
             w.like_rate, w.like_score, w.highlighted, w.highlighted_image, w.ranking, w.created_at, w.updated_at
           ]
@@ -165,7 +166,7 @@ export async function migratePlaces(pools: EtlPools, options: EtlOptions = {}): 
              categories = EXCLUDED.categories, sdk = EXCLUDED.sdk, textsearch = EXCLUDED.textsearch,
              updated_at = EXCLUDED.updated_at`,
           [
-            p.id, p.title, p.description, p.image, p.owner, p.creator_address, p.positions, p.base_position,
+            p.id, p.title, sanitizeDescription(p.description), sanitizeImageUrl(p.image), p.owner, p.creator_address, p.positions, p.base_position,
             p.contact_name, p.contact_email, p.content_rating, p.likes, p.dislikes, p.favorites, p.like_rate,
             p.like_score, p.ranking, p.highlighted, p.highlighted_image, p.disabled, p.disabled_at, p.disabled_reason,
             p.world, p.world_name, resolvedWorldId, p.deployed_at, p.categories, p.sdk, p.textsearch, p.created_at,
@@ -335,7 +336,7 @@ export async function migrateEvents(pools: EtlPools, options: EtlOptions = {}): 
              deleted_by = EXCLUDED.deleted_by, deleted_at = EXCLUDED.deleted_at,
              deleted_reason = EXCLUDED.deleted_reason, updated_at = EXCLUDED.updated_at`,
           [
-            e.id, e.name, e.image, e.image_vertical, e.description, e.start_at, e.finish_at, duration, e.all_day,
+            e.id, e.name, sanitizeImageUrl(e.image), sanitizeImageUrl(e.image_vertical), sanitizeDescription(e.description), e.start_at, e.finish_at, duration, e.all_day,
             e.next_start_at, e.next_finish_at, e.recurrent, e.recurrent_frequency, e.recurrent_setpos,
             e.recurrent_monthday, e.recurrent_weekday_mask, e.recurrent_month_mask, e.recurrent_interval,
             e.recurrent_count, e.recurrent_until, e.recurrent_dates, e.x, e.y, e.server, e.world, e.estate_id,

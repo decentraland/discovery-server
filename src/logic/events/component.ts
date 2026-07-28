@@ -191,8 +191,12 @@ export async function createEventsComponent(
     return {
       ...rest,
       // Strip client-rendered TMP markup (e.g. `<link="decentraland://…">`) from the
-      // user-authored description on every read path so it can't reach Application.OpenURL.
+      // user-authored description on every read path so it can't reach Application.OpenURL, and
+      // reject unsafe image URLs at the read boundary too (covers rows that predate write-time
+      // sanitization or were imported raw by the ETL).
       description: sanitizeDescription(event.description),
+      image: sanitizeImageUrl(event.image),
+      image_vertical: sanitizeImageUrl(event.image_vertical),
       ...(isOwner ? { contact, details } : {}),
       user_name: foundationAddresses.has(event.user) ? 'Decentraland Foundation' : event.user_name,
       place_id: event.place_id ?? event.world_id,

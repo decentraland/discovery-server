@@ -2,6 +2,7 @@ import type { AppComponents } from '../../types'
 import type { AggregatePlace, PlaceStatus } from '../../types/entities'
 import type { PlaceListFilters } from '../../adapters/places-repository'
 import { isPlaceId } from '../entity-id'
+import { sanitizeDescription, sanitizeImageUrl } from '../content-sanitization'
 import type { IPlacesComponent, PlaceListResult } from './types'
 import { PlaceNotFoundError } from './errors'
 
@@ -27,7 +28,16 @@ export async function createPlacesComponent(
       sceneStats.getVisitsForPositions([place.base_position, ...(place.positions ?? [])]),
       withRealmsDetail ? hotScenes.getRealms(place.base_position) : Promise.resolve(undefined)
     ])
-    return { ...place, user_count, user_visits, ...(realms ? { realms_detail: realms } : {}) }
+    // Defense-in-depth at the read boundary: rows written before ingestion sanitization existed
+    // (or imported raw by the ETL) can still carry unsafe TMP markup / breakout image URLs.
+    return {
+      ...place,
+      description: sanitizeDescription(place.description),
+      image: sanitizeImageUrl(place.image),
+      user_count,
+      user_visits,
+      ...(realms ? { realms_detail: realms } : {})
+    }
   }
 
   async function getPlace(id: string, user?: string, withRealmsDetail = false): Promise<AggregatePlace> {

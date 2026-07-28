@@ -688,6 +688,28 @@ describe('when creating an event', () => {
     })
   })
 
+  describe('and reading an event whose stored image points at an internal host', () => {
+    let result: any
+
+    beforeEach(async () => {
+      components.eventsRepository.findById.mockResolvedValue({
+        id: '11111111-1111-4111-8111-111111111111',
+        user: '0xowner',
+        name: 'Party',
+        image: 'https://169.254.169.254/thumb.png',
+        approved: true,
+        rejected: false,
+        deleted_at: null
+      })
+      const events = await createEventsComponent(components)
+      result = await events.getEvent('11111111-1111-4111-8111-111111111111', '0xowner')
+    })
+
+    it('should reject the unsafe image on read', () => {
+      expect(result.image).toBeNull()
+    })
+  })
+
   describe('and editing the content of an already-approved event', () => {
     beforeEach(() => {
       components.eventsRepository.findById.mockResolvedValue({
