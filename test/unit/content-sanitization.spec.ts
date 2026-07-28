@@ -75,6 +75,20 @@ describe('when sanitizing a description', () => {
     })
   })
 
+  describe('and a stripped tag reassembles the surrounding text into a new opener', () => {
+    let result: string | null
+
+    beforeEach(() => {
+      // A single pass removes `<b>` and the orphan `</link>`, leaving `<` fused to
+      // `link="javascript:alert(1)">` — a live opener that only a fixed point catches.
+      result = sanitizeDescription('<<b>link="javascript:alert(1)">click</link>')
+    })
+
+    it('should not leave a live unsafe link in the output', () => {
+      expect(result).not.toMatch(/<link/i)
+    })
+  })
+
   describe('and a link points at the cloud-metadata IP', () => {
     let result: string | null
 

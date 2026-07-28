@@ -100,25 +100,15 @@ function isSafeLinkTarget(target: string): boolean {
   return !isInternalLinkHost(url.hostname.toLowerCase())
 }
 
-/**
- * Neutralize unsafe markup in a creator/user-authored description while preserving safe
- * hyperlinks. `<link>` tags pointing at public http(s) URLs — the legitimate use case — are
- * kept; links to any other scheme (or an internal/loopback/metadata host) and every other
- * markup tag are stripped, dropping both sides of a stripped link so no orphan `</link>`
- * remains. Stripping rather than HTML-escaping keeps the text clean, since TMP does not decode
- * entities like `&lt;`. Returns null for empty (or fully-stripped) input to match the
- * `string | null` column shape.
- *
- * @param description - The raw creator/user-authored description (nullable).
- * @returns The description with unsafe markup removed, or null when nothing is left.
- */
-export function sanitizeDescription(description: string | null | undefined): string | null {
-  if (!description) return null
+// Upper bound on sanitization passes (see sanitizeDescription). Real content stabilizes in one
+// pass; a reassembly attack needs two. Beyond this we fail closed instead of looping.
+const MAX_SANITIZE_PASSES = 5
 
-  // `replace` visits matches left-to-right, so a stack records whether the `<link>` currently
-  // being closed was kept, to decide its `</link>`.
+// One left-to-right strip pass over `text`. A stack records whether the `<link>` currently being
+// closed was kept, to decide its `</link>`.
+function stripMarkupOnce(text: string): string {
   const openLinkKept: boolean[] = []
-  const sanitized = description.replace(MARKUP_TAG_REGEX, (tag) => {
+  return text.replace(MARKUP_TAG_REGEX, (tag) => {
     if (LINK_CLOSE_TAG_REGEX.test(tag)) {
       // Drop orphan closers; otherwise mirror the matching opener.
       return openLinkKept.length > 0 && openLinkKept.pop() ? tag : ''
@@ -131,7 +121,36 @@ export function sanitizeDescription(description: string | null | undefined): str
     }
     return ''
   })
-  return sanitized || null
+}
+
+/**
+ * Neutralize unsafe markup in a creator/user-authored description while preserving safe
+ * hyperlinks. `<link>` tags pointing at public http(s) URLs — the legitimate use case — are
+ * kept; links to any other scheme (or an internal/loopback/metadata host) and every other
+ * markup tag are stripped, dropping both sides of a stripped link so no orphan `</link>`
+ * remains. Stripping rather than HTML-escaping keeps the text clean, since TMP does not decode
+ * entities like `&lt;`. Returns null for empty (or fully-stripped) input to match the
+ * `string | null` column shape.
+ *
+ * Stripping a tag can fuse residual text into a NEW tag the single pass never revisits (e.g.
+ * `<<b>link="javascript:…">` → strip `<b>` → live `<link…>`), so we re-run to a fixed point.
+ * Each changing pass strictly shortens the string, so it converges — at the stable point the
+ * only tags left are safe links that were kept. If a pathological input has not stabilized
+ * within MAX_SANITIZE_PASSES we fail closed by removing every angle bracket.
+ *
+ * @param description - The raw creator/user-authored description (nullable).
+ * @returns The description with unsafe markup removed, or null when nothing is left.
+ */
+export function sanitizeDescription(description: string | null | undefined): string | null {
+  if (!description) return null
+
+  let current = description
+  for (let pass = 0; pass < MAX_SANITIZE_PASSES; pass++) {
+    const next = stripMarkupOnce(current)
+    if (next === current) return current || null
+    current = next
+  }
+  return current.replace(/[<>]/g, '') || null
 }
 
 /**
