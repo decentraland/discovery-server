@@ -57,7 +57,8 @@ describe('when reading worlds', () => {
         id: 'my-world.dcl.eth',
         world_name: 'my-world.dcl.eth',
         description: 'Enter <link="file:///etc/passwd">x</link> now',
-        image: 'https://10.0.0.1/thumb.png'
+        image: 'https://10.0.0.1/thumb.png',
+        highlighted_image: 'javascript:alert(1)'
       } as never)
     })
 
@@ -73,6 +74,13 @@ describe('when reading worlds', () => {
       const result = await worlds.getWorld('my-world.dcl.eth')
 
       expect(result.image).toBeNull()
+    })
+
+    it('should reject the unsafe highlighted_image on read', async () => {
+      const worlds = await createWorldsComponent({ pg, worldsRepository, worldsLiveData, logs })
+      const result = await worlds.getWorld('my-world.dcl.eth')
+
+      expect(result.highlighted_image).toBeNull()
     })
   })
 })

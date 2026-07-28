@@ -49,6 +49,7 @@ export async function createDestinationsComponent(
           ...destination,
           description: sanitizeDescription(destination.description),
           image: sanitizeImageUrl(destination.image),
+          highlighted_image: sanitizeImageUrl(destination.highlighted_image),
           user_visits:
             destination.kind === 'place' && destination.base_position
               ? await sceneStats.getVisits(destination.base_position)

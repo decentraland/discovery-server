@@ -34,6 +34,7 @@ export async function createPlacesComponent(
       ...place,
       description: sanitizeDescription(place.description),
       image: sanitizeImageUrl(place.image),
+      highlighted_image: sanitizeImageUrl(place.highlighted_image),
       user_count,
       user_visits,
       ...(realms ? { realms_detail: realms } : {})

@@ -18,11 +18,11 @@
 // re-assemble into a live unsafe link (fail-closed).
 const MARKUP_TAG_REGEX = /<\/?[a-zA-Z][^>]*>/g
 
-// A TMP `<link=…>` / `<link="…">` opening tag (capturing the optionally quoted target) and
-// its matching `</link>` closing tag. The opening pattern only matches a *clean* single-value
-// link tag — any extra attributes or stray quotes fall through to the strip branch, so
-// ambiguous tags are never preserved (fail-safe).
-const LINK_OPEN_TAG_REGEX = /^<link\s*=\s*"?([^"<>]*)"?\s*>$/i
+// A TMP `<link=…>` / `<link="…">` opening tag and its matching `</link>` closing tag. The
+// opening pattern matches the quoted (group 1) and unquoted (group 2) forms as separate
+// alternatives, so a *mismatched* quote (`<link="x>` / `<link=x">`) matches neither and falls
+// through to the strip branch — only a clean single-value link tag is ever preserved (fail-safe).
+const LINK_OPEN_TAG_REGEX = /^<link\s*=\s*(?:"([^"<>]*)"|([^"<>]*))\s*>$/i
 const LINK_CLOSE_TAG_REGEX = /^<\/link\s*>$/i
 
 // A `<`/`</` that begins a `link` tag with NO closing `>` before the next `<` or end of string —
@@ -121,7 +121,7 @@ function stripMarkupOnce(text: string): string {
     }
     const openMatch = tag.match(LINK_OPEN_TAG_REGEX)
     if (openMatch) {
-      const keep = isSafeLinkTarget(openMatch[1])
+      const keep = isSafeLinkTarget(openMatch[1] ?? openMatch[2])
       openLinkKept.push(keep)
       return keep ? tag : ''
     }

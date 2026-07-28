@@ -97,7 +97,8 @@ describe('when reading places', () => {
         id: '123e4567-e89b-12d3-a456-426614174000',
         base_position: '0,0',
         description: 'Visit <link="decentraland://?position=0,0">here</link>',
-        image: 'https://169.254.169.254/thumb.png'
+        image: 'https://169.254.169.254/thumb.png',
+        highlighted_image: 'javascript:alert(1)'
       } as AggregatePlace
       placesRepository.findByIdWithAggregates.mockResolvedValueOnce(place)
     })
@@ -115,6 +116,13 @@ describe('when reading places', () => {
 
       expect(result.image).toBeNull()
     })
+
+    it('should reject the unsafe highlighted_image on read', async () => {
+      const places = await createPlacesComponent({ pg, placesRepository, hotScenes, sceneStats, catalystClient, logs })
+      const result = await places.getPlace('123e4567-e89b-12d3-a456-426614174000')
+
+      expect(result.highlighted_image).toBeNull()
+    })
   })
 
   describe('and listing places', () => {
@@ -131,7 +139,7 @@ describe('when reading places', () => {
       const result = await places.getPlaces({ only_highlighted: true })
 
       expect(result).toEqual({
-        data: [{ ...place, description: null, image: null, user_count: 0, user_visits: 0 }],
+        data: [{ ...place, description: null, image: null, highlighted_image: null, user_count: 0, user_visits: 0 }],
         total: 1
       })
     })

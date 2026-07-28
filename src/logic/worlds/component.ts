@@ -22,6 +22,7 @@ export async function createWorldsComponent(
       ...world,
       description: sanitizeDescription(world.description),
       image: sanitizeImageUrl(world.image),
+      highlighted_image: sanitizeImageUrl(world.highlighted_image),
       user_count: await worldsLiveData.getUserCount(world.world_name)
     }
   }

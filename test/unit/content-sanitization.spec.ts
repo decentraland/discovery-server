@@ -102,6 +102,36 @@ describe('when sanitizing a description', () => {
     })
   })
 
+  describe('and a link tag has mismatched quotes', () => {
+    let openQuoteOnly: string | null
+    let closeQuoteOnly: string | null
+
+    beforeEach(() => {
+      openQuoteOnly = sanitizeDescription('<link="https://example.com>click')
+      closeQuoteOnly = sanitizeDescription('<link=https://example.com">click')
+    })
+
+    it('should strip a tag with an opening quote but no closing quote', () => {
+      expect(openQuoteOnly).not.toMatch(/<link/i)
+    })
+
+    it('should strip a tag with a closing quote but no opening quote', () => {
+      expect(closeQuoteOnly).not.toMatch(/<link/i)
+    })
+  })
+
+  describe('and a link points at a fully-qualified public host (trailing dot)', () => {
+    let result: string | null
+
+    beforeEach(() => {
+      result = sanitizeDescription('<link="https://example.com./">ok</link>')
+    })
+
+    it('should keep it (a trailing dot does not make a public host internal)', () => {
+      expect(result).toBe('<link="https://example.com./">ok</link>')
+    })
+  })
+
   describe('and a link points at the cloud-metadata IP', () => {
     let result: string | null
 

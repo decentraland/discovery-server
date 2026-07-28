@@ -41,6 +41,7 @@ const RECURRENCE_KEYS: Array<keyof UpdateEventPayload> = [
 // since an event url can legitimately be a deep link.
 const MODERATED_PATCH_CONTENT_KEYS: Array<keyof UpdateEventPayload> = [
   'name',
+  'user_name',
   'description',
   'image',
   'image_vertical',
@@ -50,8 +51,10 @@ const MODERATED_PATCH_CONTENT_KEYS: Array<keyof UpdateEventPayload> = [
 
 // Location identity fields resolved server-side into the update row; a change to any of them
 // moves where the event points and re-opens moderation. Compared against the resolved values
-// (not the raw payload) so `world` name → boolean/`world_id` resolution is handled correctly.
-const MODERATED_LOCATION_KEYS: Array<keyof Event> = ['x', 'y', 'server', 'world_id']
+// (not the raw payload) so `world` name → boolean/`world_id`/`place_id` resolution is handled
+// correctly — `world` + `place_id` are included so flipping a place event to a world (or vice
+// versa) can't keep approval when `world_id` alone is unchanged (e.g. stays null).
+const MODERATED_LOCATION_KEYS: Array<keyof Event> = ['x', 'y', 'server', 'world', 'world_id', 'place_id']
 
 /**
  * Whether a moderated content field's incoming value differs from what the event currently holds.
@@ -387,7 +390,9 @@ export async function createEventsComponent(
       name: payload.name,
       image: presentation.image,
       image_vertical: sanitizeImageUrl(payload.image_vertical),
-      description: payload.description ?? null,
+      // Sanitize on write so unsafe TMP markup is never persisted raw (read-boundary
+      // sanitization stays as defense-in-depth for any legacy/ETL rows).
+      description: sanitizeDescription(payload.description),
       start_at: props.start_at,
       finish_at: props.finish_at,
       duration: props.duration,
@@ -487,6 +492,9 @@ export async function createEventsComponent(
     // below overrides `image` with a re-derived (already-sanitized) value.
     if ('image' in patch) update.image = sanitizeImageUrl(patch.image)
     if ('image_vertical' in patch) update.image_vertical = sanitizeImageUrl(patch.image_vertical)
+    // Persist descriptions sanitized so raw TMP markup is never stored (even when it sanitizes
+    // to the same visible text and so doesn't itself re-open moderation).
+    if ('description' in patch) update.description = sanitizeDescription(patch.description)
 
     // Timing / recurrence: recompute the materialized window from the merged rule.
     if (RECURRENCE_KEYS.some((key) => key in patch)) {

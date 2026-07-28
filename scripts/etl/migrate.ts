@@ -117,7 +117,7 @@ export async function migrateWorlds(pools: EtlPools, options: EtlOptions = {}): 
           [
             String(w.id).toLowerCase(), w.world_name, w.title, sanitizeDescription(w.description), sanitizeImageUrl(w.image), w.content_rating, w.categories,
             w.owner, w.show_in_places, w.single_player, w.skybox_time, w.is_private, w.likes, w.dislikes, w.favorites,
-            w.like_rate, w.like_score, w.highlighted, w.highlighted_image, w.ranking, w.created_at, w.updated_at
+            w.like_rate, w.like_score, w.highlighted, sanitizeImageUrl(w.highlighted_image), w.ranking, w.created_at, w.updated_at
           ]
         )
         loaded++
@@ -168,7 +168,7 @@ export async function migratePlaces(pools: EtlPools, options: EtlOptions = {}): 
           [
             p.id, p.title, sanitizeDescription(p.description), sanitizeImageUrl(p.image), p.owner, p.creator_address, p.positions, p.base_position,
             p.contact_name, p.contact_email, p.content_rating, p.likes, p.dislikes, p.favorites, p.like_rate,
-            p.like_score, p.ranking, p.highlighted, p.highlighted_image, p.disabled, p.disabled_at, p.disabled_reason,
+            p.like_score, p.ranking, p.highlighted, sanitizeImageUrl(p.highlighted_image), p.disabled, p.disabled_at, p.disabled_reason,
             p.world, p.world_name, resolvedWorldId, p.deployed_at, p.categories, p.sdk, p.textsearch, p.created_at,
             p.updated_at
           ]

@@ -844,5 +844,71 @@ describe('when creating an event', () => {
         )
       })
     })
+
+    describe('and the owner changes the displayed creator name', () => {
+      beforeEach(async () => {
+        const events = await createEventsComponent(components)
+        await events.updateEvent('11111111-1111-4111-8111-111111111111', { user_name: 'Impersonator' }, '0xowner', {})
+      })
+
+      it('should re-queue the event for moderation by clearing approval', () => {
+        expect(components.eventsRepository.update).toHaveBeenCalledWith(
+          components.pg,
+          '11111111-1111-4111-8111-111111111111',
+          expect.objectContaining({ approved: false, approved_by: null, highlighted: false })
+        )
+      })
+    })
+
+    describe('and the owner injects unsafe markup that sanitizes to the current description', () => {
+      let patch: any
+
+      beforeEach(async () => {
+        const events = await createEventsComponent(components)
+        await events.updateEvent(
+          '11111111-1111-4111-8111-111111111111',
+          { description: '<link="file:///etc/passwd">Original description</link>' },
+          '0xowner',
+          {}
+        )
+        patch = components.eventsRepository.update.mock.calls[0][2]
+      })
+
+      it('should keep the event approved since the visible content did not change', () => {
+        expect(patch.approved).toBeUndefined()
+      })
+
+      it('should still persist the description sanitized, not the raw markup', () => {
+        expect(patch.description).toBe('Original description')
+      })
+    })
+  })
+
+  describe('and creating an event whose description contains client-rendered markup', () => {
+    beforeEach(() => {
+      components.eventsRepository.create.mockImplementation(async (_c: unknown, row: any) => ({
+        id: '11111111-1111-4111-8111-111111111111',
+        ...row
+      }))
+    })
+
+    it('should persist the description sanitized', async () => {
+      const events = await createEventsComponent(components)
+      await events.createEvent(
+        {
+          name: 'Party',
+          start_at: new Date(Date.now() + 3600_000).toISOString(),
+          x: 0,
+          y: 0,
+          description: 'Join <link="decentraland://?position=0,0">here</link> now'
+        },
+        '0xUSER'
+      )
+
+      expect(components.eventsRepository.create).toHaveBeenCalledWith(
+        components.pg,
+        expect.objectContaining({ description: 'Join here now' })
+      )
+    })
   })
 })
