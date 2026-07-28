@@ -192,6 +192,26 @@ export function sanitizeImageUrl(value: string | null | undefined): string | nul
 }
 
 /**
+ * Reduce a short label (a name/title, not a rich-text description) to plain text: strip EVERY
+ * markup tag — including the safe `<link="https://…">` tags `sanitizeDescription` deliberately
+ * keeps — so a label can never carry a clickable link. Runs to a fixed point (removing a tag can
+ * fuse residual text into a new one) and drops any unclosed `<link`, matching sanitizeDescription.
+ *
+ * @param value - The raw label (nullable).
+ * @returns The label with all markup removed, or null when nothing is left.
+ */
+export function sanitizePlainText(value: string | null | undefined): string | null {
+  if (!value) return null
+  let current = value
+  for (let pass = 0; pass < MAX_SANITIZE_PASSES; pass++) {
+    const next = current.replace(MARKUP_TAG_REGEX, '').replace(UNCLOSED_LINK_LT_REGEX, '')
+    if (next === current) return current || null
+    current = next
+  }
+  return current.replace(/[<>]/g, '') || null
+}
+
+/**
  * Sanitize the user-visible content fields shared by place / world / destination aggregates
  * (`description` + `image` + `highlighted_image`). Applied at every public read boundary — the
  * places/worlds/destinations decorators and the moderation responses — so a row written before

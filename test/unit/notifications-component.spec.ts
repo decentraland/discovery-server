@@ -317,13 +317,15 @@ describe('when running the notification crons', () => {
       expect(publish).not.toHaveBeenCalled()
     })
 
-    describe('and the community metadata carries unsafe values', () => {
+    describe('and the community metadata carries markup and an unsafe thumbnail', () => {
       let metadata: any
 
       beforeEach(async () => {
         components.communitiesClient.getCommunity.mockResolvedValue({
           id: 'community-1',
-          name: 'Evil <link="decentraland://x">Squad</link>',
+          // A name is a plain-text label, so even a *safe* link tag must be stripped (not kept
+          // as clickable markup the way a description would keep it).
+          name: 'Evil <link="https://evil.example">Squad</link>',
           thumbnailRaw: 'javascript:alert(1)'
         })
         const notifications = await createNotificationsComponent(components)
@@ -331,8 +333,12 @@ describe('when running the notification crons', () => {
         metadata = publish.mock.calls[0][0][0].metadata
       })
 
-      it('should strip markup from the community name in the description', () => {
+      it('should reduce the community name to plain text in the description', () => {
         expect(metadata.description).toBe('The Evil Squad Community has added a new event.')
+      })
+
+      it('should reduce the community name to plain text in communityName', () => {
+        expect(metadata.communityName).toBe('Evil Squad')
       })
 
       it('should drop the unsafe community thumbnail', () => {

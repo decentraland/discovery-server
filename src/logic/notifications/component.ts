@@ -2,7 +2,7 @@ import { Events } from '@dcl/schemas'
 import type { AppComponents } from '../../types'
 import type { Event } from '../../types/entities'
 import type { PublishableEvents } from '../../adapters/sns-publisher'
-import { sanitizeDescription, sanitizeImageUrl } from '../content-sanitization'
+import { sanitizeDescription, sanitizeImageUrl, sanitizePlainText } from '../content-sanitization'
 import type { INotificationsComponent } from './types'
 
 const UPCOMING_WINDOW_MS = 60 * 60 * 1000
@@ -249,9 +249,10 @@ export async function createNotificationsComponent(
       if (!community || !members.length) return
       const now = Date.now()
       // Community metadata is externally sourced/user-authored, so sanitize it at this boundary
-      // too: strip TMP markup from the name (it flows into the rendered `description`) and
-      // reject an unsafe thumbnail URL, matching how event fields are handled.
-      const communityName = sanitizeDescription(community.name) ?? ''
+      // too. The name is a label, so strip ALL markup (sanitizePlainText — no safe-link
+      // preservation) since it flows into the rendered `description`; the thumbnail is rejected
+      // if it isn't a safe URL, matching how event fields are handled.
+      const communityName = sanitizePlainText(community.name) ?? ''
       const description = `The ${communityName} Community has added a new event.`
       const payload: PublishableEvents = members.map(
         (member) =>

@@ -50,7 +50,11 @@ const MODERATED_PATCH_CONTENT_KEYS: Array<keyof UpdateEventPayload> = [
   // Public location labels a client can set directly; changing them on an approved event alters
   // what viewers see, so they re-open moderation like the other visible fields.
   'estate_name',
-  'scene_name'
+  'scene_name',
+  // Curated-collection membership: `schedules` is an ungated owner-editable field that drives
+  // public curation (`schedule = ANY(e.schedules)`), so attaching an approved event to a curated
+  // schedule must re-open moderation rather than silently gaining that distribution.
+  'schedules'
 ]
 
 // Location identity fields resolved server-side into the update row; a change to any of them
