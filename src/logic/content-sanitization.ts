@@ -25,6 +25,12 @@ const MARKUP_TAG_REGEX = /<\/?[a-zA-Z][^>]*>/g
 const LINK_OPEN_TAG_REGEX = /^<link\s*=\s*"?([^"<>]*)"?\s*>$/i
 const LINK_CLOSE_TAG_REGEX = /^<\/link\s*>$/i
 
+// A `<`/`</` that begins a `link` tag with NO closing `>` before the next `<` or end of string —
+// an unclosed opener the tag strip leaves untouched (a real TMP link needs its `>`). Its `<` is
+// dropped so it can never be read as a link; a kept safe link / closer keeps its `>` and fails
+// the negative lookahead, so it is left intact.
+const UNCLOSED_LINK_LT_REGEX = /<(?=\/?link\b)(?![^<>]*>)/gi
+
 // Reserved / internal-use DNS suffixes that never belong to a public host.
 const INTERNAL_HOST_SUFFIXES = [
   '.localhost',
@@ -123,6 +129,12 @@ function stripMarkupOnce(text: string): string {
   })
 }
 
+// One sanitization pass: strip complete markup tags, then drop the `<` of any unclosed `<link`
+// left behind so removed markup can never leave a dangling link opener.
+function stripPass(text: string): string {
+  return stripMarkupOnce(text).replace(UNCLOSED_LINK_LT_REGEX, '')
+}
+
 /**
  * Neutralize unsafe markup in a creator/user-authored description while preserving safe
  * hyperlinks. `<link>` tags pointing at public http(s) URLs — the legitimate use case — are
@@ -133,10 +145,11 @@ function stripMarkupOnce(text: string): string {
  * `string | null` column shape.
  *
  * Stripping a tag can fuse residual text into a NEW tag the single pass never revisits (e.g.
- * `<<b>link="javascript:…">` → strip `<b>` → live `<link…>`), so we re-run to a fixed point.
- * Each changing pass strictly shortens the string, so it converges — at the stable point the
- * only tags left are safe links that were kept. If a pathological input has not stabilized
- * within MAX_SANITIZE_PASSES we fail closed by removing every angle bracket.
+ * `<<b>link="javascript:…">` → strip `<b>` → live `<link…>`), so we re-run `stripPass` to a
+ * fixed point. Each changing pass strictly shortens the string, so it converges — at the stable
+ * point the only complete tags left are safe links that were kept, and any unclosed `<link`
+ * has had its `<` dropped by `stripPass`. If a pathological input has not stabilized within
+ * MAX_SANITIZE_PASSES we fail closed by removing every angle bracket.
  *
  * @param description - The raw creator/user-authored description (nullable).
  * @returns The description with unsafe markup removed, or null when nothing is left.
@@ -146,7 +159,7 @@ export function sanitizeDescription(description: string | null | undefined): str
 
   let current = description
   for (let pass = 0; pass < MAX_SANITIZE_PASSES; pass++) {
-    const next = stripMarkupOnce(current)
+    const next = stripPass(current)
     if (next === current) return current || null
     current = next
   }
