@@ -100,7 +100,9 @@ describe('when reading places', () => {
         description: 'Visit <link="decentraland://?position=0,0">here</link>',
         image: 'https://169.254.169.254/thumb.png',
         highlighted_image: 'javascript:alert(1)',
-        contact_name: 'Owner <b>x</b>'
+        contact_name: 'Owner <b>x</b>',
+        contact_email: 'a@b.com <#00ff00>x</color>',
+        categories: ['game', '<link="file:///x">poi</link>', '<#000000>']
       } as AggregatePlace
       placesRepository.findByIdWithAggregates.mockResolvedValueOnce(place)
     })
@@ -124,6 +126,20 @@ describe('when reading places', () => {
       const result = await places.getPlace('123e4567-e89b-12d3-a456-426614174000')
 
       expect(result.contact_name).toBe('Owner x')
+    })
+
+    it('should reduce the contact email to plain text on read', async () => {
+      const places = await createPlacesComponent({ pg, placesRepository, hotScenes, sceneStats, catalystClient, logs })
+      const result = await places.getPlace('123e4567-e89b-12d3-a456-426614174000')
+
+      expect(result.contact_email).toBe('a@b.com x')
+    })
+
+    it('should strip markup from category tags and drop pure-markup ones on read', async () => {
+      const places = await createPlacesComponent({ pg, placesRepository, hotScenes, sceneStats, catalystClient, logs })
+      const result = await places.getPlace('123e4567-e89b-12d3-a456-426614174000')
+
+      expect(result.categories).toEqual(['game', 'poi'])
     })
 
     it('should reject the internal-host image on read', async () => {
@@ -163,6 +179,8 @@ describe('when reading places', () => {
             image: null,
             highlighted_image: null,
             contact_name: null,
+            contact_email: null,
+            categories: [],
             user_count: 0,
             user_visits: 0
           }

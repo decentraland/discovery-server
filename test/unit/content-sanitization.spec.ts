@@ -1,6 +1,18 @@
-import { sanitizeDescription, sanitizeImageUrl } from '../../src/logic/content-sanitization'
+import { sanitizeDescription, sanitizeImageUrl, sanitizePlainText } from '../../src/logic/content-sanitization'
 
 describe('when sanitizing a description', () => {
+  describe('and it contains a TMP color shorthand tag', () => {
+    let result: string | null
+
+    beforeEach(() => {
+      result = sanitizeDescription('Sale <#00ff00>green</color> and <link="https://ok.com">link</link>')
+    })
+
+    it('should strip the non-letter color tag but keep the safe link', () => {
+      expect(result).toBe('Sale green and <link="https://ok.com">link</link>')
+    })
+  })
+
   describe('and it embeds a TMP <link> tag to a custom protocol', () => {
     let result: string | null
 
@@ -250,6 +262,44 @@ describe('when sanitizing a description', () => {
 
     it('should return null', () => {
       expect(result).toBeNull()
+    })
+  })
+})
+
+describe('when reducing a label to plain text', () => {
+  describe('and it contains a safe link tag', () => {
+    let result: string | null
+
+    beforeEach(() => {
+      result = sanitizePlainText('Cool <link="https://ok.com">Place</link>')
+    })
+
+    it('should strip even the safe link (labels carry no markup)', () => {
+      expect(result).toBe('Cool Place')
+    })
+  })
+
+  describe('and it contains a TMP color shorthand tag', () => {
+    let result: string | null
+
+    beforeEach(() => {
+      result = sanitizePlainText('Sale <#000000>hidden</color>')
+    })
+
+    it('should strip the non-letter color tag', () => {
+      expect(result).toBe('Sale hidden')
+    })
+  })
+
+  describe('and it is ordinary prose with an invalid pseudo-tag', () => {
+    let result: string | null
+
+    beforeEach(() => {
+      result = sanitizePlainText('issue <#123 open> and 5 < 10 > 3')
+    })
+
+    it('should leave non-tag text untouched', () => {
+      expect(result).toBe('issue <#123 open> and 5 < 10 > 3')
     })
   })
 })

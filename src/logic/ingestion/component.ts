@@ -182,7 +182,7 @@ export async function createIngestionComponent(
       owner: metadata.owner?.toLowerCase() || null,
       creator_address: metadata.creator?.toLowerCase() || null,
       contact_name: contactName,
-      contact_email: metadata.contact?.email || null,
+      contact_email: sanitizePlainText(metadata.contact?.email),
       content_rating: deriveContentRating(metadata.policy?.contentRating, existing?.content_rating ?? null),
       categories: [],
       sdk: metadata.runtimeVersion || null,

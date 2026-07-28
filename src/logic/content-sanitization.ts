@@ -8,15 +8,16 @@
 // handler, and an http(s) URL aimed at an internal/loopback/metadata host points the
 // viewer's browser at their own network.
 
-// Matches an HTML-/TMP-style markup tag: `<` followed by an optional closing slash and a
-// tag name that begins with a letter, up to the next `>` (`<link="…">`, `</link>`, `<b>`,
-// `<color=#fff>`). A bare `<` in prose ("5 < 10") is left untouched because it isn't
-// immediately followed by a letter or slash, so plain text and Markdown survive intact.
-// The body is `[^>]*` (not `[^<>]*`) so a malformed opener that embeds a nested tag —
-// `<link="javascript:…"<b>` — is captured as one span up to the first `>` and rejected whole,
-// rather than being left as an unmatched `<link…` fragment that a later strip could
-// re-assemble into a live unsafe link (fail-closed).
-const MARKUP_TAG_REGEX = /<\/?[a-zA-Z][^>]*>/g
+// Matches an HTML-/TMP-style markup tag. Two alternatives:
+//   1. `<` + optional closing slash + a tag name beginning with a letter, up to the next `>`
+//      (`<link="…">`, `</link>`, `<b>`, `<color=#fff>`). The body is `[^>]*` (not `[^<>]*`) so a
+//      malformed opener embedding a nested tag — `<link="javascript:…"<b>` — is captured as one
+//      span and rejected whole, not left as a `<link…` fragment a later strip could re-assemble.
+//   2. TMP's non-letter color shorthand `<#rgb>` / `<#rrggbb>` / `<#rrggbbaa>` — it doesn't start
+//      with a letter, so alternative 1 misses it; matched precisely (3–8 hex) so real prose like
+//      "issue <#123 open>" (invalid hex) is left untouched.
+// A bare `<` in prose ("5 < 10") is left alone because it isn't followed by a letter/slash/`#hex`.
+const MARKUP_TAG_REGEX = /<\/?[a-zA-Z][^>]*>|<#[0-9a-fA-F]{3,8}>/g
 
 // A TMP `<link=…>` / `<link="…">` opening tag and its matching `</link>` closing tag. The
 // opening pattern matches the quoted (group 1) and unquoted (group 2) forms as separate
@@ -213,14 +214,15 @@ export function sanitizePlainText(value: string | null | undefined): string | nu
 
 /**
  * Sanitize the user-visible content fields shared by place / world / destination aggregates.
- * `title` / `contact_name` are plain-text labels (all markup stripped), `description` is rich
- * text (safe links kept), and `image` / `highlighted_image` must be safe public URLs. Applied at
- * every public read boundary — the places/worlds/destinations decorators and the moderation
- * responses — so a row written before sanitization existed (or imported raw by the ETL) can
- * never reach a consumer unsanitized. Returns a shallow copy; other fields are untouched.
+ * `title` / `contact_name` / `contact_email` are plain-text labels (all markup stripped),
+ * `description` is rich text (safe links kept), and `image` / `highlighted_image` must be safe
+ * public URLs. Applied at every public read boundary — the places/worlds/destinations decorators
+ * and the moderation responses — so a row written before sanitization existed (or imported raw
+ * by the ETL) can never reach a consumer unsanitized. Returns a shallow copy; other fields are
+ * untouched.
  *
  * @param entity - A place/world/destination aggregate carrying the content fields.
- * @returns A copy with title/contact_name/description/image/highlighted_image sanitized.
+ * @returns A copy with title/contact_name/contact_email/description/image/highlighted_image sanitized.
  */
 export function sanitizeEntityContent<
   T extends {
@@ -229,6 +231,8 @@ export function sanitizeEntityContent<
     image: string | null
     highlighted_image: string | null
     contact_name: string | null
+    contact_email: string | null
+    categories: string[]
   }
 >(entity: T): T {
   return {
@@ -237,6 +241,10 @@ export function sanitizeEntityContent<
     description: sanitizeDescription(entity.description),
     image: sanitizeImageUrl(entity.image),
     highlighted_image: sanitizeImageUrl(entity.highlighted_image),
-    contact_name: sanitizePlainText(entity.contact_name)
+    contact_name: sanitizePlainText(entity.contact_name),
+    contact_email: sanitizePlainText(entity.contact_email),
+    // Category tags are plain-text labels; worlds/events don't validate them against the active
+    // set the way place ingestion does, so strip markup and drop any tag that was pure markup.
+    categories: (entity.categories ?? []).map((c) => sanitizePlainText(c)).filter((c): c is string => !!c)
   }
 }

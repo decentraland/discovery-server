@@ -215,6 +215,8 @@ export async function createEventsComponent(
       // contact is a label, details is free text that may carry safe links.
       ...(isOwner ? { contact: sanitizePlainText(contact), details: sanitizeDescription(details) } : {}),
       user_name: foundationAddresses.has(event.user) ? 'Decentraland Foundation' : sanitizePlainText(event.user_name),
+      // Category tags are unvalidated on events; reduce each to plain text and drop pure-markup ones.
+      categories: (event.categories ?? []).map((c) => sanitizePlainText(c)).filter((c): c is string => !!c),
       place_id: event.place_id ?? event.world_id,
       estate_name: sanitizePlainText(event.estate_name ?? event.scene_name),
       position: [event.x, event.y],

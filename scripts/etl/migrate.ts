@@ -167,7 +167,7 @@ export async function migratePlaces(pools: EtlPools, options: EtlOptions = {}): 
              updated_at = EXCLUDED.updated_at`,
           [
             p.id, sanitizePlainText(p.title), sanitizeDescription(p.description), sanitizeImageUrl(p.image), p.owner, p.creator_address, p.positions, p.base_position,
-            sanitizePlainText(p.contact_name), p.contact_email, p.content_rating, p.likes, p.dislikes, p.favorites, p.like_rate,
+            sanitizePlainText(p.contact_name), sanitizePlainText(p.contact_email), p.content_rating, p.likes, p.dislikes, p.favorites, p.like_rate,
             p.like_score, p.ranking, p.highlighted, sanitizeImageUrl(p.highlighted_image), p.disabled, p.disabled_at, p.disabled_reason,
             p.world, p.world_name, resolvedWorldId, p.deployed_at, p.categories, p.sdk, p.textsearch, p.created_at,
             p.updated_at
