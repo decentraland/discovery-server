@@ -19,6 +19,20 @@ function sanitizeSchedule(schedule: Schedule): Schedule {
   }
 }
 
+// Sanitize the content fields of a create/update payload so unsafe values are never persisted
+// at rest either (only fields actually present are touched, so a partial update stays partial).
+function sanitizeScheduleInput<T extends Partial<CreateScheduleInput>>(input: T): T {
+  const out = { ...input }
+  if ('name' in input) out.name = sanitizePlainText(input.name) ?? ''
+  if ('theme' in input) out.theme = sanitizePlainText(input.theme ?? null)
+  if ('description' in input) out.description = sanitizeDescription(input.description ?? null)
+  if ('image' in input) out.image = sanitizeImageUrl(input.image ?? null)
+  if ('background' in input) {
+    out.background = (input.background ?? []).map((url) => sanitizeImageUrl(url)).filter((url): url is string => !!url)
+  }
+  return out
+}
+
 /**
  * Curated schedule reads plus create/update. Writes are gated at the route by the
  * `EditAnySchedule` permission; the component owns the persistence orchestration.
@@ -41,11 +55,11 @@ export async function createSchedulesComponent(
   }
 
   async function createSchedule(input: CreateScheduleInput): Promise<Schedule> {
-    return sanitizeSchedule(await schedulesRepository.create(pg, input))
+    return sanitizeSchedule(await schedulesRepository.create(pg, sanitizeScheduleInput(input)))
   }
 
   async function updateSchedule(id: string, patch: UpdateScheduleInput): Promise<Schedule> {
-    const updated = await schedulesRepository.update(pg, id, patch)
+    const updated = await schedulesRepository.update(pg, id, sanitizeScheduleInput(patch))
     if (!updated) {
       throw new ScheduleNotFoundError(id)
     }

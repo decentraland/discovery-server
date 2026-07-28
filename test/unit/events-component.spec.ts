@@ -698,6 +698,7 @@ describe('when creating an event', () => {
         name: 'Party <link="decentraland://x">now</link>',
         user_name: 'Host <link="https://ok.com">x</link>',
         estate_name: 'Estate <b>bold</b>',
+        server: 'realm <link="file:///etc/passwd">x</link>',
         approved: true,
         rejected: false,
         deleted_at: null
@@ -716,6 +717,10 @@ describe('when creating an event', () => {
 
     it('should reduce the estate label to plain text', () => {
       expect(result.estate_name).toBe('Estate bold')
+    })
+
+    it('should reduce the server label to plain text', () => {
+      expect(result.server).toBe('realm x')
     })
   })
 
@@ -833,6 +838,59 @@ describe('when creating an event', () => {
       it('should keep the event approved since the moderator edit is itself a review', () => {
         const patch = components.eventsRepository.update.mock.calls[0][2]
         expect(patch.approved).toBeUndefined()
+      })
+    })
+
+    describe('and the editor is an owner who can only self-approve (ApproveOwnEvent)', () => {
+      beforeEach(() => {
+        // Owner holds ApproveOwnEvent but NOT ApproveAnyEvent/EditAnyEvent, so canApprove is true
+        // but canHighlight is false — their edit must NOT count as an in-place moderator review.
+        components.profiles.hasAnyPermission.mockImplementation(async (_user: string, perms: ProfilePermission[]) =>
+          perms.includes(ProfilePermission.ApproveOwnEvent)
+        )
+      })
+
+      describe('and they edit moderated content without re-approving', () => {
+        beforeEach(async () => {
+          const events = await createEventsComponent(components)
+          await events.updateEvent(
+            '11111111-1111-4111-8111-111111111111',
+            { description: 'Sneaky edit' },
+            '0xowner',
+            {}
+          )
+        })
+
+        it('should re-open moderation and clear the moderator highlight', () => {
+          expect(components.eventsRepository.update).toHaveBeenCalledWith(
+            components.pg,
+            '11111111-1111-4111-8111-111111111111',
+            expect.objectContaining({ approved: false, approved_by: null, highlighted: false })
+          )
+        })
+      })
+
+      describe('and they edit moderated content and explicitly re-approve in the same patch', () => {
+        let patch: any
+
+        beforeEach(async () => {
+          const events = await createEventsComponent(components)
+          await events.updateEvent(
+            '11111111-1111-4111-8111-111111111111',
+            { description: 'Edit', approved: true },
+            '0xowner',
+            {}
+          )
+          patch = components.eventsRepository.update.mock.calls[0][2]
+        })
+
+        it('should honor their explicit self-approval', () => {
+          expect(patch.approved).toBe(true)
+        })
+
+        it('should still clear the moderator highlight they cannot set', () => {
+          expect(patch.highlighted).toBe(false)
+        })
       })
     })
 

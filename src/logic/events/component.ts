@@ -211,6 +211,7 @@ export async function createEventsComponent(
       image: sanitizeImageUrl(event.image),
       image_vertical: sanitizeImageUrl(event.image_vertical),
       scene_name: sanitizePlainText(event.scene_name),
+      server: sanitizePlainText(event.server),
       // contact/details are owner-only (self-XSS), but sanitize them too for consistency:
       // contact is a label, details is free text that may carry safe links.
       ...(isOwner ? { contact: sanitizePlainText(contact), details: sanitizeDescription(details) } : {}),
@@ -616,6 +617,27 @@ export async function createEventsComponent(
     const canHighlight =
       isAdmin || (await profiles.hasAnyPermission(user, [Permission.ApproveAnyEvent, Permission.EditAnyEvent]))
 
+    // Re-open moderation when an already-approved event's public content or location changes,
+    // unless the actor is a true moderator/editor whose edit is itself the review — that is the
+    // `canHighlight` set (admin / ApproveAnyEvent / EditAnyEvent), NOT `canApprove`: an owner who
+    // can only self-approve (ApproveOwnEvent) is not trusted to review in place, so their edit
+    // clears approval and the moderator's highlight. Runs BEFORE the approve/reject/highlight
+    // blocks so an explicit, authorized re-approval below still wins — but since a non-highlighter
+    // cannot re-set `highlighted`, they can never carry a moderator's highlight across an edit.
+    const patchRecord = patch as Record<string, unknown>
+    const eventRecord = event as unknown as Record<string, unknown>
+    const moderatedContentChanged = MODERATED_PATCH_CONTENT_KEYS.some(
+      (key) => key in patch && isModeratedContentChanged(key, patchRecord[key], eventRecord[key])
+    )
+    const moderatedLocationChanged = MODERATED_LOCATION_KEYS.some(
+      (key) => key in update && (update as Record<string, unknown>)[key] !== eventRecord[key]
+    )
+    if (event.approved && !canHighlight && (moderatedContentChanged || moderatedLocationChanged)) {
+      update.approved = false
+      update.approved_by = null
+      update.highlighted = false
+    }
+
     if (canApprove) {
       if (patch.approved === true && patch.rejected === true) {
         throw new EventValidationError('an event cannot be both approved and rejected')
@@ -650,25 +672,6 @@ export async function createEventsComponent(
     // when not rejecting.
     if (canHighlight && patch.rejected !== true && patch.highlighted !== undefined) {
       update.highlighted = patch.highlighted
-    }
-
-    // Re-queue an already-approved event for moderation whenever its public content or location
-    // changes, unless the actor can approve (their edit is itself a review). Closes the
-    // edit-after-approval bypass where an owner gets a benign event approved and then edits in
-    // content that would otherwise stay live without re-review. Content is compared against the
-    // raw payload; location against the resolved `update` values (set only on a location edit).
-    const patchRecord = patch as Record<string, unknown>
-    const eventRecord = event as unknown as Record<string, unknown>
-    const contentChanged = MODERATED_PATCH_CONTENT_KEYS.some(
-      (key) => key in patch && isModeratedContentChanged(key, patchRecord[key], eventRecord[key])
-    )
-    const locationChanged = MODERATED_LOCATION_KEYS.some(
-      (key) => key in update && (update as Record<string, unknown>)[key] !== eventRecord[key]
-    )
-    if (event.approved && !canApprove && (contentChanged || locationChanged)) {
-      update.approved = false
-      update.approved_by = null
-      update.highlighted = false
     }
 
     const updated = await eventsRepository.update(pg, id, update)

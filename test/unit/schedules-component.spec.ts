@@ -89,6 +89,35 @@ describe('when getting schedules', () => {
     })
   })
 
+  describe('and creating a schedule with unsafe content in the payload', () => {
+    beforeEach(async () => {
+      schedulesRepository.create.mockResolvedValueOnce({} as Schedule)
+      const schedules = await createSchedulesComponent({ pg, schedulesRepository, logs })
+      await schedules.createSchedule({
+        name: 'Fest <link="decentraland://x">now</link>',
+        description: 'See <link="file:///etc/passwd">this</link>',
+        image: 'javascript:alert(1)',
+        theme: null,
+        background: ['https://cdn.example.org/ok.png', 'http://169.254.169.254/x.png'],
+        active: true,
+        active_since: '2026-06-01T00:00:00.000Z',
+        active_until: '2026-07-01T00:00:00.000Z'
+      })
+    })
+
+    it('should persist a sanitized payload, not the raw values', () => {
+      expect(schedulesRepository.create).toHaveBeenCalledWith(
+        pg,
+        expect.objectContaining({
+          name: 'Fest now',
+          description: 'See this',
+          image: null,
+          background: ['https://cdn.example.org/ok.png']
+        })
+      )
+    })
+  })
+
   describe('and requesting a schedule that does not exist', () => {
     beforeEach(() => {
       schedulesRepository.findById.mockResolvedValueOnce(null)
