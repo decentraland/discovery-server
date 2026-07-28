@@ -1,6 +1,6 @@
 /* eslint-disable no-console */
 import type { Pool, PoolClient } from 'pg'
-import { sanitizeDescription, sanitizeImageUrl } from '../../src/logic/content-sanitization'
+import { sanitizeDescription, sanitizeImageUrl, sanitizePlainText } from '../../src/logic/content-sanitization'
 
 /**
  * One-off ETL from the legacy places + events Postgres databases into the
@@ -115,7 +115,7 @@ export async function migrateWorlds(pools: EtlPools, options: EtlOptions = {}): 
              highlighted_image = EXCLUDED.highlighted_image, ranking = EXCLUDED.ranking,
              updated_at = EXCLUDED.updated_at`,
           [
-            String(w.id).toLowerCase(), w.world_name, w.title, sanitizeDescription(w.description), sanitizeImageUrl(w.image), w.content_rating, w.categories,
+            String(w.id).toLowerCase(), w.world_name, sanitizePlainText(w.title), sanitizeDescription(w.description), sanitizeImageUrl(w.image), w.content_rating, w.categories,
             w.owner, w.show_in_places, w.single_player, w.skybox_time, w.is_private, w.likes, w.dislikes, w.favorites,
             w.like_rate, w.like_score, w.highlighted, sanitizeImageUrl(w.highlighted_image), w.ranking, w.created_at, w.updated_at
           ]
@@ -166,8 +166,8 @@ export async function migratePlaces(pools: EtlPools, options: EtlOptions = {}): 
              categories = EXCLUDED.categories, sdk = EXCLUDED.sdk, textsearch = EXCLUDED.textsearch,
              updated_at = EXCLUDED.updated_at`,
           [
-            p.id, p.title, sanitizeDescription(p.description), sanitizeImageUrl(p.image), p.owner, p.creator_address, p.positions, p.base_position,
-            p.contact_name, p.contact_email, p.content_rating, p.likes, p.dislikes, p.favorites, p.like_rate,
+            p.id, sanitizePlainText(p.title), sanitizeDescription(p.description), sanitizeImageUrl(p.image), p.owner, p.creator_address, p.positions, p.base_position,
+            sanitizePlainText(p.contact_name), p.contact_email, p.content_rating, p.likes, p.dislikes, p.favorites, p.like_rate,
             p.like_score, p.ranking, p.highlighted, sanitizeImageUrl(p.highlighted_image), p.disabled, p.disabled_at, p.disabled_reason,
             p.world, p.world_name, resolvedWorldId, p.deployed_at, p.categories, p.sdk, p.textsearch, p.created_at,
             p.updated_at

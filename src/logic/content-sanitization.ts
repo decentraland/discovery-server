@@ -212,22 +212,31 @@ export function sanitizePlainText(value: string | null | undefined): string | nu
 }
 
 /**
- * Sanitize the user-visible content fields shared by place / world / destination aggregates
- * (`description` + `image` + `highlighted_image`). Applied at every public read boundary — the
- * places/worlds/destinations decorators and the moderation responses — so a row written before
- * sanitization existed (or imported raw by the ETL) can never reach a consumer unsanitized.
- * Returns a shallow copy; other fields are untouched.
+ * Sanitize the user-visible content fields shared by place / world / destination aggregates.
+ * `title` / `contact_name` are plain-text labels (all markup stripped), `description` is rich
+ * text (safe links kept), and `image` / `highlighted_image` must be safe public URLs. Applied at
+ * every public read boundary — the places/worlds/destinations decorators and the moderation
+ * responses — so a row written before sanitization existed (or imported raw by the ETL) can
+ * never reach a consumer unsanitized. Returns a shallow copy; other fields are untouched.
  *
  * @param entity - A place/world/destination aggregate carrying the content fields.
- * @returns A copy with description/image/highlighted_image sanitized.
+ * @returns A copy with title/contact_name/description/image/highlighted_image sanitized.
  */
 export function sanitizeEntityContent<
-  T extends { description: string | null; image: string | null; highlighted_image: string | null }
+  T extends {
+    title: string | null
+    description: string | null
+    image: string | null
+    highlighted_image: string | null
+    contact_name: string | null
+  }
 >(entity: T): T {
   return {
     ...entity,
+    title: sanitizePlainText(entity.title),
     description: sanitizeDescription(entity.description),
     image: sanitizeImageUrl(entity.image),
-    highlighted_image: sanitizeImageUrl(entity.highlighted_image)
+    highlighted_image: sanitizeImageUrl(entity.highlighted_image),
+    contact_name: sanitizePlainText(entity.contact_name)
   }
 }

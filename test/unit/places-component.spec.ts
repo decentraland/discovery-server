@@ -96,9 +96,11 @@ describe('when reading places', () => {
       place = {
         id: '123e4567-e89b-12d3-a456-426614174000',
         base_position: '0,0',
+        title: 'Cool <link="decentraland://x">Place</link>',
         description: 'Visit <link="decentraland://?position=0,0">here</link>',
         image: 'https://169.254.169.254/thumb.png',
-        highlighted_image: 'javascript:alert(1)'
+        highlighted_image: 'javascript:alert(1)',
+        contact_name: 'Owner <b>x</b>'
       } as AggregatePlace
       placesRepository.findByIdWithAggregates.mockResolvedValueOnce(place)
     })
@@ -108,6 +110,20 @@ describe('when reading places', () => {
       const result = await places.getPlace('123e4567-e89b-12d3-a456-426614174000')
 
       expect(result.description).toBe('Visit here')
+    })
+
+    it('should reduce the title to plain text on read', async () => {
+      const places = await createPlacesComponent({ pg, placesRepository, hotScenes, sceneStats, catalystClient, logs })
+      const result = await places.getPlace('123e4567-e89b-12d3-a456-426614174000')
+
+      expect(result.title).toBe('Cool Place')
+    })
+
+    it('should reduce the contact name to plain text on read', async () => {
+      const places = await createPlacesComponent({ pg, placesRepository, hotScenes, sceneStats, catalystClient, logs })
+      const result = await places.getPlace('123e4567-e89b-12d3-a456-426614174000')
+
+      expect(result.contact_name).toBe('Owner x')
     })
 
     it('should reject the internal-host image on read', async () => {
@@ -139,7 +155,18 @@ describe('when reading places', () => {
       const result = await places.getPlaces({ only_highlighted: true })
 
       expect(result).toEqual({
-        data: [{ ...place, description: null, image: null, highlighted_image: null, user_count: 0, user_visits: 0 }],
+        data: [
+          {
+            ...place,
+            title: null,
+            description: null,
+            image: null,
+            highlighted_image: null,
+            contact_name: null,
+            user_count: 0,
+            user_visits: 0
+          }
+        ],
         total: 1
       })
     })

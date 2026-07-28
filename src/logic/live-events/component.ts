@@ -1,4 +1,5 @@
 import type { AppComponents } from '../../types'
+import { sanitizePlainText } from '../content-sanitization'
 import type { ILiveEventsComponent, LiveEntityIds, NextEvent } from './types'
 
 const DEFAULT_TTL_MS = 20 * 1000
@@ -30,7 +31,11 @@ export async function createLiveEventsComponent(
         eventsRepository.getAllNextEvents(pg)
       ])
       liveEntityIds = ids
-      nextEventMap = next
+      // The next-event name is a user-authored label attached to destination reads; reduce it to
+      // plain text here (the projection bypasses the events `serialize` boundary).
+      nextEventMap = Object.fromEntries(
+        Object.entries(next).map(([key, ev]) => [key, { ...ev, name: sanitizePlainText(ev.name) ?? '' }])
+      )
       lastRefresh = Date.now()
     } catch (error: any) {
       // Back off for the TTL even on failure; keep the previous snapshot.

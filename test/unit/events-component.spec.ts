@@ -688,6 +688,37 @@ describe('when creating an event', () => {
     })
   })
 
+  describe('and reading an event whose stored labels contain client-rendered markup', () => {
+    let result: any
+
+    beforeEach(async () => {
+      components.eventsRepository.findById.mockResolvedValue({
+        id: '11111111-1111-4111-8111-111111111111',
+        user: '0xowner',
+        name: 'Party <link="decentraland://x">now</link>',
+        user_name: 'Host <link="https://ok.com">x</link>',
+        estate_name: 'Estate <b>bold</b>',
+        approved: true,
+        rejected: false,
+        deleted_at: null
+      })
+      const events = await createEventsComponent(components)
+      result = await events.getEvent('11111111-1111-4111-8111-111111111111', '0xowner')
+    })
+
+    it('should reduce the event name to plain text (all markup stripped, even safe links)', () => {
+      expect(result.name).toBe('Party now')
+    })
+
+    it('should reduce the creator name to plain text', () => {
+      expect(result.user_name).toBe('Host x')
+    })
+
+    it('should reduce the estate label to plain text', () => {
+      expect(result.estate_name).toBe('Estate bold')
+    })
+  })
+
   describe('and reading an event whose stored image points at an internal host', () => {
     let result: any
 

@@ -269,7 +269,7 @@ describe('when ingesting deployment events', () => {
           metadata: {
             scene: { base: '5,5', parcels: ['5,5'] },
             display: {
-              title: 'Scene',
+              title: 'Cool <link="decentraland://x">Scene</link>',
               description:
                 'Join <link="decentraland://?position=0,0">here</link> and <link="https://decentraland.org">site</link>'
             }
@@ -283,6 +283,10 @@ describe('when ingesting deployment events', () => {
 
     it('should strip the unsafe link and keep the safe one in the stored description', () => {
       expect(scene.description).toBe('Join here and <link="https://decentraland.org">site</link>')
+    })
+
+    it('should reduce the stored title to plain text', () => {
+      expect(scene.title).toBe('Cool Scene')
     })
   })
 

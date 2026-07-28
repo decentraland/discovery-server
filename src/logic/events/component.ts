@@ -5,7 +5,7 @@ import type { EventListFilters, CreateEventRow, UpdateEventRow } from '../../ada
 import { AllowedInputFrequencies, MAX_RECURRENT_PAST_ITERATIONS } from '../recurrence'
 import type { RecurrentEventInput } from '../recurrence'
 import { isPlaceId } from '../entity-id'
-import { sanitizeDescription, sanitizeImageUrl } from '../content-sanitization'
+import { sanitizeDescription, sanitizeImageUrl, sanitizePlainText } from '../content-sanitization'
 import { EventNotFoundError, EventUnauthorizedActionError, EventValidationError } from './errors'
 import type { CreateEventPayload, EventWithAttendance, IEventsComponent, UpdateEventPayload } from './types'
 
@@ -201,17 +201,22 @@ export async function createEventsComponent(
       !!nextStart && now >= new Date(nextStart).getTime() && now < new Date(nextStart).getTime() + event.duration
     return {
       ...rest,
-      // Strip client-rendered TMP markup (e.g. `<link="decentraland://…">`) from the
-      // user-authored description on every read path so it can't reach Application.OpenURL, and
-      // reject unsafe image URLs at the read boundary too (covers rows that predate write-time
-      // sanitization or were imported raw by the ETL).
+      // Sanitize every user-authored surface on the read path so it can't reach the TMP client
+      // raw (covers rows that predate write-time sanitization or were imported raw by the ETL):
+      // the description keeps safe links (rich text); short labels (name / user_name / estate /
+      // scene) are reduced to plain text — a label must never carry a clickable `<link>`; and
+      // image URLs must be safe public http(s).
+      name: sanitizePlainText(event.name) ?? '',
       description: sanitizeDescription(event.description),
       image: sanitizeImageUrl(event.image),
       image_vertical: sanitizeImageUrl(event.image_vertical),
-      ...(isOwner ? { contact, details } : {}),
-      user_name: foundationAddresses.has(event.user) ? 'Decentraland Foundation' : event.user_name,
+      scene_name: sanitizePlainText(event.scene_name),
+      // contact/details are owner-only (self-XSS), but sanitize them too for consistency:
+      // contact is a label, details is free text that may carry safe links.
+      ...(isOwner ? { contact: sanitizePlainText(contact), details: sanitizeDescription(details) } : {}),
+      user_name: foundationAddresses.has(event.user) ? 'Decentraland Foundation' : sanitizePlainText(event.user_name),
       place_id: event.place_id ?? event.world_id,
-      estate_name: event.estate_name ?? event.scene_name,
+      estate_name: sanitizePlainText(event.estate_name ?? event.scene_name),
       position: [event.x, event.y],
       live
     }
@@ -447,7 +452,7 @@ export async function createEventsComponent(
     }
 
     const created = await eventsRepository.create(pg, row)
-    alert(`:tada: New event submitted: ${created.name} by ${user.toLowerCase()}`)
+    alert(`:tada: New event submitted: ${sanitizePlainText(created.name) ?? ''} by ${user.toLowerCase()}`)
     return serialize(created, user)
   }
 
@@ -673,14 +678,16 @@ export async function createEventsComponent(
     const newlyApproved = !event.approved && update.approved === true
     const newlyRejected = !event.rejected && update.rejected === true
     if (canApprove && newlyApproved) {
-      alert(`:white_check_mark: Event approved: ${updated.name} by ${actor}`)
+      alert(`:white_check_mark: Event approved: ${sanitizePlainText(updated.name) ?? ''} by ${actor}`)
       // Fire-and-forget (the method swallows its own errors) so a slow/failed SNS
       // publish never blocks or fails the PATCH — same as the Slack alert above.
       void notifications.notifyEventApproved(updated)
     }
     if (canApprove && newlyRejected) {
       alert(
-        `:x: Event rejected: ${updated.name}${update.rejection_reason ? ` (${update.rejection_reason})` : ''} by ${actor}`
+        `:x: Event rejected: ${sanitizePlainText(updated.name) ?? ''}${
+          update.rejection_reason ? ` (${sanitizePlainText(update.rejection_reason) ?? ''})` : ''
+        } by ${actor}`
       )
       void notifications.notifyEventRejected(updated, updated.rejection_reason ?? '')
     }

@@ -1,8 +1,23 @@
 import type { AppComponents } from '../../types'
 import type { Schedule } from '../../types/entities'
 import type { CreateScheduleInput, UpdateScheduleInput } from '../../adapters/schedules-repository'
+import { sanitizeDescription, sanitizeImageUrl, sanitizePlainText } from '../content-sanitization'
 import type { ISchedulesComponent } from './types'
 import { ScheduleNotFoundError } from './errors'
+
+// Sanitize a curated schedule at the read boundary: name/theme are plain-text labels, description
+// is rich text, and image/background are safe public image URLs. Schedules are admin-authored,
+// but this keeps the boundary consistent so a legacy/imported unsafe value can't reach a client.
+function sanitizeSchedule(schedule: Schedule): Schedule {
+  return {
+    ...schedule,
+    name: sanitizePlainText(schedule.name) ?? '',
+    theme: sanitizePlainText(schedule.theme),
+    description: sanitizeDescription(schedule.description),
+    image: sanitizeImageUrl(schedule.image),
+    background: (schedule.background ?? []).map((url) => sanitizeImageUrl(url)).filter((url): url is string => !!url)
+  }
+}
 
 /**
  * Curated schedule reads plus create/update. Writes are gated at the route by the
@@ -14,7 +29,7 @@ export async function createSchedulesComponent(
   const { pg, schedulesRepository } = components
 
   async function getActiveSchedules(): Promise<Schedule[]> {
-    return schedulesRepository.findActive(pg)
+    return (await schedulesRepository.findActive(pg)).map(sanitizeSchedule)
   }
 
   async function getScheduleById(id: string): Promise<Schedule> {
@@ -22,11 +37,11 @@ export async function createSchedulesComponent(
     if (!schedule) {
       throw new ScheduleNotFoundError(id)
     }
-    return schedule
+    return sanitizeSchedule(schedule)
   }
 
   async function createSchedule(input: CreateScheduleInput): Promise<Schedule> {
-    return schedulesRepository.create(pg, input)
+    return sanitizeSchedule(await schedulesRepository.create(pg, input))
   }
 
   async function updateSchedule(id: string, patch: UpdateScheduleInput): Promise<Schedule> {
@@ -34,7 +49,7 @@ export async function createSchedulesComponent(
     if (!updated) {
       throw new ScheduleNotFoundError(id)
     }
-    return updated
+    return sanitizeSchedule(updated)
   }
 
   return { getActiveSchedules, getScheduleById, createSchedule, updateSchedule }

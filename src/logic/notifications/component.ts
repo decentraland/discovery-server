@@ -25,6 +25,10 @@ const truncate = (text: string, max: number): string => (text.length > max ? tex
 const describeForNotification = (description: string | null): string =>
   truncate(sanitizeDescription(description) ?? '', NOTIFICATION_DESCRIPTION_MAX)
 
+// Event name / title is a plain-text label in the payload; strip all markup so it can't carry a
+// clickable `<link>` into a notification consumer (same reason as the API `serialize`).
+const labelForNotification = (value: string | null): string => sanitizePlainText(value) ?? ''
+
 /**
  * The three SNS notification crons. Each is idempotent via a per-type cursor in
  * `notification_cursors`: it processes the half-open window (lastRun, now] (offset
@@ -100,12 +104,12 @@ export async function createNotificationsComponent(
           key: `${event.id}-${startOccurrence(event)}-${attendee.user}-starts-soon`,
           timestamp: now,
           metadata: {
-            name: event.name,
+            name: labelForNotification(event.name),
             image: sanitizeImageUrl(event.image) ?? '',
             link: link(event),
             startsAt: (event.next_start_at ?? event.start_at).toISOString(),
             endsAt: (event.next_finish_at ?? event.finish_at).toISOString(),
-            title: event.name,
+            title: labelForNotification(event.name),
             description: describeForNotification(event.description),
             attendee: attendee.user
           }
@@ -144,10 +148,10 @@ export async function createNotificationsComponent(
           key: `${event.id}-${startOccurrence(event)}-${recipient}-started`,
           timestamp: now,
           metadata: {
-            name: event.name,
+            name: labelForNotification(event.name),
             image: sanitizeImageUrl(event.image) ?? '',
             link: link(event),
-            title: event.name,
+            title: labelForNotification(event.name),
             description: describeForNotification(event.description),
             attendee: recipient,
             ...(event.community_id ? { communityId: event.community_id } : {})
@@ -188,7 +192,7 @@ export async function createNotificationsComponent(
   // Shared metadata for the creator-facing moderation notifications (approved/rejected/deleted).
   const moderationMetadata = (event: Event) => ({
     host: event.user,
-    title: event.name,
+    title: labelForNotification(event.name),
     description: describeForNotification(event.description),
     image: sanitizeImageUrl(event.image) ?? ''
   })
@@ -265,7 +269,7 @@ export async function createNotificationsComponent(
             metadata: {
               title: 'Community Event Added',
               description,
-              name: event.name,
+              name: labelForNotification(event.name),
               image: sanitizeImageUrl(event.image) ?? '',
               communityId: community.id,
               communityName,

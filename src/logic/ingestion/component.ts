@@ -4,7 +4,7 @@ import type { Place } from '../../types/entities'
 import type { ScenePlaceInput } from '../../adapters/places-repository'
 import type { SceneEntity } from '../../adapters/catalyst-client'
 import type { UpsertWorldInput } from '../../adapters/worlds-repository'
-import { sanitizeDescription, sanitizeImageUrl } from '../content-sanitization'
+import { sanitizeDescription, sanitizeImageUrl, sanitizePlainText } from '../content-sanitization'
 import type {
   IIngestionComponent,
   IngestionResult,
@@ -167,13 +167,14 @@ export async function createIngestionComponent(
     const base = metadata.scene?.base || positions[0]
     const isWorld = !!options.worldId
     const rawTitle = metadata.display?.title
-    let contactName = metadata.contact?.name || null
+    let contactName = sanitizePlainText(metadata.contact?.name)
     if (contactName && contactName.trim() === 'author-name') contactName = null
 
     return {
       base_position: base,
       positions,
-      title: rawTitle ? rawTitle.slice(0, 50) : 'Untitled',
+      // Titles are plain-text labels rendered in client UI; strip any markup before storing.
+      title: sanitizePlainText(rawTitle)?.slice(0, 50) || 'Untitled',
       // Strip client-rendered TMP markup (e.g. `<link="decentraland://…">`) from the
       // creator-authored description before storing, so it can't reach Application.OpenURL.
       description: sanitizeDescription(metadata.display?.description),
@@ -279,7 +280,7 @@ export async function createIngestionComponent(
     const worldInput: UpsertWorldInput = {
       id: worldId,
       world_name: worldName,
-      title: metadata.display?.title?.slice(0, 50),
+      title: sanitizePlainText(metadata.display?.title)?.slice(0, 50),
       // Worlds render in the same TMP client UI, so the same markup rules apply.
       description: sanitizeDescription(metadata.display?.description) ?? undefined,
       content_rating: normalizeRating(metadata.policy?.contentRating),
@@ -339,7 +340,7 @@ export async function createIngestionComponent(
     const input: UpsertWorldInput = {
       id,
       world_name: worldName,
-      title: metadata.title,
+      title: metadata.title === undefined ? undefined : sanitizePlainText(metadata.title),
       // Preserve upsert's "omitted means do not update" contract: only sanitize (and, for an
       // unsafe value, clear) when the field was actually provided, so a settings event that
       // omits it never wipes the stored value.
