@@ -222,8 +222,17 @@ export async function migrateSchedules(pools: EtlPools, options: EtlOptions = {}
              background = EXCLUDED.background, image = EXCLUDED.image, theme = EXCLUDED.theme, active = EXCLUDED.active,
              active_since = EXCLUDED.active_since, active_until = EXCLUDED.active_until, updated_at = EXCLUDED.updated_at`,
           [
-            s.id, s.name, s.description, s.background ?? [], s.image, s.theme, s.active, s.active_since, s.active_until,
-            s.created_at, s.updated_at
+            s.id,
+            sanitizePlainText(s.name),
+            sanitizeDescription(s.description),
+            (s.background ?? []).map((url: string) => sanitizeImageUrl(url)).filter((url: string | null) => !!url),
+            sanitizeImageUrl(s.image),
+            sanitizePlainText(s.theme),
+            s.active,
+            s.active_since,
+            s.active_until,
+            s.created_at,
+            s.updated_at
           ]
         )
         loaded++

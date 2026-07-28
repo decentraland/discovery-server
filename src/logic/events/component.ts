@@ -61,8 +61,10 @@ const MODERATED_PATCH_CONTENT_KEYS: Array<keyof UpdateEventPayload> = [
 // moves where the event points and re-opens moderation. Compared against the resolved values
 // (not the raw payload) so `world` name → boolean/`world_id`/`place_id` resolution is handled
 // correctly — `world` + `place_id` are included so flipping a place event to a world (or vice
-// versa) can't keep approval when `world_id` alone is unchanged (e.g. stays null).
-const MODERATED_LOCATION_KEYS: Array<keyof Event> = ['x', 'y', 'server', 'world', 'world_id', 'place_id']
+// versa) can't keep approval when `world_id` alone is unchanged (e.g. stays null). `estate_id`
+// is owner-editable (directly via CONTENT_KEYS or re-derived on a location edit) and public, so
+// it belongs here too.
+const MODERATED_LOCATION_KEYS: Array<keyof Event> = ['x', 'y', 'server', 'world', 'world_id', 'place_id', 'estate_id']
 
 /**
  * Whether a moderated content field's incoming value differs from what the event currently holds.

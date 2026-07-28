@@ -969,6 +969,21 @@ describe('when creating an event', () => {
       })
     })
 
+    describe('and the owner changes only the estate id', () => {
+      beforeEach(async () => {
+        const events = await createEventsComponent(components)
+        await events.updateEvent('11111111-1111-4111-8111-111111111111', { estate_id: 'estate-99' }, '0xowner', {})
+      })
+
+      it('should re-queue the event for moderation by clearing approval', () => {
+        expect(components.eventsRepository.update).toHaveBeenCalledWith(
+          components.pg,
+          '11111111-1111-4111-8111-111111111111',
+          expect.objectContaining({ approved: false, approved_by: null, highlighted: false })
+        )
+      })
+    })
+
     describe('and the owner attaches the event to a curated schedule', () => {
       beforeEach(async () => {
         const events = await createEventsComponent(components)
