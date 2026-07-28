@@ -286,7 +286,7 @@ describe('when running the notification crons', () => {
       components.communitiesClient.getCommunity.mockResolvedValue({
         id: 'community-1',
         name: 'Builders',
-        thumbnailRaw: 'https://thumb'
+        thumbnailRaw: 'https://cdn.example.org/thumb.png'
       })
       components.communitiesClient.getCommunityMembers.mockResolvedValue(['0xaaa', '0xbbb'])
     })
@@ -303,7 +303,7 @@ describe('when running the notification crons', () => {
           metadata: expect.objectContaining({
             title: 'Community Event Added',
             communityName: 'Builders',
-            communityThumbnail: 'https://thumb',
+            communityThumbnail: 'https://cdn.example.org/thumb.png',
             attendee: '0xaaa'
           })
         })
@@ -315,6 +315,29 @@ describe('when running the notification crons', () => {
       await notifications.notifyCommunityEventPublished({ ...event, community_id: null })
 
       expect(publish).not.toHaveBeenCalled()
+    })
+
+    describe('and the community metadata carries unsafe values', () => {
+      let metadata: any
+
+      beforeEach(async () => {
+        components.communitiesClient.getCommunity.mockResolvedValue({
+          id: 'community-1',
+          name: 'Evil <link="decentraland://x">Squad</link>',
+          thumbnailRaw: 'javascript:alert(1)'
+        })
+        const notifications = await createNotificationsComponent(components)
+        await notifications.notifyCommunityEventPublished(event)
+        metadata = publish.mock.calls[0][0][0].metadata
+      })
+
+      it('should strip markup from the community name in the description', () => {
+        expect(metadata.description).toBe('The Evil Squad Community has added a new event.')
+      })
+
+      it('should drop the unsafe community thumbnail', () => {
+        expect(metadata.communityThumbnail).toBeUndefined()
+      })
     })
   })
 })

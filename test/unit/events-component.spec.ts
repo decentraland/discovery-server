@@ -860,6 +860,26 @@ describe('when creating an event', () => {
       })
     })
 
+    describe('and the owner changes a public location label', () => {
+      beforeEach(async () => {
+        const events = await createEventsComponent(components)
+        await events.updateEvent(
+          '11111111-1111-4111-8111-111111111111',
+          { estate_name: 'Renamed Estate' },
+          '0xowner',
+          {}
+        )
+      })
+
+      it('should re-queue the event for moderation by clearing approval', () => {
+        expect(components.eventsRepository.update).toHaveBeenCalledWith(
+          components.pg,
+          '11111111-1111-4111-8111-111111111111',
+          expect.objectContaining({ approved: false, approved_by: null, highlighted: false })
+        )
+      })
+    })
+
     describe('and the owner injects unsafe markup that sanitizes to the current description', () => {
       let patch: any
 

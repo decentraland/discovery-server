@@ -46,7 +46,11 @@ const MODERATED_PATCH_CONTENT_KEYS: Array<keyof UpdateEventPayload> = [
   'image',
   'image_vertical',
   'url',
-  'categories'
+  'categories',
+  // Public location labels a client can set directly; changing them on an approved event alters
+  // what viewers see, so they re-open moderation like the other visible fields.
+  'estate_name',
+  'scene_name'
 ]
 
 // Location identity fields resolved server-side into the update row; a change to any of them

@@ -190,3 +190,24 @@ export function sanitizeImageUrl(value: string | null | undefined): string | nul
     return null
   }
 }
+
+/**
+ * Sanitize the user-visible content fields shared by place / world / destination aggregates
+ * (`description` + `image` + `highlighted_image`). Applied at every public read boundary — the
+ * places/worlds/destinations decorators and the moderation responses — so a row written before
+ * sanitization existed (or imported raw by the ETL) can never reach a consumer unsanitized.
+ * Returns a shallow copy; other fields are untouched.
+ *
+ * @param entity - A place/world/destination aggregate carrying the content fields.
+ * @returns A copy with description/image/highlighted_image sanitized.
+ */
+export function sanitizeEntityContent<
+  T extends { description: string | null; image: string | null; highlighted_image: string | null }
+>(entity: T): T {
+  return {
+    ...entity,
+    description: sanitizeDescription(entity.description),
+    image: sanitizeImageUrl(entity.image),
+    highlighted_image: sanitizeImageUrl(entity.highlighted_image)
+  }
+}

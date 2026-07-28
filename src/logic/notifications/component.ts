@@ -248,7 +248,11 @@ export async function createNotificationsComponent(
       ])
       if (!community || !members.length) return
       const now = Date.now()
-      const description = `The ${community.name} Community has added a new event.`
+      // Community metadata is externally sourced/user-authored, so sanitize it at this boundary
+      // too: strip TMP markup from the name (it flows into the rendered `description`) and
+      // reject an unsafe thumbnail URL, matching how event fields are handled.
+      const communityName = sanitizeDescription(community.name) ?? ''
+      const description = `The ${communityName} Community has added a new event.`
       const payload: PublishableEvents = members.map(
         (member) =>
           ({
@@ -263,8 +267,8 @@ export async function createNotificationsComponent(
               name: event.name,
               image: sanitizeImageUrl(event.image) ?? '',
               communityId: community.id,
-              communityName: community.name,
-              communityThumbnail: community.thumbnailRaw,
+              communityName,
+              communityThumbnail: sanitizeImageUrl(community.thumbnailRaw) ?? undefined,
               attendee: member
             }
           }) as never
