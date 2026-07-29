@@ -1,4 +1,9 @@
-import { sanitizeDescription, sanitizeImageUrl, sanitizePlainText } from '../../src/logic/content-sanitization'
+import {
+  sanitizeDescription,
+  sanitizeExternalUrl,
+  sanitizeImageUrl,
+  sanitizePlainText
+} from '../../src/logic/content-sanitization'
 
 describe('when sanitizing a description', () => {
   describe('and it contains a TMP color shorthand tag', () => {
@@ -377,6 +382,30 @@ describe('when sanitizing an image url', () => {
     })
   })
 
+  describe('and it uses a wildcard-DNS host that embeds a loopback IP (nip.io)', () => {
+    let result: string | null
+
+    beforeEach(() => {
+      result = sanitizeImageUrl('https://127.0.0.1.nip.io/thumb.png')
+    })
+
+    it('should return null (the embedded private IP is rejected without resolving DNS)', () => {
+      expect(result).toBeNull()
+    })
+  })
+
+  describe('and it embeds a private IP but on a genuinely public label position', () => {
+    let result: string | null
+
+    beforeEach(() => {
+      result = sanitizeImageUrl('https://10.0.0.1.example.com/thumb.png')
+    })
+
+    it('should conservatively reject it (fail-closed on embedded private IPs)', () => {
+      expect(result).toBeNull()
+    })
+  })
+
   describe('and it is undefined', () => {
     let result: string | null
 
@@ -386,6 +415,38 @@ describe('when sanitizing an image url', () => {
 
     it('should return null', () => {
       expect(result).toBeNull()
+    })
+  })
+})
+
+describe('when sanitizing an external (event) url', () => {
+  describe('and it is a public https url', () => {
+    it('should keep it normalized', () => {
+      expect(sanitizeExternalUrl('https://tickets.example.org/e/1')).toBe('https://tickets.example.org/e/1')
+    })
+  })
+
+  describe('and it uses a non-web scheme', () => {
+    it('should reject file://', () => {
+      expect(sanitizeExternalUrl('file:///etc/passwd')).toBeNull()
+    })
+
+    it('should reject javascript:', () => {
+      expect(sanitizeExternalUrl('javascript:alert(1)')).toBeNull()
+    })
+
+    it('should reject a decentraland:// deep link (not a public web url)', () => {
+      expect(sanitizeExternalUrl('decentraland://?position=0,0')).toBeNull()
+    })
+  })
+
+  describe('and it points at an internal or embedded-private-IP host', () => {
+    it('should reject a metadata IP', () => {
+      expect(sanitizeExternalUrl('http://169.254.169.254/latest/meta-data/')).toBeNull()
+    })
+
+    it('should reject a nip.io host embedding loopback', () => {
+      expect(sanitizeExternalUrl('https://127.0.0.1.nip.io/')).toBeNull()
     })
   })
 })

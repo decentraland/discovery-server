@@ -48,6 +48,24 @@ const INTERNAL_HOST_SUFFIXES = [
 // carrier-grade-NAT / internal-name hosts a link must never point at. `hostname` is already
 // lowercased + WHATWG-normalized by `new URL`, so obfuscated IPv4 forms (decimal/hex/octal/
 // short) arrive as canonical dotted quads and can't slip past.
+// Whether a dotted-quad is a loopback / private / link-local (incl. 169.254.169.254 metadata) /
+// carrier-grade-NAT / "this host" address.
+function isInternalIpv4(candidate: string): boolean {
+  const m = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(candidate)
+  if (!m) return false
+  const a = Number(m[1])
+  const b = Number(m[2])
+  return (
+    a === 0 || // "this host"
+    a === 127 || // loopback
+    a === 10 || // private
+    (a === 169 && b === 254) || // link-local incl. cloud metadata
+    (a === 172 && b >= 16 && b <= 31) || // private
+    (a === 192 && b === 168) || // private
+    (a === 100 && b >= 64 && b <= 127) // carrier-grade NAT
+  )
+}
+
 function isInternalLinkHost(hostname: string): boolean {
   const unbracketed = hostname.startsWith('[') && hostname.endsWith(']') ? hostname.slice(1, -1) : hostname
   // A trailing dot is the fully-qualified form of the same host (`localhost.`, `router.local.`)
@@ -55,20 +73,7 @@ function isInternalLinkHost(hostname: string): boolean {
   // otherwise `localhost.` reads as a dotted, non-reserved name and slips through.
   const host = unbracketed.replace(/\.+$/, '')
 
-  const ipv4 = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(host)
-  if (ipv4) {
-    const a = Number(ipv4[1])
-    const b = Number(ipv4[2])
-    return (
-      a === 0 || // "this host"
-      a === 127 || // loopback
-      a === 10 || // private
-      (a === 169 && b === 254) || // link-local incl. cloud metadata
-      (a === 172 && b >= 16 && b <= 31) || // private
-      (a === 192 && b === 168) || // private
-      (a === 100 && b >= 64 && b <= 127) // carrier-grade NAT
-    )
-  }
+  if (isInternalIpv4(host)) return true
 
   if (host.includes(':')) {
     return (
@@ -84,7 +89,18 @@ function isInternalLinkHost(hostname: string): boolean {
   // (`router`, `nas`, `localhost`) or a reserved internal-use suffix is treated as internal.
   // DNS is not resolved here — best-effort fail-closed for local-looking names.
   if (!host.includes('.')) return true
-  return INTERNAL_HOST_SUFFIXES.some((suffix) => host.endsWith(suffix))
+  if (INTERNAL_HOST_SUFFIXES.some((suffix) => host.endsWith(suffix))) return true
+
+  // Wildcard-DNS services (nip.io / sslip.io / xip.io …) embed the target IP in the hostname
+  // (`127.0.0.1.nip.io` resolves to 127.0.0.1), bypassing the checks above. Without resolving DNS
+  // we reject any name that embeds a private/loopback/link-local/CGNAT IPv4 as a label run. NOTE:
+  // this does NOT stop a plain attacker domain with a hidden private A record or DNS rebinding —
+  // that is only fully defensible by the consumer resolving-then-validating the IP before it
+  // opens/fetches the URL (or via a proxy), which a synchronous read-boundary sanitizer can't do.
+  for (const match of host.matchAll(/(?:^|\.)(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})(?=\.|$)/g)) {
+    if (isInternalIpv4(match[1])) return true
+  }
+  return false
 }
 
 // Only http(s) links to a public host are safe to hand to the client. A non-web scheme fires a
@@ -191,6 +207,17 @@ export function sanitizeImageUrl(value: string | null | undefined): string | nul
     return null
   }
 }
+
+/**
+ * Sanitize a creator-supplied external URL a client may OPEN (an event's public `url`). It shares
+ * the image policy exactly — only an absolute http(s) URL to a public host is kept (normalized),
+ * everything else (`file://`, `smb://`, `javascript:`, `data:`, `decentraland://`, internal /
+ * loopback / metadata hosts) returns null — because a clicked link reaches an unrestricted
+ * `Application.OpenURL` on the viewer's machine, the same threat the description sanitizer closes.
+ * If a Decentraland deep-link scheme is ever a required event-url shape, widen this to an explicit
+ * scheme allowlist here (deliberately, not by passing arbitrary schemes).
+ */
+export const sanitizeExternalUrl = sanitizeImageUrl
 
 /**
  * Reduce a short label (a name/title, not a rich-text description) to plain text: strip EVERY

@@ -1,6 +1,6 @@
 /* eslint-disable no-console */
 import type { Pool, PoolClient } from 'pg'
-import { sanitizeDescription, sanitizeImageUrl, sanitizePlainText } from '../../src/logic/content-sanitization'
+import { sanitizeDescription, sanitizeExternalUrl, sanitizeImageUrl, sanitizePlainText } from '../../src/logic/content-sanitization'
 
 /**
  * One-off ETL from the legacy places + events Postgres databases into the
@@ -351,7 +351,7 @@ export async function migrateEvents(pools: EtlPools, options: EtlOptions = {}): 
             e.next_start_at, e.next_finish_at, e.recurrent, e.recurrent_frequency, e.recurrent_setpos,
             e.recurrent_monthday, e.recurrent_weekday_mask, e.recurrent_month_mask, e.recurrent_interval,
             e.recurrent_count, e.recurrent_until, e.recurrent_dates, e.x, e.y, e.server, e.world, e.estate_id,
-            e.estate_name, e.scene_name, placeId, worldId, e.community_id, e.url, e.user, e.user_name, e.contact,
+            e.estate_name, e.scene_name, placeId, worldId, e.community_id, sanitizeExternalUrl(e.url), e.user, e.user_name, e.contact,
             e.details, e.approved, e.rejected, e.approved_by, e.rejected_by, e.rejection_reason, e.highlighted,
             e.total_attendees, e.latest_attendees, e.categories, schedules, e.textsearch, e.deleted_by_user,
             e.deleted_by_admin, e.deleted_by, e.deleted_at, e.deleted_reason, e.created_at, e.updated_at

@@ -255,6 +255,34 @@ describe('when creating an event', () => {
         expect.objectContaining({ image_vertical: null })
       )
     })
+
+    it('should reject an unsafe public url but keep a safe one', async () => {
+      const events = await createEventsComponent(components)
+      await events.createEvent(
+        { name: 'P', start_at: new Date(Date.now() + 3600_000).toISOString(), x: 5, y: 6, url: 'javascript:alert(1)' },
+        '0xU'
+      )
+      expect(components.eventsRepository.create).toHaveBeenCalledWith(
+        components.pg,
+        expect.objectContaining({ url: null })
+      )
+
+      components.eventsRepository.create.mockClear()
+      await events.createEvent(
+        {
+          name: 'P',
+          start_at: new Date(Date.now() + 3600_000).toISOString(),
+          x: 5,
+          y: 6,
+          url: 'https://tickets.example.org/e'
+        },
+        '0xU'
+      )
+      expect(components.eventsRepository.create).toHaveBeenCalledWith(
+        components.pg,
+        expect.objectContaining({ url: 'https://tickets.example.org/e' })
+      )
+    })
   })
 
   describe('and the creator is a foundation address', () => {
@@ -699,6 +727,7 @@ describe('when creating an event', () => {
         user_name: 'Host <link="https://ok.com">x</link>',
         estate_name: 'Estate <b>bold</b>',
         server: 'realm <link="file:///etc/passwd">x</link>',
+        url: 'file:///etc/passwd',
         approved: true,
         rejected: false,
         deleted_at: null
@@ -721,6 +750,10 @@ describe('when creating an event', () => {
 
     it('should reduce the server label to plain text', () => {
       expect(result.server).toBe('realm x')
+    })
+
+    it('should reject an unsafe (non-web) public url', () => {
+      expect(result.url).toBeNull()
     })
   })
 

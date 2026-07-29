@@ -5,7 +5,7 @@ import type { EventListFilters, CreateEventRow, UpdateEventRow } from '../../ada
 import { AllowedInputFrequencies, MAX_RECURRENT_PAST_ITERATIONS } from '../recurrence'
 import type { RecurrentEventInput } from '../recurrence'
 import { isPlaceId } from '../entity-id'
-import { sanitizeDescription, sanitizeImageUrl, sanitizePlainText } from '../content-sanitization'
+import { sanitizeDescription, sanitizeExternalUrl, sanitizeImageUrl, sanitizePlainText } from '../content-sanitization'
 import { EventNotFoundError, EventUnauthorizedActionError, EventValidationError } from './errors'
 import type { CreateEventPayload, EventWithAttendance, IEventsComponent, UpdateEventPayload } from './types'
 
@@ -192,6 +192,7 @@ export async function createEventsComponent(
       image_vertical: sanitizeImageUrl(event.image_vertical),
       scene_name: sanitizePlainText(event.scene_name),
       server: sanitizePlainText(event.server),
+      url: sanitizeExternalUrl(event.url),
       // contact/details are owner-only (self-XSS), but sanitize them too for consistency:
       // contact is a label, details is free text that may carry safe links.
       ...(isOwner ? { contact: sanitizePlainText(contact), details: sanitizeDescription(details) } : {}),
@@ -415,7 +416,7 @@ export async function createEventsComponent(
       place_id: location.place_id,
       world_id: location.world_id,
       community_id: payload.community_id ?? null,
-      url: payload.url ?? null,
+      url: sanitizeExternalUrl(payload.url),
       user: user.toLowerCase(),
       user_name: payload.user_name ?? null,
       contact: payload.contact ?? null,
@@ -491,6 +492,8 @@ export async function createEventsComponent(
     // Persist descriptions sanitized so raw TMP markup is never stored (even when it sanitizes
     // to the same visible text and so doesn't itself re-open moderation).
     if ('description' in patch) update.description = sanitizeDescription(patch.description)
+    // The public url is a link a client may open; reject unsafe schemes/hosts on write too.
+    if ('url' in patch) update.url = sanitizeExternalUrl(patch.url)
 
     // Timing / recurrence: recompute the materialized window from the merged rule.
     if (RECURRENCE_KEYS.some((key) => key in patch)) {
