@@ -225,7 +225,8 @@ export async function migrateSchedules(pools: EtlPools, options: EtlOptions = {}
             s.id,
             sanitizePlainText(s.name),
             sanitizeDescription(s.description),
-            (s.background ?? []).map((url: string) => sanitizeImageUrl(url)).filter((url: string | null) => !!url),
+            // background is a list of CSS color/gradient tokens, not image URLs — plain-text each.
+            (s.background ?? []).map((value: string) => sanitizePlainText(value)).filter((value: string | null) => !!value),
             sanitizeImageUrl(s.image),
             sanitizePlainText(s.theme),
             s.active,

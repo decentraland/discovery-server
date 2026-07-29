@@ -61,7 +61,8 @@ describe('when getting schedules', () => {
         description: 'See <link="file:///etc/passwd">this</link>',
         image: 'javascript:alert(1)',
         theme: null,
-        background: ['https://cdn.example.org/ok.png', 'http://169.254.169.254/x.png'],
+        // background is a list of CSS color / gradient tokens, not image URLs.
+        background: ['#f3f2f5', 'rgba(10, 9, 44, 1)', '<link="file:///x">evil</link>', '<b></b>'],
         active: true,
         active_since: '2026-06-01T00:00:00.000Z',
         active_until: '2026-07-01T00:00:00.000Z',
@@ -84,8 +85,8 @@ describe('when getting schedules', () => {
       expect(result.image).toBeNull()
     })
 
-    it('should keep only the safe background image URLs', () => {
-      expect(result.background).toEqual(['https://cdn.example.org/ok.png'])
+    it('should keep valid color tokens, strip markup, and drop fully-markup entries in background', () => {
+      expect(result.background).toEqual(['#f3f2f5', 'rgba(10, 9, 44, 1)', 'evil'])
     })
   })
 
@@ -98,21 +99,21 @@ describe('when getting schedules', () => {
         description: 'See <link="file:///etc/passwd">this</link>',
         image: 'javascript:alert(1)',
         theme: null,
-        background: ['https://cdn.example.org/ok.png', 'http://169.254.169.254/x.png'],
+        background: ['#f3f2f5', 'linear-gradient(90deg, #fff, #000)', '<link="file:///x">evil</link>'],
         active: true,
         active_since: '2026-06-01T00:00:00.000Z',
         active_until: '2026-07-01T00:00:00.000Z'
       })
     })
 
-    it('should persist a sanitized payload, not the raw values', () => {
+    it('should persist a sanitized payload that preserves color tokens but not markup', () => {
       expect(schedulesRepository.create).toHaveBeenCalledWith(
         pg,
         expect.objectContaining({
           name: 'Fest now',
           description: 'See this',
           image: null,
-          background: ['https://cdn.example.org/ok.png']
+          background: ['#f3f2f5', 'linear-gradient(90deg, #fff, #000)', 'evil']
         })
       )
     })
