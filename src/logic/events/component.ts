@@ -33,13 +33,16 @@ const RECURRENCE_KEYS: Array<keyof UpdateEventPayload> = [
   'recurrent_count'
 ]
 
-// Public, creator-editable content fields taken straight from the request payload whose change
-// re-opens moderation (name, description, image, image_vertical, url, categories).
-// Scheduling/control fields (recurrence, all_day) are excluded — they don't alter what content
-// is shown. `url` is included so a benign approved event can't be re-pointed at a hostile link
-// without re-review; it stays re-moderation (human review) rather than a hard scheme reject,
-// since an event url can legitimately be a deep link.
-const MODERATED_PATCH_CONTENT_KEYS: Array<keyof UpdateEventPayload> = [
+// Public, moderated fields as they appear in the API `serialize()` output — the content and
+// location-identity a viewer actually sees. Re-moderation is decided by diffing these between the
+// serialized event before and after an edit (see updateEvent), NOT by comparing raw request
+// values against raw stored columns: the client reads (and echoes) the *serialized* form (labels
+// plain-texted, `estate_name` resolved to `estate_name ?? scene_name`, URLs normalized), so a raw
+// vs. serialized comparison would flag a no-op read-modify-write echo as a change. Scheduling/
+// control fields (recurrence, all_day) are intentionally absent — they don't alter what is shown.
+// `url` is included (a hostile link swap must re-review) and `schedules` (ungated curation
+// membership); location identity (x/y/server/world/world_id/place_id/estate_id) is here too.
+const MODERATED_SERIALIZED_FIELDS: Array<keyof Event> = [
   'name',
   'user_name',
   'description',
@@ -47,48 +50,23 @@ const MODERATED_PATCH_CONTENT_KEYS: Array<keyof UpdateEventPayload> = [
   'image_vertical',
   'url',
   'categories',
-  // Public location labels a client can set directly; changing them on an approved event alters
-  // what viewers see, so they re-open moderation like the other visible fields.
   'estate_name',
   'scene_name',
-  // Curated-collection membership: `schedules` is an ungated owner-editable field that drives
-  // public curation (`schedule = ANY(e.schedules)`), so attaching an approved event to a curated
-  // schedule must re-open moderation rather than silently gaining that distribution.
-  'schedules'
+  'server',
+  'schedules',
+  'x',
+  'y',
+  'world',
+  'world_id',
+  'place_id',
+  'estate_id'
 ]
 
-// Location identity fields resolved server-side into the update row; a change to any of them
-// moves where the event points and re-opens moderation. Compared against the resolved values
-// (not the raw payload) so `world` name → boolean/`world_id`/`place_id` resolution is handled
-// correctly — `world` + `place_id` are included so flipping a place event to a world (or vice
-// versa) can't keep approval when `world_id` alone is unchanged (e.g. stays null). `estate_id`
-// is owner-editable (directly via CONTENT_KEYS or re-derived on a location edit) and public, so
-// it belongs here too.
-const MODERATED_LOCATION_KEYS: Array<keyof Event> = ['x', 'y', 'server', 'world', 'world_id', 'place_id', 'estate_id']
-
-/**
- * Whether a moderated content field's incoming value differs from what the event currently holds.
- * The description is compared through the same sanitizer the API exposes, so a client
- * round-tripping already-sanitized text isn't mistaken for an edit; an empty/absent name is
- * ignored (matching the update apply guard); arrays (categories) compare by value.
- */
-function isModeratedContentChanged(key: keyof UpdateEventPayload, next: unknown, current: unknown): boolean {
-  if (key === 'name') {
-    return typeof next === 'string' && next.length > 0 && next !== current
-  }
-  if (key === 'description') {
-    return sanitizeDescription(next as string | null | undefined) !== sanitizeDescription(current as string | null)
-  }
-  if (key === 'image' || key === 'image_vertical') {
-    // Compare through the sanitizer so a client round-tripping the normalized value isn't an edit.
-    return sanitizeImageUrl(next as string | null | undefined) !== sanitizeImageUrl(current as string | null)
-  }
-  if (Array.isArray(next) || Array.isArray(current)) {
-    const a = (Array.isArray(next) ? next : []).map(String).sort()
-    const b = (Array.isArray(current) ? current : []).map(String).sort()
-    return a.length !== b.length || a.some((value, index) => value !== b[index])
-  }
-  return next !== current
+// Whether any moderated public field differs between two serialized events.
+function moderatedViewDiffers(before: Event, after: Event): boolean {
+  const a = before as unknown as Record<string, unknown>
+  const b = after as unknown as Record<string, unknown>
+  return MODERATED_SERIALIZED_FIELDS.some((key) => JSON.stringify(a[key]) !== JSON.stringify(b[key]))
 }
 
 /**
@@ -663,18 +641,19 @@ export async function createEventsComponent(
     // same request (a review cannot cover content written in that same PATCH), and can never
     // carry a moderator's highlight across an edit. To re-approve edited content they must do it
     // in a separate request against the now-updated content.
-    const patchRecord = patch as Record<string, unknown>
-    const eventRecord = event as unknown as Record<string, unknown>
-    const moderatedContentChanged = MODERATED_PATCH_CONTENT_KEYS.some(
-      (key) => key in patch && isModeratedContentChanged(key, patchRecord[key], eventRecord[key])
-    )
-    const moderatedLocationChanged = MODERATED_LOCATION_KEYS.some(
-      (key) => key in update && (update as Record<string, unknown>)[key] !== eventRecord[key]
-    )
-    if (event.approved && !canHighlight && (moderatedContentChanged || moderatedLocationChanged)) {
-      update.approved = false
-      update.approved_by = null
-      update.highlighted = false
+    //
+    // The change is detected on the *serialized* view (what a client reads), before vs. after, so
+    // a no-op read-modify-write echo — the client resends the serialized value it read, which
+    // differs from the raw stored column (labels plain-texted, `estate_name ?? scene_name`
+    // resolved, URLs normalized) — is not mistaken for an edit.
+    if (event.approved && !canHighlight) {
+      const before = serialize(event, user)
+      const after = serialize({ ...event, ...update } as Event, user)
+      if (moderatedViewDiffers(before, after)) {
+        update.approved = false
+        update.approved_by = null
+        update.highlighted = false
+      }
     }
 
     const updated = await eventsRepository.update(pg, id, update)

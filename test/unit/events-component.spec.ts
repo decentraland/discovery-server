@@ -985,6 +985,40 @@ describe('when creating an event', () => {
       })
     })
 
+    describe('and the owner echoes a read-modify-write value that only differs in raw storage form', () => {
+      let patch: any
+
+      beforeEach(async () => {
+        // Genesis event with a null estate_name but a scene_name; serialize() surfaces
+        // estate_name = (estate_name ?? scene_name) = 'Genesis Plaza', so a client that read the
+        // event and echoes estate_name back sends a value that differs from the raw stored column
+        // (null) but NOT from what it displays. This must not be treated as a content change.
+        components.eventsRepository.findById.mockResolvedValue({
+          id: '11111111-1111-4111-8111-111111111111',
+          user: '0xowner',
+          name: 'Party',
+          estate_name: null,
+          scene_name: 'Genesis Plaza',
+          approved: true,
+          rejected: false,
+          highlighted: true
+        })
+        const events = await createEventsComponent(components)
+        await events.updateEvent(
+          '11111111-1111-4111-8111-111111111111',
+          { estate_name: 'Genesis Plaza' },
+          '0xowner',
+          {}
+        )
+        patch = components.eventsRepository.update.mock.calls[0][2]
+      })
+
+      it('should keep the event approved (the displayed value did not change)', () => {
+        expect(patch.approved).toBeUndefined()
+        expect(patch.highlighted).toBeUndefined()
+      })
+    })
+
     describe('and the owner attaches the event to a curated schedule', () => {
       beforeEach(async () => {
         const events = await createEventsComponent(components)

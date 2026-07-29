@@ -223,7 +223,8 @@ export async function migrateSchedules(pools: EtlPools, options: EtlOptions = {}
              active_since = EXCLUDED.active_since, active_until = EXCLUDED.active_until, updated_at = EXCLUDED.updated_at`,
           [
             s.id,
-            sanitizePlainText(s.name),
+            // schedules.name is NOT NULL — never write null (a legacy empty/all-markup name → '').
+            sanitizePlainText(s.name) ?? '',
             sanitizeDescription(s.description),
             // background is a list of CSS color/gradient tokens, not image URLs — plain-text each.
             (s.background ?? []).map((value: string) => sanitizePlainText(value)).filter((value: string | null) => !!value),
