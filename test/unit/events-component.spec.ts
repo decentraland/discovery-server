@@ -870,7 +870,7 @@ describe('when creating an event', () => {
         })
       })
 
-      describe('and they edit moderated content and explicitly re-approve in the same patch', () => {
+      describe('and they edit moderated content and try to self-approve in the same patch', () => {
         let patch: any
 
         beforeEach(async () => {
@@ -884,11 +884,12 @@ describe('when creating an event', () => {
           patch = components.eventsRepository.update.mock.calls[0][2]
         })
 
-        it('should honor their explicit self-approval', () => {
-          expect(patch.approved).toBe(true)
+        it('should NOT keep approval — a same-request self-approval cannot review content written in that same patch', () => {
+          expect(patch.approved).toBe(false)
+          expect(patch.approved_by).toBeNull()
         })
 
-        it('should still clear the moderator highlight they cannot set', () => {
+        it('should clear the moderator highlight they cannot set', () => {
           expect(patch.highlighted).toBe(false)
         })
       })
