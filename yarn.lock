@@ -566,10 +566,18 @@
   dependencies:
     "@well-known-components/interfaces" "^1.5.2"
 
-"@dcl/crypto-middleware@^4.0.0", "@dcl/crypto-middleware@^4.1.1":
+"@dcl/crypto-middleware@^4.0.0":
   version "4.1.1"
   resolved "https://registry.yarnpkg.com/@dcl/crypto-middleware/-/crypto-middleware-4.1.1.tgz#a46861caa68bf38f0355ce72d77a8232200d54ed"
   integrity sha512-wNo3D00SyZKoxy3THQj+EMWWatU9F2VTPwqTIVWZj3JlnaKRScNpLOsrHVPETN9FYtTIlJqqhjlUWsjoUGVisw==
+  dependencies:
+    "@dcl/core-commons" "^0.10.0"
+    "@dcl/crypto" "3.7.0"
+
+"@dcl/crypto-middleware@^5.0.0":
+  version "5.0.0"
+  resolved "https://registry.yarnpkg.com/@dcl/crypto-middleware/-/crypto-middleware-5.0.0.tgz#3237b3888cac37e0920de8ee1d3fad9b54a77424"
+  integrity sha512-MIy5oRsTy8AujEef6MDaObJM04zZqKDVF9FlWz6aBxjr1kU7jjSDPxHRLIcXC4ECCCWpugpd6A8gwsE3TVhRhw==
   dependencies:
     "@dcl/core-commons" "^0.10.0"
     "@dcl/crypto" "3.7.0"
