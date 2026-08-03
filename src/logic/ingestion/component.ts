@@ -27,6 +27,8 @@ const DEFAULT_WORLD_THUMBNAIL =
 // Forbidden as creator-supplied tags (only moderators/sync assign these).
 const FORBIDDEN_CATEGORY_TAGS = ['poi', 'featured']
 const MAX_CREATOR_CATEGORIES = 3
+const MAX_SCENE_PARCELS = 1000
+const PARCEL_COORDINATE_PATTERN = /^(?:0|-?[1-9]\d*),(?:0|-?[1-9]\d*)$/
 
 // Collapse newlines/control chars so an untrusted SQS field can't forge extra log lines.
 const oneLine = (value: string): string => value.replace(/[\r\n\t]+/g, ' ')
@@ -47,6 +49,46 @@ function deriveContentRating(raw: string | undefined, existing: string | null): 
   const incoming = normalizeRating(raw)
   if (!existing) return incoming
   return ratingIndex(existing) > ratingIndex(incoming) ? existing : incoming
+}
+
+function validateSceneIdentity(entity: SceneEntity): string | null {
+  const metadata = (entity.metadata ?? {}) as SceneMetadata
+  const base = metadata.scene?.base
+  const parcels = metadata.scene?.parcels
+  const pointers = entity.pointers
+  const isCanonicalList = (values: unknown): values is string[] =>
+    Array.isArray(values) &&
+    values.length > 0 &&
+    values.length <= MAX_SCENE_PARCELS &&
+    values.every((value) => typeof value === 'string' && value.length <= 32 && PARCEL_COORDINATE_PATTERN.test(value)) &&
+    new Set(values).size === values.length
+
+  if (
+    typeof base !== 'string' ||
+    !PARCEL_COORDINATE_PATTERN.test(base) ||
+    !isCanonicalList(parcels) ||
+    !isCanonicalList(pointers)
+  ) {
+    return 'scene identity must use unique canonical parcel coordinates'
+  }
+  if (!parcels.includes(base)) return 'scene base must be included in its parcels'
+  const pointerSet = new Set(pointers)
+  if (pointerSet.size !== parcels.length || parcels.some((parcel) => !pointerSet.has(parcel))) {
+    return 'scene parcels must match entity pointers'
+  }
+  return null
+}
+
+function normalizeServerUrl(value: string): string | null {
+  try {
+    const url = new URL(value)
+    if (url.protocol !== 'https:' && url.protocol !== 'http:') return null
+    url.hash = ''
+    url.search = ''
+    return url.toString().replace(/\/+$/, '')
+  } catch {
+    return null
+  }
 }
 
 type SceneMetadata = {
@@ -103,6 +145,13 @@ export async function createIngestionComponent(
   const contentServerUrl = (
     (await config.getString('CONTENT_SERVER_URL')) ?? 'https://peer.decentraland.org/content'
   ).replace(/\/+$/, '')
+  const worldsContentServerUrl = (await config.getString('WORLDS_CONTENT_SERVER_URL'))?.replace(/\/+$/, '')
+  const trustedContentServers = new Set(
+    [contentServerUrl, worldsContentServerUrl]
+      .filter((url): url is string => !!url)
+      .map(normalizeServerUrl)
+      .filter((url): url is string => !!url)
+  )
   const placesChannel = (await config.getString('SLACK_PLACES_CHANNEL')) ?? undefined
   const alert = (text: string) => {
     void slackNotifier.notify(text, placesChannel)
@@ -166,6 +215,7 @@ export async function createIngestionComponent(
     if (contactName && contactName.trim() === 'author-name') contactName = null
 
     return {
+      deployment_id: entity.id ?? null,
       base_position: base,
       positions,
       title: rawTitle ? rawTitle.slice(0, 50) : 'Untitled',
@@ -256,11 +306,15 @@ export async function createIngestionComponent(
   }
 
   async function processGenesisScene(entity: SceneEntity): Promise<IngestionResult> {
+    const identityError = validateSceneIdentity(entity)
+    if (identityError) return { processed: false, reason: identityError }
     const overlapping = await placesRepository.findEnabledByPositions(pg, entity.pointers ?? [])
     return persistScene(entity, overlapping, { worldId: null, worldName: null, optOut: false })
   }
 
   async function processWorldScene(entity: SceneEntity): Promise<IngestionResult> {
+    const identityError = validateSceneIdentity(entity)
+    if (identityError) return { processed: false, reason: identityError }
     const metadata = (entity.metadata ?? {}) as SceneMetadata
     const worldName = metadata.worldConfiguration?.name || metadata.worldConfiguration?.dclName
     if (!worldName) return { processed: false, reason: 'world scene deployment without a worldConfiguration name' }
@@ -299,10 +353,18 @@ export async function createIngestionComponent(
     const entityId = event.entity?.entityId
     const server = event.contentServerUrls?.[0]
     if (!entityId || !server) return { processed: false, reason: 'world deployment without entityId/contentServerUrls' }
-    const entity = await catalystClient.getEntityById(server, entityId)
+    const normalizedServer = normalizeServerUrl(server)
+    if (!normalizedServer || !trustedContentServers.has(normalizedServer)) {
+      return { processed: false, reason: 'world deployment references an untrusted content server' }
+    }
+    const entity = await catalystClient.getEntityById(normalizedServer, entityId)
     if (!entity || entity.type !== 'scene') {
       return { processed: false, reason: `world deployment entity not fetchable: ${oneLine(entityId)}` }
     }
+    if (entity.id && entity.id !== entityId) {
+      return { processed: false, reason: 'world deployment entity identity does not match the requested entity' }
+    }
+    entity.id = entityId
     return processWorldScene(entity)
   }
 
@@ -358,7 +420,14 @@ export async function createIngestionComponent(
     }
     const before = event.timestamp ? new Date(event.timestamp) : new Date()
     const positions = scenes.map((scene) => scene.baseParcel).filter(Boolean)
-    const disabled = await placesRepository.disableByWorldIdAndPositions(pg, worldName.toLowerCase(), positions, before)
+    const deploymentIds = scenes.map((scene) => scene.entityId).filter(Boolean)
+    const disabled = await placesRepository.disableByWorldIdAndDeployments(
+      pg,
+      worldName.toLowerCase(),
+      deploymentIds,
+      positions,
+      before
+    )
 
     logger.info(`Undeployed ${disabled} scenes for world ${oneLine(worldName.toLowerCase())}`)
     return { processed: true }

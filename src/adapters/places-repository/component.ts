@@ -271,11 +271,11 @@ export function createPlacesRepository(): IPlacesRepository {
   async function insertScene(client: Queryable, scene: import('./types').ScenePlaceInput): Promise<Place> {
     const query = SQL`
       INSERT INTO places (
-        base_position, positions, title, description, image, owner, creator_address,
+        deployment_id, base_position, positions, title, description, image, owner, creator_address,
         contact_name, contact_email, content_rating, categories, sdk, deployed_at,
         world, world_id, world_name, disabled, disabled_at, disabled_reason, textsearch
       ) VALUES (
-        ${scene.base_position}, ${scene.positions}, ${scene.title}, ${scene.description}, ${scene.image},
+        ${scene.deployment_id}, ${scene.base_position}, ${scene.positions}, ${scene.title}, ${scene.description}, ${scene.image},
         ${scene.owner}, ${scene.creator_address}, ${scene.contact_name}, ${scene.contact_email},
         ${scene.content_rating}, ${scene.categories}, ${scene.sdk}, ${scene.deployed_at},
         ${scene.world}, ${scene.world_id}, ${scene.world_name}, ${scene.disabled},
@@ -289,7 +289,7 @@ export function createPlacesRepository(): IPlacesRepository {
   async function updateScene(client: Queryable, id: string, scene: import('./types').ScenePlaceInput): Promise<Place> {
     const query = SQL`
       UPDATE places SET
-        positions = ${scene.positions}, title = ${scene.title}, description = ${scene.description},
+        deployment_id = ${scene.deployment_id}, positions = ${scene.positions}, title = ${scene.title}, description = ${scene.description},
         image = ${scene.image}, owner = ${scene.owner}, creator_address = ${scene.creator_address},
         contact_name = ${scene.contact_name}, contact_email = ${scene.contact_email},
         content_rating = ${scene.content_rating}, categories = ${scene.categories}, sdk = ${scene.sdk},
@@ -317,18 +317,32 @@ export function createPlacesRepository(): IPlacesRepository {
     return result.rowCount ?? 0
   }
 
-  async function disableByWorldIdAndPositions(
+  async function disableByWorldIdAndDeployments(
     client: Queryable,
     worldId: string,
+    deploymentIds: string[],
     basePositions: string[],
     before: Date
   ): Promise<number> {
-    if (!basePositions.length) return 0
+    if (!deploymentIds.length && !basePositions.length) return 0
     // Stale-event guard: only disable places deployed before the undeployment.
     const result = await client.query(SQL`
       UPDATE places SET disabled = true, disabled_at = now(), disabled_reason = 'undeployment', updated_at = now()
       WHERE world_id = ${worldId.toLowerCase()}
-        AND base_position = ANY(${basePositions}::varchar[])
+        AND (
+          deployment_id = ANY(${deploymentIds}::text[])
+          OR (
+            deployment_id IS NULL
+            AND base_position = ANY(${basePositions}::varchar[])
+            AND NOT EXISTS (
+              SELECT 1 FROM places conflicting
+              WHERE conflicting.world_id = places.world_id
+                AND conflicting.base_position = places.base_position
+                AND conflicting.disabled IS false
+                AND conflicting.id <> places.id
+            )
+          )
+        )
         AND deployed_at < ${before.toISOString()}
         AND disabled IS false`)
     return result.rowCount ?? 0
@@ -358,7 +372,7 @@ export function createPlacesRepository(): IPlacesRepository {
     updateScene,
     disablePlaces,
     disableByWorldId,
-    disableByWorldIdAndPositions,
+    disableByWorldIdAndDeployments,
     listOccupiedPositions
   }
 }

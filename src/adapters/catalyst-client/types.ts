@@ -1,5 +1,6 @@
 /** The subset of a Catalyst/worlds entity the ingestion path reads. */
 export type SceneEntity = {
+  id?: string
   type?: string
   pointers?: string[]
   timestamp?: number

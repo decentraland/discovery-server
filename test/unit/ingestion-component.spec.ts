@@ -14,7 +14,7 @@ describe('when ingesting deployment events', () => {
         updateScene: jest.fn().mockImplementation(async (_c: unknown, id: string, scene: any) => ({ id, ...scene })),
         disablePlaces: jest.fn().mockResolvedValue(0),
         disableByWorldId: jest.fn().mockResolvedValue(0),
-        disableByWorldIdAndPositions: jest.fn().mockResolvedValue(0)
+        disableByWorldIdAndDeployments: jest.fn().mockResolvedValue(0)
       },
       worldsRepository: { findByIdWithAggregates: jest.fn().mockResolvedValue(null), upsert: jest.fn() },
       categoriesRepository: {
@@ -172,6 +172,34 @@ describe('when ingesting deployment events', () => {
     })
   })
 
+  describe('and a scene base does not belong to the authorized pointers', () => {
+    let event: any
+
+    beforeEach(() => {
+      event = {
+        entity: {
+          id: 'deployment-id',
+          type: 'scene',
+          pointers: ['10,20'],
+          timestamp: 1_700_000_000_000,
+          content: [],
+          metadata: { scene: { base: '30,40', parcels: ['10,20'] }, display: { title: 'Invalid' } }
+        }
+      }
+    })
+
+    it('should reject the deployment before querying or writing places', async () => {
+      const ingestion = await createIngestionComponent(components)
+      const result = await ingestion.processCatalystDeployment(event)
+
+      expect([
+        result.processed,
+        components.placesRepository.findEnabledByPositions.mock.calls.length,
+        components.placesRepository.insertScene.mock.calls.length
+      ]).toEqual([false, 0, 0])
+    })
+  })
+
   describe('and a world scene deployment arrives via a Catalyst deployment', () => {
     let event: any
 
@@ -264,9 +292,10 @@ describe('when ingesting deployment events', () => {
         metadata: { worldName: 'My-World.dcl.eth', scenes: [{ entityId: 'e1', baseParcel: '0,0' }] }
       })
 
-      expect(components.placesRepository.disableByWorldIdAndPositions).toHaveBeenCalledWith(
+      expect(components.placesRepository.disableByWorldIdAndDeployments).toHaveBeenCalledWith(
         components.pg,
         'my-world.dcl.eth',
+        ['e1'],
         ['0,0'],
         expect.any(Date)
       )

@@ -42,6 +42,7 @@ export type PlaceModerationFields = Partial<
 
 /** Scene data extracted from a deployment, ready to insert/update as a place row. */
 export type ScenePlaceInput = {
+  deployment_id: string | null
   base_position: string
   positions: string[]
   title: string | null
@@ -86,10 +87,11 @@ export interface IPlacesRepository {
   disablePlaces(client: Queryable, ids: string[], reason: string): Promise<number>
   /** Disable ALL of a world's places deployed before `before` (full world undeployment). Returns the count. */
   disableByWorldId(client: Queryable, worldId: string, before: Date): Promise<number>
-  /** Disable a world's places at the given base positions deployed before `before`. Returns the count disabled. */
-  disableByWorldIdAndPositions(
+  /** Disable a world's exact deployments, with a base-position fallback only for unmigrated legacy rows. */
+  disableByWorldIdAndDeployments(
     client: Queryable,
     worldId: string,
+    deploymentIds: string[],
     basePositions: string[],
     before: Date
   ): Promise<number>
