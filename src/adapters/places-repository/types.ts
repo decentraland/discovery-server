@@ -63,6 +63,11 @@ export type ScenePlaceInput = {
   disabled_reason: string | null
 }
 
+export type WorldDeploymentDisableResult = {
+  deploymentIdMatches: number
+  legacyBaseMatches: number
+}
+
 export interface IPlacesRepository {
   /** Row-lock a place for the current transaction (FOR UPDATE) so a read-then-write can't race. */
   lockById(client: Queryable, id: string): Promise<void>
@@ -94,7 +99,7 @@ export interface IPlacesRepository {
     deploymentIds: string[],
     basePositions: string[],
     before: Date
-  ): Promise<number>
+  ): Promise<WorldDeploymentDisableResult>
   /** Distinct occupied parcel positions (for the Genesis City manifest). */
   listOccupiedPositions(client: Queryable): Promise<string[]>
 }

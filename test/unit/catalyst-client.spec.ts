@@ -98,3 +98,18 @@ describe('when resolving operated lands from Catalyst', () => {
     })
   })
 })
+
+describe('when fetching an entity from a content server', () => {
+  it('should cancel a non-success response body before returning null', async () => {
+    const cancel = jest.fn().mockResolvedValue(undefined)
+    const fetcher = {
+      fetch: jest.fn().mockResolvedValue({ ok: false, status: 404, body: { cancel } })
+    }
+    const logs = { getLogger: () => ({ info: jest.fn(), error: jest.fn(), warn: jest.fn(), debug: jest.fn() }) }
+    const config = { getString: jest.fn().mockResolvedValue(undefined) }
+    const client = await createCatalystClient({ config, logs, fetcher } as any)
+
+    await expect(client.getEntityById('https://peer.decentraland.org/content', 'bafkrei')).resolves.toBeNull()
+    expect(cancel).toHaveBeenCalledTimes(1)
+  })
+})

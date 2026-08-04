@@ -2,7 +2,13 @@ import SQL, { SQLStatement } from 'sql-template-strings'
 import type { Queryable } from '../pg'
 import type { AggregatePlace, Place, PlaceStatus } from '../../types/entities'
 import { placesCategoriesClause, placesPositionsClause, toPrefixTsQuery, MIN_SEARCH_LENGTH } from '../places-filters'
-import type { IPlacesRepository, PlaceListFilters, PlaceListOrderBy, UpsertPlaceInput } from './types'
+import type {
+  IPlacesRepository,
+  PlaceListFilters,
+  PlaceListOrderBy,
+  UpsertPlaceInput,
+  WorldDeploymentDisableResult
+} from './types'
 
 const MAX_LIMIT = 100
 const DEFAULT_LIMIT = 100
@@ -323,10 +329,10 @@ export function createPlacesRepository(): IPlacesRepository {
     deploymentIds: string[],
     basePositions: string[],
     before: Date
-  ): Promise<number> {
-    if (!deploymentIds.length && !basePositions.length) return 0
+  ): Promise<WorldDeploymentDisableResult> {
+    if (!deploymentIds.length && !basePositions.length) return { deploymentIdMatches: 0, legacyBaseMatches: 0 }
     // Stale-event guard: only disable places deployed before the undeployment.
-    const result = await client.query(SQL`
+    const result = await client.query<{ deployment_id: string | null }>(SQL`
       UPDATE places SET disabled = true, disabled_at = now(), disabled_reason = 'undeployment', updated_at = now()
       WHERE world_id = ${worldId.toLowerCase()}
         AND (
@@ -344,8 +350,12 @@ export function createPlacesRepository(): IPlacesRepository {
           )
         )
         AND deployed_at < ${before.toISOString()}
-        AND disabled IS false`)
-    return result.rowCount ?? 0
+        AND disabled IS false
+      RETURNING deployment_id`)
+    return {
+      deploymentIdMatches: result.rows.filter((row) => row.deployment_id !== null).length,
+      legacyBaseMatches: result.rows.filter((row) => row.deployment_id === null).length
+    }
   }
 
   async function listOccupiedPositions(client: Queryable): Promise<string[]> {

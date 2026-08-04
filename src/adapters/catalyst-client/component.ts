@@ -66,7 +66,10 @@ export async function createCatalystClient(
     if (!/^0x[a-f0-9]{40}$/.test(wallet)) return null
     try {
       const response = await fetcher.fetch(`${baseUrl}/lambdas/profiles/${encodeURIComponent(wallet)}`)
-      if (!response.ok) return null
+      if (!response.ok) {
+        await response.body?.cancel().catch(() => undefined)
+        return null
+      }
       const body = (await response.json()) as ProfileResponse
       return body?.avatars?.[0]?.name ?? null
     } catch (error: any) {
@@ -81,7 +84,10 @@ export async function createCatalystClient(
     if (!contentServerUrl || !/^[a-zA-Z0-9]+$/.test(entityId)) return null
     try {
       const response = await fetcher.fetch(`${contentServerUrl.replace(/\/+$/, '')}/contents/${entityId}`)
-      if (!response.ok) throw new Error(`unexpected status ${response.status}`)
+      if (!response.ok) {
+        await response.body?.cancel().catch(() => undefined)
+        throw new Error(`unexpected status ${response.status}`)
+      }
       return (await response.json()) as SceneEntity
     } catch (error: any) {
       logger.warn(`Failed to fetch entity ${entityId}: ${error?.message ?? String(error)}`)

@@ -354,13 +354,24 @@ export async function createIngestionComponent(
 
   async function processWorldDeployment(event: WorldDeploymentEventMessage): Promise<IngestionResult> {
     const entityId = event.entity?.entityId
-    const server = event.contentServerUrls?.[0]
-    if (!entityId || !server) return { processed: false, reason: 'world deployment without entityId/contentServerUrls' }
-    const normalizedServer = normalizeServerUrl(server)
-    if (!normalizedServer || !trustedContentServers.has(normalizedServer)) {
+    if (!entityId || !event.contentServerUrls?.length) {
+      return { processed: false, reason: 'world deployment without entityId/contentServerUrls' }
+    }
+    const servers = Array.from(
+      new Set(
+        event.contentServerUrls
+          .map(normalizeServerUrl)
+          .filter((server): server is string => !!server && trustedContentServers.has(server))
+      )
+    )
+    if (!servers.length) {
       return { processed: false, reason: 'world deployment references an untrusted content server' }
     }
-    const entity = await catalystClient.getEntityById(normalizedServer, entityId)
+    let entity: SceneEntity | null = null
+    for (const server of servers) {
+      entity = await catalystClient.getEntityById(server, entityId)
+      if (entity) break
+    }
     if (!entity || entity.type !== 'scene') {
       return { processed: false, reason: `world deployment entity not fetchable: ${oneLine(entityId)}` }
     }
@@ -432,7 +443,14 @@ export async function createIngestionComponent(
       before
     )
 
-    logger.info(`Undeployed ${disabled} scenes for world ${oneLine(worldName.toLowerCase())}`)
+    if (disabled.legacyBaseMatches > 0) {
+      logger.warn(
+        `Undeployed ${disabled.legacyBaseMatches} legacy place rows without deployment ids for ${oneLine(worldName.toLowerCase())}; replay world deployments to reconcile them`
+      )
+    }
+    logger.info(
+      `Undeployed ${disabled.deploymentIdMatches + disabled.legacyBaseMatches} scenes for world ${oneLine(worldName.toLowerCase())}`
+    )
     return { processed: true }
   }
 

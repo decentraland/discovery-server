@@ -14,7 +14,7 @@ describe('when ingesting deployment events', () => {
         updateScene: jest.fn().mockImplementation(async (_c: unknown, id: string, scene: any) => ({ id, ...scene })),
         disablePlaces: jest.fn().mockResolvedValue(0),
         disableByWorldId: jest.fn().mockResolvedValue(0),
-        disableByWorldIdAndDeployments: jest.fn().mockResolvedValue(0)
+        disableByWorldIdAndDeployments: jest.fn().mockResolvedValue({ deploymentIdMatches: 0, legacyBaseMatches: 0 })
       },
       worldsRepository: { findByIdWithAggregates: jest.fn().mockResolvedValue(null), upsert: jest.fn() },
       categoriesRepository: {
@@ -265,6 +265,47 @@ describe('when ingesting deployment events', () => {
       expect(components.placesRepository.insertScene).toHaveBeenCalledWith(
         expect.anything(),
         expect.objectContaining({ world: true, world_id: 'my-world.dcl.eth' })
+      )
+    })
+  })
+
+  describe('and a world deployment lists multiple content servers', () => {
+    const entity = {
+      id: 'world-entity',
+      type: 'scene',
+      pointers: ['0,0'],
+      timestamp: 1_700_000_000_000,
+      content: [],
+      metadata: {
+        scene: { base: '0,0', parcels: ['0,0'] },
+        worldConfiguration: { name: 'example.dcl.eth' }
+      }
+    }
+
+    beforeEach(() => {
+      components.config.getString.mockImplementation(async (key: string) => {
+        if (key === 'CONTENT_SERVER_URL') return 'https://peer.decentraland.org/content'
+        if (key === 'WORLDS_CONTENT_SERVER_URL') return 'https://worlds-content-server.decentraland.org/content'
+        return undefined
+      })
+      components.catalystClient.getEntityById.mockResolvedValueOnce(null).mockResolvedValueOnce(entity)
+    })
+
+    it('should try each trusted server until the entity is fetched', async () => {
+      const ingestion = await createIngestionComponent(components)
+      const result = await ingestion.processWorldDeployment({
+        entity: { entityId: 'world-entity' },
+        contentServerUrls: [
+          'https://peer.decentraland.org/content',
+          'https://worlds-content-server.decentraland.org/content'
+        ]
+      })
+
+      expect(result.processed).toBe(true)
+      expect(components.catalystClient.getEntityById).toHaveBeenNthCalledWith(
+        2,
+        'https://worlds-content-server.decentraland.org/content',
+        'world-entity'
       )
     })
   })
