@@ -200,6 +200,34 @@ describe('when ingesting deployment events', () => {
     })
   })
 
+  describe('and a genesis scene pointer uses a non-canonical coordinate', () => {
+    let event: any
+    let result: { processed: boolean }
+
+    beforeEach(async () => {
+      event = {
+        entity: {
+          id: 'deployment-id',
+          type: 'scene',
+          pointers: ['010,20'],
+          timestamp: 1_700_000_000_000,
+          content: [],
+          metadata: { scene: { base: '10,20', parcels: ['10,20'] }, display: { title: 'Invalid' } }
+        }
+      }
+      const ingestion = await createIngestionComponent(components)
+      result = await ingestion.processCatalystDeployment(event)
+    })
+
+    it('should reject the deployment before querying or writing places', () => {
+      expect([
+        result.processed,
+        components.placesRepository.findEnabledByPositions.mock.calls.length,
+        components.placesRepository.insertScene.mock.calls.length
+      ]).toEqual([false, 0, 0])
+    })
+  })
+
   describe('and a world scene deployment arrives via a Catalyst deployment', () => {
     let event: any
 

@@ -1,4 +1,4 @@
-import type { CatalystDeploymentEvent } from '@dcl/schemas'
+import { SceneParcels, type CatalystDeploymentEvent } from '@dcl/schemas'
 import type { AppComponents } from '../../types'
 import type { Place } from '../../types/entities'
 import type { ScenePlaceInput } from '../../adapters/places-repository'
@@ -28,7 +28,15 @@ const DEFAULT_WORLD_THUMBNAIL =
 const FORBIDDEN_CATEGORY_TAGS = ['poi', 'featured']
 const MAX_CREATOR_CATEGORIES = 3
 const MAX_SCENE_PARCELS = 1000
-const PARCEL_COORDINATE_PATTERN = /^(?:0|-?[1-9]\d*),(?:0|-?[1-9]\d*)$/
+
+function isBoundedParcelList(values: unknown): values is string[] {
+  return (
+    Array.isArray(values) &&
+    values.length > 0 &&
+    values.length <= MAX_SCENE_PARCELS &&
+    values.every((value) => typeof value === 'string' && value.length <= 32)
+  )
+}
 
 // Collapse newlines/control chars so an untrusted SQS field can't forge extra log lines.
 const oneLine = (value: string): string => value.replace(/[\r\n\t]+/g, ' ')
@@ -53,27 +61,22 @@ function deriveContentRating(raw: string | undefined, existing: string | null): 
 
 function validateSceneIdentity(entity: SceneEntity): string | null {
   const metadata = (entity.metadata ?? {}) as SceneMetadata
-  const base = metadata.scene?.base
-  const parcels = metadata.scene?.parcels
+  const scene = metadata.scene
   const pointers = entity.pointers
-  const isCanonicalList = (values: unknown): values is string[] =>
-    Array.isArray(values) &&
-    values.length > 0 &&
-    values.length <= MAX_SCENE_PARCELS &&
-    values.every((value) => typeof value === 'string' && value.length <= 32 && PARCEL_COORDINATE_PATTERN.test(value)) &&
-    new Set(values).size === values.length
 
   if (
-    typeof base !== 'string' ||
-    !PARCEL_COORDINATE_PATTERN.test(base) ||
-    !isCanonicalList(parcels) ||
-    !isCanonicalList(pointers)
+    !scene ||
+    typeof scene.base !== 'string' ||
+    scene.base.length > 32 ||
+    !isBoundedParcelList(scene.parcels) ||
+    !isBoundedParcelList(pointers) ||
+    !SceneParcels.validate(scene) ||
+    !SceneParcels.validate({ base: pointers[0], parcels: pointers })
   ) {
     return 'scene identity must use unique canonical parcel coordinates'
   }
-  if (!parcels.includes(base)) return 'scene base must be included in its parcels'
   const pointerSet = new Set(pointers)
-  if (pointerSet.size !== parcels.length || parcels.some((parcel) => !pointerSet.has(parcel))) {
+  if (pointerSet.size !== scene.parcels.length || scene.parcels.some((parcel) => !pointerSet.has(parcel))) {
     return 'scene parcels must match entity pointers'
   }
   return null
