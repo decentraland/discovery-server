@@ -244,6 +244,12 @@ export async function createIngestionComponent(
    * Persist a derived scene: skip if an overlapping place has a newer deployment (stale guard);
    * update the single overlapping place or insert a new one; disable the rest; write a rating
    * audit row on change; sync the place_categories; announce to Slack. Runs in one transaction.
+   *
+   * The place id is Discovery's stable catalog UUID and is deliberately retained when the logical
+   * scene is updated, preserving favorites, moderation and other place-owned state. deployment_id
+   * is the content producer's immutable revision identity and changes on every redeployment. Keeping
+   * both lets event handlers address an exact deployment without turning the local place UUID into
+   * a version identifier.
    */
   async function persistScene(
     entity: SceneEntity,
@@ -433,6 +439,9 @@ export async function createIngestionComponent(
       return { processed: false, reason: 'world scenes-undeployment without worldName/scenes' }
     }
     const before = event.timestamp ? new Date(event.timestamp) : new Date()
+    // The producer cannot address Discovery's independently assigned place UUID. Entity ids are
+    // shared across the deployment event and stored projection, and ensure a delayed undeployment
+    // cannot disable a place after that same UUID has been updated to a newer deployment.
     const positions = scenes.map((scene) => scene.baseParcel).filter(Boolean)
     const deploymentIds = scenes.map((scene) => scene.entityId).filter(Boolean)
     const disabled = await placesRepository.disableByWorldIdAndDeployments(
