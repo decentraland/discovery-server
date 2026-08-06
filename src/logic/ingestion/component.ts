@@ -82,10 +82,12 @@ function validateSceneIdentity(entity: SceneEntity): string | null {
   return null
 }
 
-function normalizeServerUrl(value: string): string | null {
+function normalizeServerUrl(value: string, allowedHosts: Set<string>): string | null {
   try {
     const url = new URL(value)
-    if (url.protocol !== 'https:' && url.protocol !== 'http:') return null
+    if (url.protocol !== 'https:' || url.username || url.password || !allowedHosts.has(url.hostname.toLowerCase())) {
+      return null
+    }
     url.hash = ''
     url.search = ''
     return url.toString().replace(/\/+$/, '')
@@ -148,12 +150,11 @@ export async function createIngestionComponent(
   const contentServerUrl = (
     (await config.getString('CONTENT_SERVER_URL')) ?? 'https://peer.decentraland.org/content'
   ).replace(/\/+$/, '')
-  const worldsContentServerUrl = (await config.getString('WORLDS_CONTENT_SERVER_URL'))?.replace(/\/+$/, '')
-  const trustedContentServers = new Set(
-    [contentServerUrl, worldsContentServerUrl]
-      .filter((url): url is string => !!url)
-      .map(normalizeServerUrl)
-      .filter((url): url is string => !!url)
+  const allowedContentServerHosts = new Set(
+    ((await config.getString('ALLOWED_CONTENT_SERVER_HOSTS')) ?? '')
+      .split(',')
+      .map((host) => host.trim().toLowerCase())
+      .filter(Boolean)
   )
   const placesChannel = (await config.getString('SLACK_PLACES_CHANNEL')) ?? undefined
   const alert = (text: string) => {
@@ -366,8 +367,8 @@ export async function createIngestionComponent(
     const servers = Array.from(
       new Set(
         event.contentServerUrls
-          .map(normalizeServerUrl)
-          .filter((server): server is string => !!server && trustedContentServers.has(server))
+          .map((server) => normalizeServerUrl(server, allowedContentServerHosts))
+          .filter((server): server is string => !!server)
       )
     )
     if (!servers.length) {

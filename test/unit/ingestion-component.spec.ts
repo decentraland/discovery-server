@@ -285,7 +285,9 @@ describe('when ingesting deployment events', () => {
     beforeEach(() => {
       components.config.getString.mockImplementation(async (key: string) => {
         if (key === 'CONTENT_SERVER_URL') return 'https://peer.decentraland.org/content'
-        if (key === 'WORLDS_CONTENT_SERVER_URL') return 'https://worlds-content-server.decentraland.org/content'
+        if (key === 'ALLOWED_CONTENT_SERVER_HOSTS') {
+          return 'peer.decentraland.org,worlds-content-server.decentraland.org'
+        }
         return undefined
       })
       components.catalystClient.getEntityById.mockResolvedValueOnce(null).mockResolvedValueOnce(entity)
@@ -307,6 +309,54 @@ describe('when ingesting deployment events', () => {
         'https://worlds-content-server.decentraland.org/content',
         'world-entity'
       )
+    })
+  })
+
+  describe('and a world deployment only lists a host outside the unified allowlist', () => {
+    let result: { processed: boolean; reason?: string }
+
+    beforeEach(async () => {
+      components.config.getString.mockImplementation(async (key: string) => {
+        if (key === 'CONTENT_SERVER_URL') return 'https://peer.decentraland.org/content'
+        if (key === 'ALLOWED_CONTENT_SERVER_HOSTS') return 'peer.decentraland.org'
+        return undefined
+      })
+      const ingestion = await createIngestionComponent(components)
+      result = await ingestion.processWorldDeployment({
+        entity: { entityId: 'world-entity' },
+        contentServerUrls: ['https://untrusted.example/content']
+      })
+    })
+
+    it('should reject the deployment without fetching its entity', () => {
+      expect(result).toEqual({
+        processed: false,
+        reason: 'world deployment references an untrusted content server'
+      })
+    })
+  })
+
+  describe('and a world deployment uses HTTP for an allowlisted host', () => {
+    let result: { processed: boolean; reason?: string }
+
+    beforeEach(async () => {
+      components.config.getString.mockImplementation(async (key: string) => {
+        if (key === 'CONTENT_SERVER_URL') return 'https://peer.decentraland.org/content'
+        if (key === 'ALLOWED_CONTENT_SERVER_HOSTS') return 'peer.decentraland.org'
+        return undefined
+      })
+      const ingestion = await createIngestionComponent(components)
+      result = await ingestion.processWorldDeployment({
+        entity: { entityId: 'world-entity' },
+        contentServerUrls: ['http://peer.decentraland.org/content']
+      })
+    })
+
+    it('should reject the deployment without fetching its entity', () => {
+      expect(result).toEqual({
+        processed: false,
+        reason: 'world deployment references an untrusted content server'
+      })
     })
   })
 
