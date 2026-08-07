@@ -14,7 +14,7 @@ describe('when ingesting deployment events', () => {
         updateScene: jest.fn().mockImplementation(async (_c: unknown, id: string, scene: any) => ({ id, ...scene })),
         disablePlaces: jest.fn().mockResolvedValue(0),
         disableByWorldId: jest.fn().mockResolvedValue(0),
-        disableByWorldIdAndPositions: jest.fn().mockResolvedValue(0)
+        disableByWorldIdAndDeployments: jest.fn().mockResolvedValue({ deploymentIdMatches: 0, legacyBaseMatches: 0 })
       },
       worldsRepository: { findByIdWithAggregates: jest.fn().mockResolvedValue(null), upsert: jest.fn() },
       categoriesRepository: {
@@ -172,6 +172,62 @@ describe('when ingesting deployment events', () => {
     })
   })
 
+  describe('and a scene base does not belong to the authorized pointers', () => {
+    let event: any
+
+    beforeEach(() => {
+      event = {
+        entity: {
+          id: 'deployment-id',
+          type: 'scene',
+          pointers: ['10,20'],
+          timestamp: 1_700_000_000_000,
+          content: [],
+          metadata: { scene: { base: '30,40', parcels: ['10,20'] }, display: { title: 'Invalid' } }
+        }
+      }
+    })
+
+    it('should reject the deployment before querying or writing places', async () => {
+      const ingestion = await createIngestionComponent(components)
+      const result = await ingestion.processCatalystDeployment(event)
+
+      expect([
+        result.processed,
+        components.placesRepository.findEnabledByPositions.mock.calls.length,
+        components.placesRepository.insertScene.mock.calls.length
+      ]).toEqual([false, 0, 0])
+    })
+  })
+
+  describe('and a genesis scene pointer uses a non-canonical coordinate', () => {
+    let event: any
+    let result: { processed: boolean }
+
+    beforeEach(async () => {
+      event = {
+        entity: {
+          id: 'deployment-id',
+          type: 'scene',
+          pointers: ['010,20'],
+          timestamp: 1_700_000_000_000,
+          content: [],
+          metadata: { scene: { base: '10,20', parcels: ['10,20'] }, display: { title: 'Invalid' } }
+        }
+      }
+      const ingestion = await createIngestionComponent(components)
+      result = await ingestion.processCatalystDeployment(event)
+    })
+
+    it('should reject the deployment before querying or writing places', () => {
+      expect([
+        result.processed,
+        components.placesRepository.findEnabledByPositions.mock.calls.length,
+        components.placesRepository.insertScene.mock.calls.length
+      ]).toEqual([false, 0, 0])
+    })
+  })
+
   describe('and a world scene deployment arrives via a Catalyst deployment', () => {
     let event: any
 
@@ -210,6 +266,97 @@ describe('when ingesting deployment events', () => {
         expect.anything(),
         expect.objectContaining({ world: true, world_id: 'my-world.dcl.eth' })
       )
+    })
+  })
+
+  describe('and a world deployment lists multiple content servers', () => {
+    const entity = {
+      id: 'world-entity',
+      type: 'scene',
+      pointers: ['0,0'],
+      timestamp: 1_700_000_000_000,
+      content: [],
+      metadata: {
+        scene: { base: '0,0', parcels: ['0,0'] },
+        worldConfiguration: { name: 'example.dcl.eth' }
+      }
+    }
+
+    beforeEach(() => {
+      components.config.getString.mockImplementation(async (key: string) => {
+        if (key === 'CONTENT_SERVER_URL') return 'https://peer.decentraland.org/content'
+        if (key === 'ALLOWED_CONTENT_SERVER_HOSTS') {
+          return 'peer.decentraland.org,worlds-content-server.decentraland.org'
+        }
+        return undefined
+      })
+      components.catalystClient.getEntityById.mockResolvedValueOnce(null).mockResolvedValueOnce(entity)
+    })
+
+    it('should try each trusted server until the entity is fetched', async () => {
+      const ingestion = await createIngestionComponent(components)
+      const result = await ingestion.processWorldDeployment({
+        entity: { entityId: 'world-entity' },
+        contentServerUrls: [
+          'https://peer.decentraland.org/content',
+          'https://worlds-content-server.decentraland.org/content'
+        ]
+      })
+
+      expect(result.processed).toBe(true)
+      expect(components.catalystClient.getEntityById).toHaveBeenNthCalledWith(
+        2,
+        'https://worlds-content-server.decentraland.org/content',
+        'world-entity'
+      )
+    })
+  })
+
+  describe('and a world deployment only lists a host outside the unified allowlist', () => {
+    let result: { processed: boolean; reason?: string }
+
+    beforeEach(async () => {
+      components.config.getString.mockImplementation(async (key: string) => {
+        if (key === 'CONTENT_SERVER_URL') return 'https://peer.decentraland.org/content'
+        if (key === 'ALLOWED_CONTENT_SERVER_HOSTS') return 'peer.decentraland.org'
+        return undefined
+      })
+      const ingestion = await createIngestionComponent(components)
+      result = await ingestion.processWorldDeployment({
+        entity: { entityId: 'world-entity' },
+        contentServerUrls: ['https://untrusted.example/content']
+      })
+    })
+
+    it('should reject the deployment without fetching its entity', () => {
+      expect(result).toEqual({
+        processed: false,
+        reason: 'world deployment references an untrusted content server'
+      })
+    })
+  })
+
+  describe('and a world deployment uses HTTP for an allowlisted host', () => {
+    let result: { processed: boolean; reason?: string }
+
+    beforeEach(async () => {
+      components.config.getString.mockImplementation(async (key: string) => {
+        if (key === 'CONTENT_SERVER_URL') return 'https://peer.decentraland.org/content'
+        if (key === 'ALLOWED_CONTENT_SERVER_HOSTS') return 'peer.decentraland.org'
+        return undefined
+      })
+      const ingestion = await createIngestionComponent(components)
+      result = await ingestion.processWorldDeployment({
+        entity: { entityId: 'world-entity' },
+        contentServerUrls: ['http://peer.decentraland.org/content']
+      })
+    })
+
+    it('should reject the deployment without fetching its entity', () => {
+      expect(result).toEqual({
+        processed: false,
+        reason: 'world deployment references an untrusted content server'
+      })
     })
   })
 
@@ -264,9 +411,10 @@ describe('when ingesting deployment events', () => {
         metadata: { worldName: 'My-World.dcl.eth', scenes: [{ entityId: 'e1', baseParcel: '0,0' }] }
       })
 
-      expect(components.placesRepository.disableByWorldIdAndPositions).toHaveBeenCalledWith(
+      expect(components.placesRepository.disableByWorldIdAndDeployments).toHaveBeenCalledWith(
         components.pg,
         'my-world.dcl.eth',
+        ['e1'],
         ['0,0'],
         expect.any(Date)
       )

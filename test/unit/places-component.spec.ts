@@ -26,7 +26,7 @@ describe('when reading places', () => {
       updateScene: jest.fn(),
       disablePlaces: jest.fn(),
       disableByWorldId: jest.fn(),
-      disableByWorldIdAndPositions: jest.fn(),
+      disableByWorldIdAndDeployments: jest.fn(),
       listOccupiedPositions: jest.fn()
     }
     pg = {}

@@ -4,6 +4,7 @@
 
 export type Place = {
   id: string
+  deployment_id: string | null
   title: string | null
   description: string | null
   image: string | null

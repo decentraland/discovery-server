@@ -1,4 +1,4 @@
-import type { CatalystDeploymentEvent } from '@dcl/schemas'
+import { SceneParcels, type CatalystDeploymentEvent } from '@dcl/schemas'
 import type { AppComponents } from '../../types'
 import type { Place } from '../../types/entities'
 import type { ScenePlaceInput } from '../../adapters/places-repository'
@@ -27,6 +27,16 @@ const DEFAULT_WORLD_THUMBNAIL =
 // Forbidden as creator-supplied tags (only moderators/sync assign these).
 const FORBIDDEN_CATEGORY_TAGS = ['poi', 'featured']
 const MAX_CREATOR_CATEGORIES = 3
+const MAX_SCENE_PARCELS = 1000
+
+function isBoundedParcelList(values: unknown): values is string[] {
+  return (
+    Array.isArray(values) &&
+    values.length > 0 &&
+    values.length <= MAX_SCENE_PARCELS &&
+    values.every((value) => typeof value === 'string' && value.length <= 32)
+  )
+}
 
 // Collapse newlines/control chars so an untrusted SQS field can't forge extra log lines.
 const oneLine = (value: string): string => value.replace(/[\r\n\t]+/g, ' ')
@@ -47,6 +57,43 @@ function deriveContentRating(raw: string | undefined, existing: string | null): 
   const incoming = normalizeRating(raw)
   if (!existing) return incoming
   return ratingIndex(existing) > ratingIndex(incoming) ? existing : incoming
+}
+
+function validateSceneIdentity(entity: SceneEntity): string | null {
+  const metadata = (entity.metadata ?? {}) as SceneMetadata
+  const scene = metadata.scene
+  const pointers = entity.pointers
+
+  if (
+    !scene ||
+    typeof scene.base !== 'string' ||
+    scene.base.length > 32 ||
+    !isBoundedParcelList(scene.parcels) ||
+    !isBoundedParcelList(pointers) ||
+    !SceneParcels.validate(scene) ||
+    !SceneParcels.validate({ base: pointers[0], parcels: pointers })
+  ) {
+    return 'scene identity must use unique canonical parcel coordinates'
+  }
+  const pointerSet = new Set(pointers)
+  if (pointerSet.size !== scene.parcels.length || scene.parcels.some((parcel) => !pointerSet.has(parcel))) {
+    return 'scene parcels must match entity pointers'
+  }
+  return null
+}
+
+function normalizeServerUrl(value: string, allowedHosts: Set<string>): string | null {
+  try {
+    const url = new URL(value)
+    if (url.protocol !== 'https:' || url.username || url.password || !allowedHosts.has(url.hostname.toLowerCase())) {
+      return null
+    }
+    url.hash = ''
+    url.search = ''
+    return url.toString().replace(/\/+$/, '')
+  } catch {
+    return null
+  }
 }
 
 type SceneMetadata = {
@@ -103,6 +150,12 @@ export async function createIngestionComponent(
   const contentServerUrl = (
     (await config.getString('CONTENT_SERVER_URL')) ?? 'https://peer.decentraland.org/content'
   ).replace(/\/+$/, '')
+  const allowedContentServerHosts = new Set(
+    ((await config.getString('ALLOWED_CONTENT_SERVER_HOSTS')) ?? '')
+      .split(',')
+      .map((host) => host.trim().toLowerCase())
+      .filter(Boolean)
+  )
   const placesChannel = (await config.getString('SLACK_PLACES_CHANNEL')) ?? undefined
   const alert = (text: string) => {
     void slackNotifier.notify(text, placesChannel)
@@ -166,6 +219,7 @@ export async function createIngestionComponent(
     if (contactName && contactName.trim() === 'author-name') contactName = null
 
     return {
+      deployment_id: entity.id ?? null,
       base_position: base,
       positions,
       title: rawTitle ? rawTitle.slice(0, 50) : 'Untitled',
@@ -191,6 +245,12 @@ export async function createIngestionComponent(
    * Persist a derived scene: skip if an overlapping place has a newer deployment (stale guard);
    * update the single overlapping place or insert a new one; disable the rest; write a rating
    * audit row on change; sync the place_categories; announce to Slack. Runs in one transaction.
+   *
+   * The place id is Discovery's stable catalog UUID and is deliberately retained when the logical
+   * scene is updated, preserving favorites, moderation and other place-owned state. deployment_id
+   * is the content producer's immutable revision identity and changes on every redeployment. Keeping
+   * both lets event handlers address an exact deployment without turning the local place UUID into
+   * a version identifier.
    */
   async function persistScene(
     entity: SceneEntity,
@@ -256,11 +316,15 @@ export async function createIngestionComponent(
   }
 
   async function processGenesisScene(entity: SceneEntity): Promise<IngestionResult> {
+    const identityError = validateSceneIdentity(entity)
+    if (identityError) return { processed: false, reason: identityError }
     const overlapping = await placesRepository.findEnabledByPositions(pg, entity.pointers ?? [])
     return persistScene(entity, overlapping, { worldId: null, worldName: null, optOut: false })
   }
 
   async function processWorldScene(entity: SceneEntity): Promise<IngestionResult> {
+    const identityError = validateSceneIdentity(entity)
+    if (identityError) return { processed: false, reason: identityError }
     const metadata = (entity.metadata ?? {}) as SceneMetadata
     const worldName = metadata.worldConfiguration?.name || metadata.worldConfiguration?.dclName
     if (!worldName) return { processed: false, reason: 'world scene deployment without a worldConfiguration name' }
@@ -297,12 +361,31 @@ export async function createIngestionComponent(
 
   async function processWorldDeployment(event: WorldDeploymentEventMessage): Promise<IngestionResult> {
     const entityId = event.entity?.entityId
-    const server = event.contentServerUrls?.[0]
-    if (!entityId || !server) return { processed: false, reason: 'world deployment without entityId/contentServerUrls' }
-    const entity = await catalystClient.getEntityById(server, entityId)
+    if (!entityId || !event.contentServerUrls?.length) {
+      return { processed: false, reason: 'world deployment without entityId/contentServerUrls' }
+    }
+    const servers = Array.from(
+      new Set(
+        event.contentServerUrls
+          .map((server) => normalizeServerUrl(server, allowedContentServerHosts))
+          .filter((server): server is string => !!server)
+      )
+    )
+    if (!servers.length) {
+      return { processed: false, reason: 'world deployment references an untrusted content server' }
+    }
+    let entity: SceneEntity | null = null
+    for (const server of servers) {
+      entity = await catalystClient.getEntityById(server, entityId)
+      if (entity) break
+    }
     if (!entity || entity.type !== 'scene') {
       return { processed: false, reason: `world deployment entity not fetchable: ${oneLine(entityId)}` }
     }
+    if (entity.id && entity.id !== entityId) {
+      return { processed: false, reason: 'world deployment entity identity does not match the requested entity' }
+    }
+    entity.id = entityId
     return processWorldScene(entity)
   }
 
@@ -357,10 +440,27 @@ export async function createIngestionComponent(
       return { processed: false, reason: 'world scenes-undeployment without worldName/scenes' }
     }
     const before = event.timestamp ? new Date(event.timestamp) : new Date()
+    // The producer cannot address Discovery's independently assigned place UUID. Entity ids are
+    // shared across the deployment event and stored projection, and ensure a delayed undeployment
+    // cannot disable a place after that same UUID has been updated to a newer deployment.
     const positions = scenes.map((scene) => scene.baseParcel).filter(Boolean)
-    const disabled = await placesRepository.disableByWorldIdAndPositions(pg, worldName.toLowerCase(), positions, before)
+    const deploymentIds = scenes.map((scene) => scene.entityId).filter(Boolean)
+    const disabled = await placesRepository.disableByWorldIdAndDeployments(
+      pg,
+      worldName.toLowerCase(),
+      deploymentIds,
+      positions,
+      before
+    )
 
-    logger.info(`Undeployed ${disabled} scenes for world ${oneLine(worldName.toLowerCase())}`)
+    if (disabled.legacyBaseMatches > 0) {
+      logger.warn(
+        `Undeployed ${disabled.legacyBaseMatches} legacy place rows without deployment ids for ${oneLine(worldName.toLowerCase())}; replay world deployments to reconcile them`
+      )
+    }
+    logger.info(
+      `Undeployed ${disabled.deploymentIdMatches + disabled.legacyBaseMatches} scenes for world ${oneLine(worldName.toLowerCase())}`
+    )
     return { processed: true }
   }
 

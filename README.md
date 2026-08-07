@@ -16,6 +16,20 @@ With this architecture, code is organized into several layers: logic, controller
 
 The same lifecycle is also valid for tests: [test/components.ts](test/components.ts)
 
+Database migrations run when the PostgreSQL component starts, before ingestion
+consumers are started. After the `places.deployment_id` migration is deployed,
+replay active Worlds deployment events to reconcile legacy active rows, and
+verify completion with:
+
+```sql
+SELECT count(*) FROM places
+WHERE world IS TRUE AND disabled IS FALSE AND deployment_id IS NULL;
+```
+
+The guarded base-parcel fallback emits a warning whenever it handles one of
+these legacy rows. Keep monitoring it until the count reaches zero, then remove
+the fallback in a later release.
+
 ## Namespaces
 
 ### src/logic
@@ -34,7 +48,7 @@ export async function pingHandler(context: {
   url: URL // parameter added by http-server
   components: AppComponents // components of the app, part of the global context
 }) {
-  components.metrics.increment("test_ping_counter")
+  components.metrics.increment('test_ping_counter')
   return { status: 200 }
 }
 ```
