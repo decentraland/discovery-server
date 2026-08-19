@@ -50,4 +50,37 @@ describe('when reading worlds', () => {
       expect(result).toEqual({ data: [], total: 0 })
     })
   })
+
+  describe('and a stored world carries unsafe markup and image', () => {
+    beforeEach(() => {
+      worldsRepository.findByIdWithAggregates.mockResolvedValueOnce({
+        id: 'my-world.dcl.eth',
+        world_name: 'my-world.dcl.eth',
+        description: 'Enter <link="file:///etc/passwd">x</link> now',
+        image: 'https://10.0.0.1/thumb.png',
+        highlighted_image: 'javascript:alert(1)'
+      } as never)
+    })
+
+    it('should strip the unsafe description markup on read', async () => {
+      const worlds = await createWorldsComponent({ pg, worldsRepository, worldsLiveData, logs })
+      const result = await worlds.getWorld('my-world.dcl.eth')
+
+      expect(result.description).toBe('Enter x now')
+    })
+
+    it('should reject the internal-host image on read', async () => {
+      const worlds = await createWorldsComponent({ pg, worldsRepository, worldsLiveData, logs })
+      const result = await worlds.getWorld('my-world.dcl.eth')
+
+      expect(result.image).toBeNull()
+    })
+
+    it('should reject the unsafe highlighted_image on read', async () => {
+      const worlds = await createWorldsComponent({ pg, worldsRepository, worldsLiveData, logs })
+      const result = await worlds.getWorld('my-world.dcl.eth')
+
+      expect(result.highlighted_image).toBeNull()
+    })
+  })
 })

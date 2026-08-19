@@ -2,6 +2,7 @@ import { Events } from '@dcl/schemas'
 import type { AppComponents } from '../../types'
 import type { Event } from '../../types/entities'
 import type { PublishableEvents } from '../../adapters/sns-publisher'
+import { sanitizeDescription, sanitizeImageUrl, sanitizePlainText } from '../content-sanitization'
 import type { INotificationsComponent } from './types'
 
 const UPCOMING_WINDOW_MS = 60 * 60 * 1000
@@ -17,6 +18,16 @@ const MAX_LOOKBACK_MS = 24 * 60 * 60 * 1000
 const NOTIFICATION_DESCRIPTION_MAX = 1000
 
 const truncate = (text: string, max: number): string => (text.length > max ? text.slice(0, max) : text)
+
+// Notification payloads are read straight from stored event rows (bypassing the API `serialize`
+// sanitizer), so strip client-rendered TMP markup here too before embedding the description —
+// otherwise a `<link="decentraland://…">` could reach a notification consumer's client.
+const describeForNotification = (description: string | null): string =>
+  truncate(sanitizeDescription(description) ?? '', NOTIFICATION_DESCRIPTION_MAX)
+
+// Event name / title is a plain-text label in the payload; strip all markup so it can't carry a
+// clickable `<link>` into a notification consumer (same reason as the API `serialize`).
+const labelForNotification = (value: string | null): string => sanitizePlainText(value) ?? ''
 
 /**
  * The three SNS notification crons. Each is idempotent via a per-type cursor in
@@ -93,13 +104,13 @@ export async function createNotificationsComponent(
           key: `${event.id}-${startOccurrence(event)}-${attendee.user}-starts-soon`,
           timestamp: now,
           metadata: {
-            name: event.name,
-            image: event.image ?? '',
+            name: labelForNotification(event.name),
+            image: sanitizeImageUrl(event.image) ?? '',
             link: link(event),
             startsAt: (event.next_start_at ?? event.start_at).toISOString(),
             endsAt: (event.next_finish_at ?? event.finish_at).toISOString(),
-            title: event.name,
-            description: truncate(event.description ?? '', NOTIFICATION_DESCRIPTION_MAX),
+            title: labelForNotification(event.name),
+            description: describeForNotification(event.description),
             attendee: attendee.user
           }
         } as never)
@@ -137,11 +148,11 @@ export async function createNotificationsComponent(
           key: `${event.id}-${startOccurrence(event)}-${recipient}-started`,
           timestamp: now,
           metadata: {
-            name: event.name,
-            image: event.image ?? '',
+            name: labelForNotification(event.name),
+            image: sanitizeImageUrl(event.image) ?? '',
             link: link(event),
-            title: event.name,
-            description: truncate(event.description ?? '', NOTIFICATION_DESCRIPTION_MAX),
+            title: labelForNotification(event.name),
+            description: describeForNotification(event.description),
             attendee: recipient,
             ...(event.community_id ? { communityId: event.community_id } : {})
           }
@@ -181,9 +192,9 @@ export async function createNotificationsComponent(
   // Shared metadata for the creator-facing moderation notifications (approved/rejected/deleted).
   const moderationMetadata = (event: Event) => ({
     host: event.user,
-    title: event.name,
-    description: truncate(event.description ?? '', NOTIFICATION_DESCRIPTION_MAX),
-    image: event.image ?? ''
+    title: labelForNotification(event.name),
+    description: describeForNotification(event.description),
+    image: sanitizeImageUrl(event.image) ?? ''
   })
 
   // Publish a single lifecycle notification, swallowing errors so a notification failure
@@ -241,7 +252,12 @@ export async function createNotificationsComponent(
       ])
       if (!community || !members.length) return
       const now = Date.now()
-      const description = `The ${community.name} Community has added a new event.`
+      // Community metadata is externally sourced/user-authored, so sanitize it at this boundary
+      // too. The name is a label, so strip ALL markup (sanitizePlainText — no safe-link
+      // preservation) since it flows into the rendered `description`; the thumbnail is rejected
+      // if it isn't a safe URL, matching how event fields are handled.
+      const communityName = sanitizePlainText(community.name) ?? ''
+      const description = `The ${communityName} Community has added a new event.`
       const payload: PublishableEvents = members.map(
         (member) =>
           ({
@@ -253,11 +269,11 @@ export async function createNotificationsComponent(
             metadata: {
               title: 'Community Event Added',
               description,
-              name: event.name,
-              image: event.image ?? '',
+              name: labelForNotification(event.name),
+              image: sanitizeImageUrl(event.image) ?? '',
               communityId: community.id,
-              communityName: community.name,
-              communityThumbnail: community.thumbnailRaw,
+              communityName,
+              communityThumbnail: sanitizeImageUrl(community.thumbnailRaw) ?? undefined,
               attendee: member
             }
           }) as never

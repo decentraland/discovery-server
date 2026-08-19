@@ -5,6 +5,7 @@ import type { EventListFilters, CreateEventRow, UpdateEventRow } from '../../ada
 import { AllowedInputFrequencies, MAX_RECURRENT_PAST_ITERATIONS } from '../recurrence'
 import type { RecurrentEventInput } from '../recurrence'
 import { isPlaceId } from '../entity-id'
+import { sanitizeDescription, sanitizeExternalUrl, sanitizeImageUrl, sanitizePlainText } from '../content-sanitization'
 import { EventNotFoundError, EventUnauthorizedActionError, EventValidationError } from './errors'
 import type { CreateEventPayload, EventWithAttendance, IEventsComponent, UpdateEventPayload } from './types'
 
@@ -31,6 +32,42 @@ const RECURRENCE_KEYS: Array<keyof UpdateEventPayload> = [
   'recurrent_until',
   'recurrent_count'
 ]
+
+// Public, moderated fields as they appear in the API `serialize()` output — the content and
+// location-identity a viewer actually sees. Re-moderation is decided by diffing these between the
+// serialized event before and after an edit (see updateEvent), NOT by comparing raw request
+// values against raw stored columns: the client reads (and echoes) the *serialized* form (labels
+// plain-texted, `estate_name` resolved to `estate_name ?? scene_name`, URLs normalized), so a raw
+// vs. serialized comparison would flag a no-op read-modify-write echo as a change. Scheduling/
+// control fields (recurrence, all_day) are intentionally absent — they don't alter what is shown.
+// `url` is included (a hostile link swap must re-review) and `schedules` (ungated curation
+// membership); location identity (x/y/server/world/world_id/place_id/estate_id) is here too.
+const MODERATED_SERIALIZED_FIELDS: Array<keyof Event> = [
+  'name',
+  'user_name',
+  'description',
+  'image',
+  'image_vertical',
+  'url',
+  'categories',
+  'estate_name',
+  'scene_name',
+  'server',
+  'schedules',
+  'x',
+  'y',
+  'world',
+  'world_id',
+  'place_id',
+  'estate_id'
+]
+
+// Whether any moderated public field differs between two serialized events.
+function moderatedViewDiffers(before: Event, after: Event): boolean {
+  const a = before as unknown as Record<string, unknown>
+  const b = after as unknown as Record<string, unknown>
+  return MODERATED_SERIALIZED_FIELDS.some((key) => JSON.stringify(a[key]) !== JSON.stringify(b[key]))
+}
 
 /**
  * Event orchestration. Recurrence is materialized in-process via the recurrence
@@ -109,9 +146,13 @@ export async function createEventsComponent(
     estate_name: string | null
     scene_name: string | null
   }> {
+    // Reject a non-http(s) / internal-host / breakout client image so it is never stored or
+    // served; a rejected value falls back to the world default or the Land-derived image, just
+    // as an omitted image would.
+    const requestedImage = sanitizeImageUrl(payload.image)
     if (isWorld) {
       return {
-        image: payload.image ?? `${eventsBaseUrl}/images/event-default.jpg`,
+        image: requestedImage ?? `${eventsBaseUrl}/images/event-default.jpg`,
         estate_id: payload.estate_id ?? null,
         estate_name: payload.estate_name ?? null,
         scene_name: payload.scene_name ?? null
@@ -119,12 +160,12 @@ export async function createEventsComponent(
     }
     const x = toCoordinate(payload.x)
     const y = toCoordinate(payload.y)
-    // Only hit Land for the metadata the caller didn't already supply.
-    const needsTile = !payload.image || !payload.estate_id || !payload.estate_name
+    // Only hit Land for the metadata the caller didn't already supply (a safe image counts).
+    const needsTile = !requestedImage || !payload.estate_id || !payload.estate_name
     const tile = needsTile ? await landClient.getTile(x, y) : null
     const estate_id = payload.estate_id ?? tile?.estateId ?? null
     const estate_name = payload.estate_name ?? tile?.name ?? null
-    const image = payload.image ?? (estate_id ? landClient.getEstateImage(estate_id) : landClient.getParcelImage(x, y))
+    const image = requestedImage ?? (estate_id ? landClient.getEstateImage(estate_id) : landClient.getParcelImage(x, y))
     return { image, estate_id, estate_name, scene_name: payload.scene_name ?? estate_name }
   }
 
@@ -140,10 +181,26 @@ export async function createEventsComponent(
       !!nextStart && now >= new Date(nextStart).getTime() && now < new Date(nextStart).getTime() + event.duration
     return {
       ...rest,
-      ...(isOwner ? { contact, details } : {}),
-      user_name: foundationAddresses.has(event.user) ? 'Decentraland Foundation' : event.user_name,
+      // Sanitize every user-authored surface on the read path so it can't reach the TMP client
+      // raw (covers rows that predate write-time sanitization or were imported raw by the ETL):
+      // the description keeps safe links (rich text); short labels (name / user_name / estate /
+      // scene) are reduced to plain text — a label must never carry a clickable `<link>`; and
+      // image URLs must be safe public http(s).
+      name: sanitizePlainText(event.name) ?? '',
+      description: sanitizeDescription(event.description),
+      image: sanitizeImageUrl(event.image),
+      image_vertical: sanitizeImageUrl(event.image_vertical),
+      scene_name: sanitizePlainText(event.scene_name),
+      server: sanitizePlainText(event.server),
+      url: sanitizeExternalUrl(event.url),
+      // contact/details are owner-only (self-XSS), but sanitize them too for consistency:
+      // contact is a label, details is free text that may carry safe links.
+      ...(isOwner ? { contact: sanitizePlainText(contact), details: sanitizeDescription(details) } : {}),
+      user_name: foundationAddresses.has(event.user) ? 'Decentraland Foundation' : sanitizePlainText(event.user_name),
+      // Category tags are unvalidated on events; reduce each to plain text and drop pure-markup ones.
+      categories: (event.categories ?? []).map((c) => sanitizePlainText(c)).filter((c): c is string => !!c),
       place_id: event.place_id ?? event.world_id,
-      estate_name: event.estate_name ?? event.scene_name,
+      estate_name: sanitizePlainText(event.estate_name ?? event.scene_name),
       position: [event.x, event.y],
       live
     }
@@ -329,8 +386,10 @@ export async function createEventsComponent(
     const row: CreateEventRow = {
       name: payload.name,
       image: presentation.image,
-      image_vertical: payload.image_vertical ?? null,
-      description: payload.description ?? null,
+      image_vertical: sanitizeImageUrl(payload.image_vertical),
+      // Sanitize on write so unsafe TMP markup is never persisted raw (read-boundary
+      // sanitization stays as defense-in-depth for any legacy/ETL rows).
+      description: sanitizeDescription(payload.description),
       start_at: props.start_at,
       finish_at: props.finish_at,
       duration: props.duration,
@@ -357,7 +416,7 @@ export async function createEventsComponent(
       place_id: location.place_id,
       world_id: location.world_id,
       community_id: payload.community_id ?? null,
-      url: payload.url ?? null,
+      url: sanitizeExternalUrl(payload.url),
       user: user.toLowerCase(),
       user_name: payload.user_name ?? null,
       contact: payload.contact ?? null,
@@ -377,7 +436,7 @@ export async function createEventsComponent(
     }
 
     const created = await eventsRepository.create(pg, row)
-    alert(`:tada: New event submitted: ${created.name} by ${user.toLowerCase()}`)
+    alert(`:tada: New event submitted: ${sanitizePlainText(created.name) ?? ''} by ${user.toLowerCase()}`)
     return serialize(created, user)
   }
 
@@ -425,6 +484,16 @@ export async function createEventsComponent(
     for (const key of CONTENT_KEYS) {
       if (key in patch) (update as Record<string, unknown>)[key] = patch[key]
     }
+
+    // Reject unsafe client-supplied image URLs on update. When the location changes, the branch
+    // below overrides `image` with a re-derived (already-sanitized) value.
+    if ('image' in patch) update.image = sanitizeImageUrl(patch.image)
+    if ('image_vertical' in patch) update.image_vertical = sanitizeImageUrl(patch.image_vertical)
+    // Persist descriptions sanitized so raw TMP markup is never stored (even when it sanitizes
+    // to the same visible text and so doesn't itself re-open moderation).
+    if ('description' in patch) update.description = sanitizeDescription(patch.description)
+    // The public url is a link a client may open; reject unsafe schemes/hosts on write too.
+    if ('url' in patch) update.url = sanitizeExternalUrl(patch.url)
 
     // Timing / recurrence: recompute the materialized window from the merged rule.
     if (RECURRENCE_KEYS.some((key) => key in patch)) {
@@ -567,6 +636,29 @@ export async function createEventsComponent(
       update.highlighted = patch.highlighted
     }
 
+    // Re-open moderation when an already-approved event's public content or location changes,
+    // unless the actor is a true moderator/editor whose edit is itself the review — the
+    // `canHighlight` set (admin / ApproveAnyEvent / EditAnyEvent), NOT `canApprove`. This runs
+    // AFTER the approve/reject/highlight blocks so it is unconditional for everyone else: an owner
+    // who can only self-approve (ApproveOwnEvent) cannot keep approval by self-approving in the
+    // same request (a review cannot cover content written in that same PATCH), and can never
+    // carry a moderator's highlight across an edit. To re-approve edited content they must do it
+    // in a separate request against the now-updated content.
+    //
+    // The change is detected on the *serialized* view (what a client reads), before vs. after, so
+    // a no-op read-modify-write echo — the client resends the serialized value it read, which
+    // differs from the raw stored column (labels plain-texted, `estate_name ?? scene_name`
+    // resolved, URLs normalized) — is not mistaken for an edit.
+    if (event.approved && !canHighlight) {
+      const before = serialize(event, user)
+      const after = serialize({ ...event, ...update } as Event, user)
+      if (moderatedViewDiffers(before, after)) {
+        update.approved = false
+        update.approved_by = null
+        update.highlighted = false
+      }
+    }
+
     const updated = await eventsRepository.update(pg, id, update)
     if (!updated) throw new EventNotFoundError(id)
 
@@ -576,14 +668,16 @@ export async function createEventsComponent(
     const newlyApproved = !event.approved && update.approved === true
     const newlyRejected = !event.rejected && update.rejected === true
     if (canApprove && newlyApproved) {
-      alert(`:white_check_mark: Event approved: ${updated.name} by ${actor}`)
+      alert(`:white_check_mark: Event approved: ${sanitizePlainText(updated.name) ?? ''} by ${actor}`)
       // Fire-and-forget (the method swallows its own errors) so a slow/failed SNS
       // publish never blocks or fails the PATCH — same as the Slack alert above.
       void notifications.notifyEventApproved(updated)
     }
     if (canApprove && newlyRejected) {
       alert(
-        `:x: Event rejected: ${updated.name}${update.rejection_reason ? ` (${update.rejection_reason})` : ''} by ${actor}`
+        `:x: Event rejected: ${sanitizePlainText(updated.name) ?? ''}${
+          update.rejection_reason ? ` (${sanitizePlainText(update.rejection_reason) ?? ''})` : ''
+        } by ${actor}`
       )
       void notifications.notifyEventRejected(updated, updated.rejection_reason ?? '')
     }

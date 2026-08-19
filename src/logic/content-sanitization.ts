@@ -1,0 +1,277 @@
+// Shared sanitizers for creator/user-authored text and image URLs, applied at the
+// ingestion (place/world) and serialization (event) boundaries.
+//
+// The Unity client renders place/world/event descriptions as TextMeshPro rich text
+// (no HTML, no Markdown) and turns `<link="target">text</link>` into a clickable link
+// that reaches an unrestricted `Application.OpenURL(target)` on the viewer's machine —
+// so a `decentraland://` / `smb://` / `file://` / `javascript:` target fires a local
+// handler, and an http(s) URL aimed at an internal/loopback/metadata host points the
+// viewer's browser at their own network.
+
+// Matches an HTML-/TMP-style markup tag. Two alternatives:
+//   1. `<` + optional closing slash + a tag name beginning with a letter, up to the next `>`
+//      (`<link="…">`, `</link>`, `<b>`, `<color=#fff>`). The body is `[^>]*` (not `[^<>]*`) so a
+//      malformed opener embedding a nested tag — `<link="javascript:…"<b>` — is captured as one
+//      span and rejected whole, not left as a `<link…` fragment a later strip could re-assemble.
+//   2. TMP's non-letter color shorthand `<#rgb>` / `<#rrggbb>` / `<#rrggbbaa>` — it doesn't start
+//      with a letter, so alternative 1 misses it; matched precisely (3–8 hex) so real prose like
+//      "issue <#123 open>" (invalid hex) is left untouched.
+// A bare `<` in prose ("5 < 10") is left alone because it isn't followed by a letter/slash/`#hex`.
+const MARKUP_TAG_REGEX = /<\/?[a-zA-Z][^>]*>|<#[0-9a-fA-F]{3,8}>/g
+
+// A TMP `<link=…>` / `<link="…">` opening tag and its matching `</link>` closing tag. The
+// opening pattern matches the quoted (group 1) and unquoted (group 2) forms as separate
+// alternatives, so a *mismatched* quote (`<link="x>` / `<link=x">`) matches neither and falls
+// through to the strip branch — only a clean single-value link tag is ever preserved (fail-safe).
+const LINK_OPEN_TAG_REGEX = /^<link\s*=\s*(?:"([^"<>]*)"|([^"<>]*))\s*>$/i
+const LINK_CLOSE_TAG_REGEX = /^<\/link\s*>$/i
+
+// A `<`/`</` that begins a `link` tag with NO closing `>` before the next `<` or end of string —
+// an unclosed opener the tag strip leaves untouched (a real TMP link needs its `>`). Its `<` is
+// dropped so it can never be read as a link; a kept safe link / closer keeps its `>` and fails
+// the negative lookahead, so it is left intact.
+const UNCLOSED_LINK_LT_REGEX = /<(?=\/?link\b)(?![^<>]*>)/gi
+
+// Reserved / internal-use DNS suffixes that never belong to a public host.
+const INTERNAL_HOST_SUFFIXES = [
+  '.localhost',
+  '.local',
+  '.internal',
+  '.intranet',
+  '.lan',
+  '.home',
+  '.corp',
+  '.home.arpa'
+]
+
+// Loopback / private / link-local (incl. the 169.254.169.254 cloud-metadata endpoint) /
+// carrier-grade-NAT / internal-name hosts a link must never point at. `hostname` is already
+// lowercased + WHATWG-normalized by `new URL`, so obfuscated IPv4 forms (decimal/hex/octal/
+// short) arrive as canonical dotted quads and can't slip past.
+// Whether a dotted-quad is a loopback / private / link-local (incl. 169.254.169.254 metadata) /
+// carrier-grade-NAT / "this host" address.
+function isInternalIpv4(candidate: string): boolean {
+  const m = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(candidate)
+  if (!m) return false
+  const a = Number(m[1])
+  const b = Number(m[2])
+  return (
+    a === 0 || // "this host"
+    a === 127 || // loopback
+    a === 10 || // private
+    (a === 169 && b === 254) || // link-local incl. cloud metadata
+    (a === 172 && b >= 16 && b <= 31) || // private
+    (a === 192 && b === 168) || // private
+    (a === 100 && b >= 64 && b <= 127) // carrier-grade NAT
+  )
+}
+
+function isInternalLinkHost(hostname: string): boolean {
+  const unbracketed = hostname.startsWith('[') && hostname.endsWith(']') ? hostname.slice(1, -1) : hostname
+  // A trailing dot is the fully-qualified form of the same host (`localhost.`, `router.local.`)
+  // and resolves identically, so normalize it away before the single-label / suffix checks —
+  // otherwise `localhost.` reads as a dotted, non-reserved name and slips through.
+  const host = unbracketed.replace(/\.+$/, '')
+
+  if (isInternalIpv4(host)) return true
+
+  if (host.includes(':')) {
+    return (
+      host === '::1' || // loopback
+      host === '::' || // unspecified
+      /^fe[89ab]/.test(host) || // link-local fe80::/10
+      /^f[cd]/.test(host) || // unique-local fc00::/7
+      host.startsWith('::ffff:') // IPv4-mapped
+    )
+  }
+
+  // DNS name: a public host is a dotted FQDN under a real TLD, so a single-label name
+  // (`router`, `nas`, `localhost`) or a reserved internal-use suffix is treated as internal.
+  // DNS is not resolved here — best-effort fail-closed for local-looking names.
+  if (!host.includes('.')) return true
+  if (INTERNAL_HOST_SUFFIXES.some((suffix) => host.endsWith(suffix))) return true
+
+  // Wildcard-DNS services (nip.io / sslip.io / xip.io …) embed the target IP in the hostname
+  // (`127.0.0.1.nip.io` resolves to 127.0.0.1), bypassing the checks above. Without resolving DNS
+  // we reject any name that embeds a private/loopback/link-local/CGNAT IPv4 as a label run. NOTE:
+  // this does NOT stop a plain attacker domain with a hidden private A record or DNS rebinding —
+  // that is only fully defensible by the consumer resolving-then-validating the IP before it
+  // opens/fetches the URL (or via a proxy), which a synchronous read-boundary sanitizer can't do.
+  for (const match of host.matchAll(/(?:^|\.)(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})(?=\.|$)/g)) {
+    if (isInternalIpv4(match[1])) return true
+  }
+  return false
+}
+
+// Only http(s) links to a public host are safe to hand to the client. A non-web scheme fires a
+// local handler on the viewer's machine, and an http(s) URL aimed at an internal host points the
+// viewer's browser at their own network — both are stripped.
+function isSafeLinkTarget(target: string): boolean {
+  const trimmed = target.trim()
+  // A real URL never carries raw whitespace, so an inner space means the tag had extra junk
+  // after the target (e.g. `<link=https://a onclick=x>`); treat it as ambiguous and strip it.
+  if (/\s/.test(trimmed)) return false
+
+  let url: URL
+  try {
+    url = new URL(trimmed)
+  } catch {
+    return false
+  }
+
+  if (url.protocol !== 'https:' && url.protocol !== 'http:') return false
+  return !isInternalLinkHost(url.hostname.toLowerCase())
+}
+
+// Upper bound on sanitization passes (see sanitizeDescription). Real content stabilizes in one
+// pass; a reassembly attack needs two. Beyond this we fail closed instead of looping.
+const MAX_SANITIZE_PASSES = 5
+
+// One left-to-right strip pass over `text`. A stack records whether the `<link>` currently being
+// closed was kept, to decide its `</link>`.
+function stripMarkupOnce(text: string): string {
+  const openLinkKept: boolean[] = []
+  return text.replace(MARKUP_TAG_REGEX, (tag) => {
+    if (LINK_CLOSE_TAG_REGEX.test(tag)) {
+      // Drop orphan closers; otherwise mirror the matching opener.
+      return openLinkKept.length > 0 && openLinkKept.pop() ? tag : ''
+    }
+    const openMatch = tag.match(LINK_OPEN_TAG_REGEX)
+    if (openMatch) {
+      const keep = isSafeLinkTarget(openMatch[1] ?? openMatch[2])
+      openLinkKept.push(keep)
+      return keep ? tag : ''
+    }
+    return ''
+  })
+}
+
+// One sanitization pass: strip complete markup tags, then drop the `<` of any unclosed `<link`
+// left behind so removed markup can never leave a dangling link opener.
+function stripPass(text: string): string {
+  return stripMarkupOnce(text).replace(UNCLOSED_LINK_LT_REGEX, '')
+}
+
+/**
+ * Neutralize unsafe markup in a creator/user-authored description while preserving safe
+ * hyperlinks. `<link>` tags pointing at public http(s) URLs — the legitimate use case — are
+ * kept; links to any other scheme (or an internal/loopback/metadata host) and every other
+ * markup tag are stripped, dropping both sides of a stripped link so no orphan `</link>`
+ * remains. Stripping rather than HTML-escaping keeps the text clean, since TMP does not decode
+ * entities like `&lt;`. Returns null for empty (or fully-stripped) input to match the
+ * `string | null` column shape.
+ *
+ * Stripping a tag can fuse residual text into a NEW tag the single pass never revisits (e.g.
+ * `<<b>link="javascript:…">` → strip `<b>` → live `<link…>`), so we re-run `stripPass` to a
+ * fixed point. Each changing pass strictly shortens the string, so it converges — at the stable
+ * point the only complete tags left are safe links that were kept, and any unclosed `<link`
+ * has had its `<` dropped by `stripPass`. If a pathological input has not stabilized within
+ * MAX_SANITIZE_PASSES we fail closed by removing every angle bracket.
+ *
+ * @param description - The raw creator/user-authored description (nullable).
+ * @returns The description with unsafe markup removed, or null when nothing is left.
+ */
+export function sanitizeDescription(description: string | null | undefined): string | null {
+  if (!description) return null
+
+  let current = description
+  for (let pass = 0; pass < MAX_SANITIZE_PASSES; pass++) {
+    const next = stripPass(current)
+    if (next === current) return current || null
+    current = next
+  }
+  return current.replace(/[<>]/g, '') || null
+}
+
+/**
+ * Validate that a creator/user-supplied image URL is a safe absolute http(s) URL to a public
+ * host and return it normalized, or null otherwise. Scene `navmapThumbnail` / world
+ * `thumbnailUrl` / event image values are attacker-controlled and were stored verbatim; parsing
+ * through `URL` rejects non-URL payloads and percent-encodes any HTML-breakout characters
+ * (`"`, `<`, `>`), so the stored value can never carry raw markup into API responses / social
+ * HTML. The same public-host rule the TMP links use is applied, so an image pointed at an
+ * internal / loopback / cloud-metadata host (which a client/crawler/downstream fetcher would
+ * otherwise be aimed at) is rejected too.
+ *
+ * @param value - The raw image/thumbnail URL (nullable).
+ * @returns The normalized http(s) URL, or null when it is not a safe absolute http(s) public URL.
+ */
+export function sanitizeImageUrl(value: string | null | undefined): string | null {
+  if (!value) return null
+  try {
+    const url = new URL(value)
+    if (url.protocol !== 'https:' && url.protocol !== 'http:') return null
+    if (isInternalLinkHost(url.hostname.toLowerCase())) return null
+    return url.toString()
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Sanitize a creator-supplied external URL a client may OPEN (an event's public `url`). It shares
+ * the image policy exactly — only an absolute http(s) URL to a public host is kept (normalized),
+ * everything else (`file://`, `smb://`, `javascript:`, `data:`, `decentraland://`, internal /
+ * loopback / metadata hosts) returns null — because a clicked link reaches an unrestricted
+ * `Application.OpenURL` on the viewer's machine, the same threat the description sanitizer closes.
+ * If a Decentraland deep-link scheme is ever a required event-url shape, widen this to an explicit
+ * scheme allowlist here (deliberately, not by passing arbitrary schemes).
+ */
+export const sanitizeExternalUrl = sanitizeImageUrl
+
+/**
+ * Reduce a short label (a name/title, not a rich-text description) to plain text: strip EVERY
+ * markup tag — including the safe `<link="https://…">` tags `sanitizeDescription` deliberately
+ * keeps — so a label can never carry a clickable link. Runs to a fixed point (removing a tag can
+ * fuse residual text into a new one) and drops any unclosed `<link`, matching sanitizeDescription.
+ *
+ * @param value - The raw label (nullable).
+ * @returns The label with all markup removed, or null when nothing is left.
+ */
+export function sanitizePlainText(value: string | null | undefined): string | null {
+  if (!value) return null
+  let current = value
+  for (let pass = 0; pass < MAX_SANITIZE_PASSES; pass++) {
+    const next = current.replace(MARKUP_TAG_REGEX, '').replace(UNCLOSED_LINK_LT_REGEX, '')
+    if (next === current) return current || null
+    current = next
+  }
+  return current.replace(/[<>]/g, '') || null
+}
+
+/**
+ * Sanitize the user-visible content fields shared by place / world / destination aggregates.
+ * `title` / `contact_name` / `contact_email` are plain-text labels (all markup stripped),
+ * `description` is rich text (safe links kept), and `image` / `highlighted_image` must be safe
+ * public URLs. Applied at every public read boundary — the places/worlds/destinations decorators
+ * and the moderation responses — so a row written before sanitization existed (or imported raw
+ * by the ETL) can never reach a consumer unsanitized. Returns a shallow copy; other fields are
+ * untouched.
+ *
+ * @param entity - A place/world/destination aggregate carrying the content fields.
+ * @returns A copy with title/contact_name/contact_email/description/image/highlighted_image sanitized.
+ */
+export function sanitizeEntityContent<
+  T extends {
+    title: string | null
+    description: string | null
+    image: string | null
+    highlighted_image: string | null
+    contact_name: string | null
+    contact_email: string | null
+    categories: string[]
+  }
+>(entity: T): T {
+  return {
+    ...entity,
+    title: sanitizePlainText(entity.title),
+    description: sanitizeDescription(entity.description),
+    image: sanitizeImageUrl(entity.image),
+    highlighted_image: sanitizeImageUrl(entity.highlighted_image),
+    contact_name: sanitizePlainText(entity.contact_name),
+    contact_email: sanitizePlainText(entity.contact_email),
+    // Category tags are plain-text labels; worlds/events don't validate them against the active
+    // set the way place ingestion does, so strip markup and drop any tag that was pure markup.
+    categories: (entity.categories ?? []).map((c) => sanitizePlainText(c)).filter((c): c is string => !!c)
+  }
+}

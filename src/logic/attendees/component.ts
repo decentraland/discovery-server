@@ -1,5 +1,6 @@
 import type { AppComponents } from '../../types'
 import type { EventAttendee } from '../../types/entities'
+import { sanitizePlainText } from '../content-sanitization'
 import type { IAttendeesComponent } from './types'
 
 /**
@@ -31,7 +32,10 @@ export async function createAttendeesComponent(
   }
 
   async function getAttendees(eventId: string): Promise<EventAttendee[]> {
-    return attendeesRepository.listByEvent(pg, eventId)
+    // user_name is an attendee-authored profile display name; reduce it to plain text on read so
+    // a `<link>` in a display name can't reach the TMP client via the attendee list.
+    const attendees = await attendeesRepository.listByEvent(pg, eventId)
+    return attendees.map((attendee) => ({ ...attendee, user_name: sanitizePlainText(attendee.user_name) }))
   }
 
   return { attend, unattend, getAttendees }

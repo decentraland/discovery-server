@@ -202,13 +202,85 @@ describe('when creating an event', () => {
     it('should keep a client-supplied image', async () => {
       const events = await createEventsComponent(components)
       await events.createEvent(
-        { name: 'P', start_at: new Date(Date.now() + 3600_000).toISOString(), x: 5, y: 6, image: 'https://custom.png' },
+        {
+          name: 'P',
+          start_at: new Date(Date.now() + 3600_000).toISOString(),
+          x: 5,
+          y: 6,
+          image: 'https://cdn.example.org/custom.png'
+        },
         '0xU'
       )
 
       expect(components.eventsRepository.create).toHaveBeenCalledWith(
         components.pg,
-        expect.objectContaining({ image: 'https://custom.png' })
+        expect.objectContaining({ image: 'https://cdn.example.org/custom.png' })
+      )
+    })
+
+    it('should reject an unsafe client image and fall back to the parcel map', async () => {
+      const events = await createEventsComponent(components)
+      await events.createEvent(
+        {
+          name: 'P',
+          start_at: new Date(Date.now() + 3600_000).toISOString(),
+          x: 5,
+          y: 6,
+          image: 'https://a"><script>alert(1)</script><meta name="x'
+        },
+        '0xU'
+      )
+
+      expect(components.eventsRepository.create).toHaveBeenCalledWith(
+        components.pg,
+        expect.objectContaining({ image: 'https://land/parcels/5/6.png' })
+      )
+    })
+
+    it('should reject an unsafe client image_vertical', async () => {
+      const events = await createEventsComponent(components)
+      await events.createEvent(
+        {
+          name: 'P',
+          start_at: new Date(Date.now() + 3600_000).toISOString(),
+          x: 5,
+          y: 6,
+          image_vertical: 'javascript:alert(1)'
+        },
+        '0xU'
+      )
+
+      expect(components.eventsRepository.create).toHaveBeenCalledWith(
+        components.pg,
+        expect.objectContaining({ image_vertical: null })
+      )
+    })
+
+    it('should reject an unsafe public url but keep a safe one', async () => {
+      const events = await createEventsComponent(components)
+      await events.createEvent(
+        { name: 'P', start_at: new Date(Date.now() + 3600_000).toISOString(), x: 5, y: 6, url: 'javascript:alert(1)' },
+        '0xU'
+      )
+      expect(components.eventsRepository.create).toHaveBeenCalledWith(
+        components.pg,
+        expect.objectContaining({ url: null })
+      )
+
+      components.eventsRepository.create.mockClear()
+      await events.createEvent(
+        {
+          name: 'P',
+          start_at: new Date(Date.now() + 3600_000).toISOString(),
+          x: 5,
+          y: 6,
+          url: 'https://tickets.example.org/e'
+        },
+        '0xU'
+      )
+      expect(components.eventsRepository.create).toHaveBeenCalledWith(
+        components.pg,
+        expect.objectContaining({ url: 'https://tickets.example.org/e' })
       )
     })
   })
@@ -618,6 +690,432 @@ describe('when creating an event', () => {
       await events.deleteEvent('11111111-1111-4111-8111-111111111111', '0xowner', false)
 
       expect(components.notifications.notifyEventDeleted).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('and reading an event whose stored description contains client-rendered markup', () => {
+    let result: any
+
+    beforeEach(async () => {
+      components.eventsRepository.findById.mockResolvedValue({
+        id: '11111111-1111-4111-8111-111111111111',
+        user: '0xowner',
+        name: 'Party',
+        description:
+          'Join <link="decentraland://?position=0,0">here</link> and <link="https://decentraland.org">site</link>',
+        approved: true,
+        rejected: false,
+        deleted_at: null
+      })
+      const events = await createEventsComponent(components)
+      result = await events.getEvent('11111111-1111-4111-8111-111111111111', '0xowner')
+    })
+
+    it('should strip the unsafe link and keep the safe one in the response', () => {
+      expect(result.description).toBe('Join here and <link="https://decentraland.org">site</link>')
+    })
+  })
+
+  describe('and reading an event whose stored labels contain client-rendered markup', () => {
+    let result: any
+
+    beforeEach(async () => {
+      components.eventsRepository.findById.mockResolvedValue({
+        id: '11111111-1111-4111-8111-111111111111',
+        user: '0xowner',
+        name: 'Party <link="decentraland://x">now</link>',
+        user_name: 'Host <link="https://ok.com">x</link>',
+        estate_name: 'Estate <b>bold</b>',
+        server: 'realm <link="file:///etc/passwd">x</link>',
+        url: 'file:///etc/passwd',
+        approved: true,
+        rejected: false,
+        deleted_at: null
+      })
+      const events = await createEventsComponent(components)
+      result = await events.getEvent('11111111-1111-4111-8111-111111111111', '0xowner')
+    })
+
+    it('should reduce the event name to plain text (all markup stripped, even safe links)', () => {
+      expect(result.name).toBe('Party now')
+    })
+
+    it('should reduce the creator name to plain text', () => {
+      expect(result.user_name).toBe('Host x')
+    })
+
+    it('should reduce the estate label to plain text', () => {
+      expect(result.estate_name).toBe('Estate bold')
+    })
+
+    it('should reduce the server label to plain text', () => {
+      expect(result.server).toBe('realm x')
+    })
+
+    it('should reject an unsafe (non-web) public url', () => {
+      expect(result.url).toBeNull()
+    })
+  })
+
+  describe('and reading an event whose stored image points at an internal host', () => {
+    let result: any
+
+    beforeEach(async () => {
+      components.eventsRepository.findById.mockResolvedValue({
+        id: '11111111-1111-4111-8111-111111111111',
+        user: '0xowner',
+        name: 'Party',
+        image: 'https://169.254.169.254/thumb.png',
+        approved: true,
+        rejected: false,
+        deleted_at: null
+      })
+      const events = await createEventsComponent(components)
+      result = await events.getEvent('11111111-1111-4111-8111-111111111111', '0xowner')
+    })
+
+    it('should reject the unsafe image on read', () => {
+      expect(result.image).toBeNull()
+    })
+  })
+
+  describe('and editing the content of an already-approved event', () => {
+    beforeEach(() => {
+      components.eventsRepository.findById.mockResolvedValue({
+        id: '11111111-1111-4111-8111-111111111111',
+        user: '0xowner',
+        name: 'Party',
+        description: 'Original description',
+        image: 'https://img.png',
+        approved: true,
+        rejected: false,
+        highlighted: true,
+        x: 0,
+        y: 0,
+        server: null,
+        world_id: null,
+        community_id: null,
+        categories: []
+      })
+      components.eventsRepository.update.mockImplementation(async (_c: unknown, _id: string, patch: any) => ({
+        id: '11111111-1111-4111-8111-111111111111',
+        user: '0xowner',
+        name: 'Party',
+        approved: true,
+        community_id: null,
+        ...patch
+      }))
+    })
+
+    describe('and the editor is the owner without approval permission', () => {
+      beforeEach(async () => {
+        const events = await createEventsComponent(components)
+        await events.updateEvent(
+          '11111111-1111-4111-8111-111111111111',
+          { description: 'Sneaky <link="file:///etc/passwd">x</link> edit' },
+          '0xowner',
+          {}
+        )
+      })
+
+      it('should re-queue the event for moderation by clearing approval and the feature flag', () => {
+        expect(components.eventsRepository.update).toHaveBeenCalledWith(
+          components.pg,
+          '11111111-1111-4111-8111-111111111111',
+          expect.objectContaining({ approved: false, approved_by: null, highlighted: false })
+        )
+      })
+    })
+
+    describe('and the owner re-submits the identical description', () => {
+      beforeEach(async () => {
+        const events = await createEventsComponent(components)
+        await events.updateEvent(
+          '11111111-1111-4111-8111-111111111111',
+          { description: 'Original description' },
+          '0xowner',
+          {}
+        )
+      })
+
+      it('should keep the event approved since no content actually changed', () => {
+        const patch = components.eventsRepository.update.mock.calls[0][2]
+        expect(patch.approved).toBeUndefined()
+      })
+    })
+
+    describe('and the owner edits only a scheduling/control field', () => {
+      beforeEach(async () => {
+        const events = await createEventsComponent(components)
+        await events.updateEvent('11111111-1111-4111-8111-111111111111', { all_day: true }, '0xowner', {})
+      })
+
+      it('should keep the event approved', () => {
+        const patch = components.eventsRepository.update.mock.calls[0][2]
+        expect(patch.approved).toBeUndefined()
+      })
+    })
+
+    describe('and the editor is a moderator who can approve', () => {
+      beforeEach(async () => {
+        components.profiles.hasAnyPermission.mockResolvedValue(true)
+        const events = await createEventsComponent(components)
+        await events.updateEvent(
+          '11111111-1111-4111-8111-111111111111',
+          { description: 'Moderator-reviewed <link="file:///etc/passwd">x</link> edit' },
+          '0xMOD',
+          {}
+        )
+      })
+
+      it('should keep the event approved since the moderator edit is itself a review', () => {
+        const patch = components.eventsRepository.update.mock.calls[0][2]
+        expect(patch.approved).toBeUndefined()
+      })
+    })
+
+    describe('and the editor is an owner who can only self-approve (ApproveOwnEvent)', () => {
+      beforeEach(() => {
+        // Owner holds ApproveOwnEvent but NOT ApproveAnyEvent/EditAnyEvent, so canApprove is true
+        // but canHighlight is false — their edit must NOT count as an in-place moderator review.
+        components.profiles.hasAnyPermission.mockImplementation(async (_user: string, perms: ProfilePermission[]) =>
+          perms.includes(ProfilePermission.ApproveOwnEvent)
+        )
+      })
+
+      describe('and they edit moderated content without re-approving', () => {
+        beforeEach(async () => {
+          const events = await createEventsComponent(components)
+          await events.updateEvent(
+            '11111111-1111-4111-8111-111111111111',
+            { description: 'Sneaky edit' },
+            '0xowner',
+            {}
+          )
+        })
+
+        it('should re-open moderation and clear the moderator highlight', () => {
+          expect(components.eventsRepository.update).toHaveBeenCalledWith(
+            components.pg,
+            '11111111-1111-4111-8111-111111111111',
+            expect.objectContaining({ approved: false, approved_by: null, highlighted: false })
+          )
+        })
+      })
+
+      describe('and they edit moderated content and try to self-approve in the same patch', () => {
+        let patch: any
+
+        beforeEach(async () => {
+          const events = await createEventsComponent(components)
+          await events.updateEvent(
+            '11111111-1111-4111-8111-111111111111',
+            { description: 'Edit', approved: true },
+            '0xowner',
+            {}
+          )
+          patch = components.eventsRepository.update.mock.calls[0][2]
+        })
+
+        it('should NOT keep approval — a same-request self-approval cannot review content written in that same patch', () => {
+          expect(patch.approved).toBe(false)
+          expect(patch.approved_by).toBeNull()
+        })
+
+        it('should clear the moderator highlight they cannot set', () => {
+          expect(patch.highlighted).toBe(false)
+        })
+      })
+    })
+
+    describe('and the owner changes the public url', () => {
+      beforeEach(async () => {
+        const events = await createEventsComponent(components)
+        await events.updateEvent(
+          '11111111-1111-4111-8111-111111111111',
+          { url: 'https://malicious.example/redirect' },
+          '0xowner',
+          {}
+        )
+      })
+
+      it('should re-queue the event for moderation by clearing approval', () => {
+        expect(components.eventsRepository.update).toHaveBeenCalledWith(
+          components.pg,
+          '11111111-1111-4111-8111-111111111111',
+          expect.objectContaining({ approved: false, approved_by: null, highlighted: false })
+        )
+      })
+    })
+
+    describe('and the owner changes the image', () => {
+      beforeEach(async () => {
+        const events = await createEventsComponent(components)
+        await events.updateEvent(
+          '11111111-1111-4111-8111-111111111111',
+          { image: 'https://cdn.example.org/new.png' },
+          '0xowner',
+          {}
+        )
+      })
+
+      it('should re-queue the event for moderation by clearing approval', () => {
+        expect(components.eventsRepository.update).toHaveBeenCalledWith(
+          components.pg,
+          '11111111-1111-4111-8111-111111111111',
+          expect.objectContaining({ approved: false, approved_by: null, highlighted: false })
+        )
+      })
+    })
+
+    describe('and the owner changes the displayed creator name', () => {
+      beforeEach(async () => {
+        const events = await createEventsComponent(components)
+        await events.updateEvent('11111111-1111-4111-8111-111111111111', { user_name: 'Impersonator' }, '0xowner', {})
+      })
+
+      it('should re-queue the event for moderation by clearing approval', () => {
+        expect(components.eventsRepository.update).toHaveBeenCalledWith(
+          components.pg,
+          '11111111-1111-4111-8111-111111111111',
+          expect.objectContaining({ approved: false, approved_by: null, highlighted: false })
+        )
+      })
+    })
+
+    describe('and the owner changes a public location label', () => {
+      beforeEach(async () => {
+        const events = await createEventsComponent(components)
+        await events.updateEvent(
+          '11111111-1111-4111-8111-111111111111',
+          { estate_name: 'Renamed Estate' },
+          '0xowner',
+          {}
+        )
+      })
+
+      it('should re-queue the event for moderation by clearing approval', () => {
+        expect(components.eventsRepository.update).toHaveBeenCalledWith(
+          components.pg,
+          '11111111-1111-4111-8111-111111111111',
+          expect.objectContaining({ approved: false, approved_by: null, highlighted: false })
+        )
+      })
+    })
+
+    describe('and the owner changes only the estate id', () => {
+      beforeEach(async () => {
+        const events = await createEventsComponent(components)
+        await events.updateEvent('11111111-1111-4111-8111-111111111111', { estate_id: 'estate-99' }, '0xowner', {})
+      })
+
+      it('should re-queue the event for moderation by clearing approval', () => {
+        expect(components.eventsRepository.update).toHaveBeenCalledWith(
+          components.pg,
+          '11111111-1111-4111-8111-111111111111',
+          expect.objectContaining({ approved: false, approved_by: null, highlighted: false })
+        )
+      })
+    })
+
+    describe('and the owner echoes a read-modify-write value that only differs in raw storage form', () => {
+      let patch: any
+
+      beforeEach(async () => {
+        // Genesis event with a null estate_name but a scene_name; serialize() surfaces
+        // estate_name = (estate_name ?? scene_name) = 'Genesis Plaza', so a client that read the
+        // event and echoes estate_name back sends a value that differs from the raw stored column
+        // (null) but NOT from what it displays. This must not be treated as a content change.
+        components.eventsRepository.findById.mockResolvedValue({
+          id: '11111111-1111-4111-8111-111111111111',
+          user: '0xowner',
+          name: 'Party',
+          estate_name: null,
+          scene_name: 'Genesis Plaza',
+          approved: true,
+          rejected: false,
+          highlighted: true
+        })
+        const events = await createEventsComponent(components)
+        await events.updateEvent(
+          '11111111-1111-4111-8111-111111111111',
+          { estate_name: 'Genesis Plaza' },
+          '0xowner',
+          {}
+        )
+        patch = components.eventsRepository.update.mock.calls[0][2]
+      })
+
+      it('should keep the event approved (the displayed value did not change)', () => {
+        expect(patch.approved).toBeUndefined()
+        expect(patch.highlighted).toBeUndefined()
+      })
+    })
+
+    describe('and the owner attaches the event to a curated schedule', () => {
+      beforeEach(async () => {
+        const events = await createEventsComponent(components)
+        await events.updateEvent('11111111-1111-4111-8111-111111111111', { schedules: ['festival-1'] }, '0xowner', {})
+      })
+
+      it('should re-queue the event for moderation by clearing approval', () => {
+        expect(components.eventsRepository.update).toHaveBeenCalledWith(
+          components.pg,
+          '11111111-1111-4111-8111-111111111111',
+          expect.objectContaining({ approved: false, approved_by: null, highlighted: false })
+        )
+      })
+    })
+
+    describe('and the owner injects unsafe markup that sanitizes to the current description', () => {
+      let patch: any
+
+      beforeEach(async () => {
+        const events = await createEventsComponent(components)
+        await events.updateEvent(
+          '11111111-1111-4111-8111-111111111111',
+          { description: '<link="file:///etc/passwd">Original description</link>' },
+          '0xowner',
+          {}
+        )
+        patch = components.eventsRepository.update.mock.calls[0][2]
+      })
+
+      it('should keep the event approved since the visible content did not change', () => {
+        expect(patch.approved).toBeUndefined()
+      })
+
+      it('should still persist the description sanitized, not the raw markup', () => {
+        expect(patch.description).toBe('Original description')
+      })
+    })
+  })
+
+  describe('and creating an event whose description contains client-rendered markup', () => {
+    beforeEach(() => {
+      components.eventsRepository.create.mockImplementation(async (_c: unknown, row: any) => ({
+        id: '11111111-1111-4111-8111-111111111111',
+        ...row
+      }))
+    })
+
+    it('should persist the description sanitized', async () => {
+      const events = await createEventsComponent(components)
+      await events.createEvent(
+        {
+          name: 'Party',
+          start_at: new Date(Date.now() + 3600_000).toISOString(),
+          x: 0,
+          y: 0,
+          description: 'Join <link="decentraland://?position=0,0">here</link> now'
+        },
+        '0xUSER'
+      )
+
+      expect(components.eventsRepository.create).toHaveBeenCalledWith(
+        components.pg,
+        expect.objectContaining({ description: 'Join here now' })
+      )
     })
   })
 })
