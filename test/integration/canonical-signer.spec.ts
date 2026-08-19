@@ -17,21 +17,22 @@ test('when a request carries a scene signer', function ({ components }) {
 
   describe('and the canonical signer was signed but a mixed-case spelling is delivered', () => {
     it('should reject the request rather than let it past the scene gate', async () => {
-      // The canonical payload is lowercased before signing, so a metadata value differing only in
-      // case shares the signature. Overwriting the header after signing leaves the request
-      // genuinely authentic while reading differently to any case-sensitive comparison downstream.
-      // This is the attack, not a mock: nothing here weakens the signature.
+      // Overwriting the metadata header after signing is the attack, not a mock: nothing here
+      // weakens the signature. Two independent things now refuse it. `rejectIfSigner` runs before
+      // any crypto and refuses a `signer` that is present but not canonical rather than comparing
+      // it, so the request never reaches signature verification — which would have failed too,
+      // since 6.0.0 signs the metadata bytes verbatim and the delivered bytes differ.
       const headers = getSignedAuthHeaders('GET', PATH, SIGNED_METADATA, identity)
       headers[AUTH_METADATA_HEADER] = DELIVERED_METADATA
 
       const response = await components.localFetch.fetch(PATH, { headers })
       const body = await response.json()
 
-      // Without this guard the mixed-case spelling fails the strict `!== 'decentraland-kernel-scene'`
-      // check in signed-fetch.ts, so the scene request is read as a directly user-signed one and served.
+      // Without the gate the mixed-case spelling would fail a strict `!== 'decentraland-kernel-scene'`
+      // check in signed-fetch.ts, so the scene request would read as a directly user-signed one.
       expect(response.status).toBe(400)
-      // The raw metadata is echoed back truncated at 64 characters, so match the prefix.
-      expect(body.error).toMatch(/^Invalid chain metadata: /)
+      // The metadata is echoed back truncated at 64 characters, so match the prefix.
+      expect(body.error).toMatch(/^Invalid metadata content: /)
     })
   })
 

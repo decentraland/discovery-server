@@ -1,5 +1,5 @@
 import type { IFetchComponent } from '@dcl/core-commons'
-import { wellKnownComponents } from '@dcl/crypto-middleware'
+import { rejectIfSigner, wellKnownComponents } from '@dcl/crypto-middleware'
 
 /**
  * ADR-44 signed-fetch verification. On success the verified wallet is available
@@ -18,6 +18,6 @@ export function createSignedFetchMiddleware(fetcher: IFetchComponent) {
         error: err.message,
         message: 'This endpoint requires a signed fetch request. See ADR-44.'
       }),
-      metadataValidator: (metadata: Record<string, unknown>) => metadata?.signer !== 'decentraland-kernel-scene'
+      metadataValidator: rejectIfSigner('decentraland-kernel-scene')
     })
 }
