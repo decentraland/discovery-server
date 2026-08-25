@@ -574,10 +574,10 @@
     "@dcl/core-commons" "^0.10.0"
     "@dcl/crypto" "3.7.0"
 
-"@dcl/crypto-middleware@^6.1.0":
-  version "6.1.0"
-  resolved "https://registry.yarnpkg.com/@dcl/crypto-middleware/-/crypto-middleware-6.1.0.tgz#1819aa9c73ddeaf22b5d65755753291306f58699"
-  integrity sha512-TkYrDP4vMa5oE8S7lkKc9f5IaCH4UtYtIzRp9kCUJ0bCBRSCTj5cOA7Pu93imzgVFiEF1rTOw0GFJrmDyurCfg==
+"@dcl/crypto-middleware@^6.3.0":
+  version "6.3.0"
+  resolved "https://registry.yarnpkg.com/@dcl/crypto-middleware/-/crypto-middleware-6.3.0.tgz#855174cab339df1d62e288d2b533fdef6f3ea4d3"
+  integrity sha512-HUwaPBuXjf3xSGIcnwm52NIZchaPg0rDe/bsjlYdo4ZpjuTlTeQ8m7fjTT3V14/pRTa55T404eHGZURU5jJDog==
   dependencies:
     "@dcl/core-commons" "^0.10.0"
     "@dcl/crypto" "3.7.0"
