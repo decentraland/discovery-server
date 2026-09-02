@@ -54,6 +54,22 @@ describe('when reading the live-events snapshot', () => {
     })
   })
 
+  describe('and a next-event name contains client-rendered markup', () => {
+    let map: Record<string, { id: string; name: string; next_start_at: string }>
+
+    beforeEach(async () => {
+      eventsRepository.getAllNextEvents.mockResolvedValue({
+        p1: { id: 'e1', name: 'Party <link="decentraland://x">now</link>', next_start_at: '2030-01-01T00:00:00Z' }
+      })
+      liveEvents = await createLiveEventsComponent({ pg, eventsRepository, config, logs })
+      map = await liveEvents.getNextEventMap()
+    })
+
+    it('should reduce the next-event name to plain text', () => {
+      expect(map.p1.name).toBe('Party now')
+    })
+  })
+
   describe('and the snapshot is read twice within the TTL', () => {
     beforeEach(async () => {
       liveEvents = await createLiveEventsComponent({ pg, eventsRepository, config, logs })

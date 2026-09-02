@@ -89,6 +89,74 @@ describe('when reading places', () => {
     })
   })
 
+  describe('and a stored place carries unsafe markup and image', () => {
+    let place: AggregatePlace
+
+    beforeEach(() => {
+      place = {
+        id: '123e4567-e89b-12d3-a456-426614174000',
+        base_position: '0,0',
+        title: 'Cool <link="decentraland://x">Place</link>',
+        description: 'Visit <link="decentraland://?position=0,0">here</link>',
+        image: 'https://169.254.169.254/thumb.png',
+        highlighted_image: 'javascript:alert(1)',
+        contact_name: 'Owner <b>x</b>',
+        contact_email: 'a@b.com <#00ff00>x</color>',
+        categories: ['game', '<link="file:///x">poi</link>', '<#000000>']
+      } as AggregatePlace
+      placesRepository.findByIdWithAggregates.mockResolvedValueOnce(place)
+    })
+
+    it('should strip the unsafe description markup on read', async () => {
+      const places = await createPlacesComponent({ pg, placesRepository, hotScenes, sceneStats, catalystClient, logs })
+      const result = await places.getPlace('123e4567-e89b-12d3-a456-426614174000')
+
+      expect(result.description).toBe('Visit here')
+    })
+
+    it('should reduce the title to plain text on read', async () => {
+      const places = await createPlacesComponent({ pg, placesRepository, hotScenes, sceneStats, catalystClient, logs })
+      const result = await places.getPlace('123e4567-e89b-12d3-a456-426614174000')
+
+      expect(result.title).toBe('Cool Place')
+    })
+
+    it('should reduce the contact name to plain text on read', async () => {
+      const places = await createPlacesComponent({ pg, placesRepository, hotScenes, sceneStats, catalystClient, logs })
+      const result = await places.getPlace('123e4567-e89b-12d3-a456-426614174000')
+
+      expect(result.contact_name).toBe('Owner x')
+    })
+
+    it('should reduce the contact email to plain text on read', async () => {
+      const places = await createPlacesComponent({ pg, placesRepository, hotScenes, sceneStats, catalystClient, logs })
+      const result = await places.getPlace('123e4567-e89b-12d3-a456-426614174000')
+
+      expect(result.contact_email).toBe('a@b.com x')
+    })
+
+    it('should strip markup from category tags and drop pure-markup ones on read', async () => {
+      const places = await createPlacesComponent({ pg, placesRepository, hotScenes, sceneStats, catalystClient, logs })
+      const result = await places.getPlace('123e4567-e89b-12d3-a456-426614174000')
+
+      expect(result.categories).toEqual(['game', 'poi'])
+    })
+
+    it('should reject the internal-host image on read', async () => {
+      const places = await createPlacesComponent({ pg, placesRepository, hotScenes, sceneStats, catalystClient, logs })
+      const result = await places.getPlace('123e4567-e89b-12d3-a456-426614174000')
+
+      expect(result.image).toBeNull()
+    })
+
+    it('should reject the unsafe highlighted_image on read', async () => {
+      const places = await createPlacesComponent({ pg, placesRepository, hotScenes, sceneStats, catalystClient, logs })
+      const result = await places.getPlace('123e4567-e89b-12d3-a456-426614174000')
+
+      expect(result.highlighted_image).toBeNull()
+    })
+  })
+
   describe('and listing places', () => {
     let place: AggregatePlace
 
@@ -102,7 +170,23 @@ describe('when reading places', () => {
       const places = await createPlacesComponent({ pg, placesRepository, hotScenes, sceneStats, catalystClient, logs })
       const result = await places.getPlaces({ only_highlighted: true })
 
-      expect(result).toEqual({ data: [{ ...place, user_count: 0, user_visits: 0 }], total: 1 })
+      expect(result).toEqual({
+        data: [
+          {
+            ...place,
+            title: null,
+            description: null,
+            image: null,
+            highlighted_image: null,
+            contact_name: null,
+            contact_email: null,
+            categories: [],
+            user_count: 0,
+            user_visits: 0
+          }
+        ],
+        total: 1
+      })
     })
 
     it('should resolve most_active positions from hot scenes when ordering by most_active', async () => {

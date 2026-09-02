@@ -1,5 +1,6 @@
 /* eslint-disable no-console */
 import type { Pool, PoolClient } from 'pg'
+import { sanitizeDescription, sanitizeExternalUrl, sanitizeImageUrl, sanitizePlainText } from '../../src/logic/content-sanitization'
 
 /**
  * One-off ETL from the legacy places + events Postgres databases into the
@@ -114,9 +115,9 @@ export async function migrateWorlds(pools: EtlPools, options: EtlOptions = {}): 
              highlighted_image = EXCLUDED.highlighted_image, ranking = EXCLUDED.ranking,
              updated_at = EXCLUDED.updated_at`,
           [
-            String(w.id).toLowerCase(), w.world_name, w.title, w.description, w.image, w.content_rating, w.categories,
+            String(w.id).toLowerCase(), w.world_name, sanitizePlainText(w.title), sanitizeDescription(w.description), sanitizeImageUrl(w.image), w.content_rating, w.categories,
             w.owner, w.show_in_places, w.single_player, w.skybox_time, w.is_private, w.likes, w.dislikes, w.favorites,
-            w.like_rate, w.like_score, w.highlighted, w.highlighted_image, w.ranking, w.created_at, w.updated_at
+            w.like_rate, w.like_score, w.highlighted, sanitizeImageUrl(w.highlighted_image), w.ranking, w.created_at, w.updated_at
           ]
         )
         loaded++
@@ -165,9 +166,9 @@ export async function migratePlaces(pools: EtlPools, options: EtlOptions = {}): 
              categories = EXCLUDED.categories, sdk = EXCLUDED.sdk, textsearch = EXCLUDED.textsearch,
              updated_at = EXCLUDED.updated_at`,
           [
-            p.id, p.title, p.description, p.image, p.owner, p.creator_address, p.positions, p.base_position,
-            p.contact_name, p.contact_email, p.content_rating, p.likes, p.dislikes, p.favorites, p.like_rate,
-            p.like_score, p.ranking, p.highlighted, p.highlighted_image, p.disabled, p.disabled_at, p.disabled_reason,
+            p.id, sanitizePlainText(p.title), sanitizeDescription(p.description), sanitizeImageUrl(p.image), p.owner, p.creator_address, p.positions, p.base_position,
+            sanitizePlainText(p.contact_name), sanitizePlainText(p.contact_email), p.content_rating, p.likes, p.dislikes, p.favorites, p.like_rate,
+            p.like_score, p.ranking, p.highlighted, sanitizeImageUrl(p.highlighted_image), p.disabled, p.disabled_at, p.disabled_reason,
             p.world, p.world_name, resolvedWorldId, p.deployed_at, p.categories, p.sdk, p.textsearch, p.created_at,
             p.updated_at
           ]
@@ -221,8 +222,19 @@ export async function migrateSchedules(pools: EtlPools, options: EtlOptions = {}
              background = EXCLUDED.background, image = EXCLUDED.image, theme = EXCLUDED.theme, active = EXCLUDED.active,
              active_since = EXCLUDED.active_since, active_until = EXCLUDED.active_until, updated_at = EXCLUDED.updated_at`,
           [
-            s.id, s.name, s.description, s.background ?? [], s.image, s.theme, s.active, s.active_since, s.active_until,
-            s.created_at, s.updated_at
+            s.id,
+            // schedules.name is NOT NULL — never write null (a legacy empty/all-markup name → '').
+            sanitizePlainText(s.name) ?? '',
+            sanitizeDescription(s.description),
+            // background is a list of CSS color/gradient tokens, not image URLs — plain-text each.
+            (s.background ?? []).map((value: string) => sanitizePlainText(value)).filter((value: string | null) => !!value),
+            sanitizeImageUrl(s.image),
+            sanitizePlainText(s.theme),
+            s.active,
+            s.active_since,
+            s.active_until,
+            s.created_at,
+            s.updated_at
           ]
         )
         loaded++
@@ -335,11 +347,11 @@ export async function migrateEvents(pools: EtlPools, options: EtlOptions = {}): 
              deleted_by = EXCLUDED.deleted_by, deleted_at = EXCLUDED.deleted_at,
              deleted_reason = EXCLUDED.deleted_reason, updated_at = EXCLUDED.updated_at`,
           [
-            e.id, e.name, e.image, e.image_vertical, e.description, e.start_at, e.finish_at, duration, e.all_day,
+            e.id, e.name, sanitizeImageUrl(e.image), sanitizeImageUrl(e.image_vertical), sanitizeDescription(e.description), e.start_at, e.finish_at, duration, e.all_day,
             e.next_start_at, e.next_finish_at, e.recurrent, e.recurrent_frequency, e.recurrent_setpos,
             e.recurrent_monthday, e.recurrent_weekday_mask, e.recurrent_month_mask, e.recurrent_interval,
             e.recurrent_count, e.recurrent_until, e.recurrent_dates, e.x, e.y, e.server, e.world, e.estate_id,
-            e.estate_name, e.scene_name, placeId, worldId, e.community_id, e.url, e.user, e.user_name, e.contact,
+            e.estate_name, e.scene_name, placeId, worldId, e.community_id, sanitizeExternalUrl(e.url), e.user, e.user_name, e.contact,
             e.details, e.approved, e.rejected, e.approved_by, e.rejected_by, e.rejection_reason, e.highlighted,
             e.total_attendees, e.latest_attendees, e.categories, schedules, e.textsearch, e.deleted_by_user,
             e.deleted_by_admin, e.deleted_by, e.deleted_at, e.deleted_reason, e.created_at, e.updated_at

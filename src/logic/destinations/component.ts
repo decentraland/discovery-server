@@ -1,6 +1,7 @@
 import type { AppComponents } from '../../types'
 import type { Destination } from '../../types/entities'
 import type { DestinationListFilters } from '../../adapters/destinations-repository'
+import { sanitizeEntityContent } from '../content-sanitization'
 import type { GetDestinationsOptions, IDestinationsComponent } from './types'
 
 /**
@@ -42,8 +43,10 @@ export async function createDestinationsComponent(
     return Promise.all(
       rows.map(async (destination) => {
         // Places carry 30-day visit counts; worlds have no scene-stats (0), matching legacy.
+        // Description/image/highlighted_image are sanitized here too (read boundary) since a row
+        // may predate ingestion sanitization or have been imported raw by the ETL.
         const decorated: Destination = {
-          ...destination,
+          ...sanitizeEntityContent(destination),
           user_visits:
             destination.kind === 'place' && destination.base_position
               ? await sceneStats.getVisits(destination.base_position)

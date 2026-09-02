@@ -3,6 +3,7 @@ import type { AggregatePlace } from '../../types/entities'
 import type { Queryable } from '../../adapters/pg'
 import { BadRequestError } from '../../types/errors'
 import { isPlaceId } from '../entity-id'
+import { sanitizeEntityContent } from '../content-sanitization'
 import { PlaceNotFoundError } from '../places'
 import type { IModerationComponent } from './types'
 
@@ -48,7 +49,9 @@ export async function createModerationComponent(
   async function placeAggregate(client: Queryable, placeId: string, user?: string): Promise<AggregatePlace> {
     const aggregate = await placesRepository.findByIdWithAggregates(client, placeId, user)
     if (!aggregate) throw new PlaceNotFoundError(placeId)
-    return aggregate
+    // Sanitize at this read boundary too: moderation responses carry the same aggregate shape as
+    // a normal place read, so a legacy/imported unsafe description/image must not slip through here.
+    return sanitizeEntityContent(aggregate)
   }
   async function setPlaceRating(
     placeId: string,

@@ -151,4 +151,30 @@ describe('when moderating a place', () => {
       await expect(moderation.setPlaceDisabled(PLACE_ID, true)).rejects.toThrow(PlaceNotFoundError)
     })
   })
+
+  describe('and the moderated place carries unsafe stored content', () => {
+    let result: any
+
+    beforeEach(async () => {
+      components.placesRepository.updateModeration.mockResolvedValueOnce({ id: PLACE_ID, highlighted: true })
+      components.placesRepository.findByIdWithAggregates.mockResolvedValueOnce({
+        id: PLACE_ID,
+        content_rating: 'PR',
+        description: 'Visit <link="decentraland://?position=0,0">here</link>',
+        image: 'https://169.254.169.254/thumb.png',
+        highlighted_image: 'javascript:alert(1)'
+      })
+      const moderation = await createModerationComponent(components)
+      result = await moderation.setPlaceHighlight(PLACE_ID, true)
+    })
+
+    it('should strip the unsafe description in the moderation response', () => {
+      expect(result.description).toBe('Visit here')
+    })
+
+    it('should reject the unsafe image and highlighted_image in the moderation response', () => {
+      expect(result.image).toBeNull()
+      expect(result.highlighted_image).toBeNull()
+    })
+  })
 })
