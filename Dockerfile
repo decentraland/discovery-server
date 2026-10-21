@@ -2,7 +2,7 @@
 # (no uWebSockets), so musl/alpine would technically work — but we standardize on
 # trixie-slim to match the org's other new-stack services and stay compatible if
 # @dcl/uws-http-server is ever added.
-FROM node:24-trixie-slim AS builderenv
+FROM node:24-trixie-slim@sha256:43b9ba1142b8dcf33fa8f922ca1be85714adc444e0586c7cf7726daaeabc1bea AS builderenv
 
 WORKDIR /app
 
@@ -18,7 +18,7 @@ RUN yarn install --prod --frozen-lockfile
 
 ########################## END OF BUILD STAGE ##########################
 
-FROM node:24-trixie-slim
+FROM node:24-trixie-slim@sha256:43b9ba1142b8dcf33fa8f922ca1be85714adc444e0586c7cf7726daaeabc1bea
 
 RUN apt-get update && \
     apt-get install -y --no-install-recommends tini && \
